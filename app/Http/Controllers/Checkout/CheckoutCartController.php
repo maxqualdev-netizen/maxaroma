@@ -75,7 +75,7 @@ class CheckoutCartController extends Controller
 				) {
 					$result['cart'] =
 						$result['freeGift']['cart'];
-				}      
+				}
         }
 
         return response()->json($result);
@@ -172,7 +172,6 @@ class CheckoutCartController extends Controller
 
         return response()->json($result);
     }
-
 
     /**
      * Return the current checkout cart state.
@@ -377,7 +376,7 @@ class CheckoutCartController extends Controller
                     $removedFreeGifts;
             }
         }
-		
+
 		Log::info('Free Gift Checkout Debug', [
     'totalValue' =>
         $totalValue,
@@ -403,8 +402,7 @@ class CheckoutCartController extends Controller
     'remainingCount' =>
         $decision['remainingCount'] ?? null,
 ]);
-		
-			
+
         /*
          * Single eligible gift:
          * preserve the requested automatic-add behavior.
