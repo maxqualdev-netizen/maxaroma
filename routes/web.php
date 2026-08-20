@@ -27,7 +27,6 @@ use App\Http\Controllers\TestController;
 use App\Http\Controllers\BlogController;
 use App\Http\Controllers\PhoneOrderController;
 use App\Http\Controllers\TempUserController;
-//POS Start
 use App\Http\Controllers\POSController;
 use App\Http\Middleware\POSMaintainMode;
 use App\Http\Controllers\POSAdmController;
