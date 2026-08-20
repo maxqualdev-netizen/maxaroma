@@ -15,7 +15,7 @@ class CheckoutController extends Controller
     }
 
     /**
-     * One Page Checkout new test 
+     * One Page Checkout new test1
      */
     public function index(Request $request)
     {
