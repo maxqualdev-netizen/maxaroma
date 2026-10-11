@@ -9,13 +9,17 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
-
+use Illuminate\Support\Facades\Log;
+use App\Services\Discount\FreeSampleService;
 class CheckoutDiscountController extends Controller
 {
     public function __construct(
         protected CouponService $couponService,
-        protected CheckoutService $checkoutService
+        protected CheckoutService $checkoutService,
+        protected FreeSampleService $freeSampleService
     ) {
+		   $this->freeSampleService = $freeSampleService;
+
     }
 
     /**
@@ -86,6 +90,17 @@ class CheckoutDiscountController extends Controller
                     $code,
                     $customerId
                 );
+              
+              
+            $isYotpoReward =
+			strtoupper(
+				trim(
+					(string) Session::get(
+						'ShoppingCart.YotpoRewardCode',
+						''
+					)
+				)
+			) === strtoupper(trim($code));    
 
             if (
                 isset($result['error'])
@@ -110,24 +125,94 @@ class CheckoutDiscountController extends Controller
              *
              * CheckoutService remains the central orchestrator.
              */
+             
+            $cartBeforeCoupon = Session::get(
+				'ShoppingCart.Cart',
+				[]
+			);
+
+			$freeSampleItems = [];
+
+			foreach ($cartBeforeCoupon as $item) {
+				if (
+					is_array($item)
+					&&
+					($item['Is_Free_Sample'] ?? 'No') === 'Yes'
+				) {
+					$freeSampleItems[] = $item;
+				}
+			} 
             $checkout =
                 $this->checkoutService
                     ->refresh(
                         'discount'
                     );
+			
+			$finalCart = Session::get(
+			'ShoppingCart.Cart',
+			[]
+		);
 
+		$couponFreeGiftApplied = false;
+
+		foreach ($finalCart as $item) {
+			if (
+				is_array($item)
+				&& ($item['FreeGiftCoupon'] ?? 'No') === 'Yes'
+				
+			) {
+				$couponFreeGiftApplied = true;
+				break;
+			}
+		}
+
+			
+			
+			$freeSampleRuleChanged = false;
+
+			if (!empty($freeSampleItems)) {
+				$freeSampleRuleChanged =
+					$this->freeSampleService
+						->syncFreeSamplesAfterCartMutation(
+							$freeSampleItems
+						);
+			}
             return response()->json([
-                'status' => 'success',
-                'error' => 0,
-                'message' =>
-                    $result['message']
-                    ?? 'Coupon applied successfully.',
-                'discount' => $result,
-                'checkout' => $checkout,
-                'totals' =>
-                    $checkout['totals']
-                    ?? [],
-            ]);
+    'status' => 'success',
+    'error' => 0,
+
+    'message' =>
+        $result['message']
+        ?? 'Coupon applied successfully.',
+
+    'discount' => $result,
+
+    'checkout' => $checkout,
+
+    'free_sample_rule_changed' =>
+        $freeSampleRuleChanged,
+    'coupon_free_gift_applied' =>
+    $couponFreeGiftApplied,    
+
+    'totals' =>
+        $checkout['totals']
+        ?? [],
+
+    /*
+     * IMPORTANT:
+     * Return the final backend cart after coupon
+     * + coupon Free Gift processing.
+     *
+     * Backend remains the source of truth.
+     */
+    'cart' => [
+        'Cart' => Session::get(
+            'ShoppingCart.Cart',
+            []
+        ),
+    ],
+    'is_yotpo_reward' => $isYotpoReward,
+]);
         } catch (\Throwable $e) {
             addLog(
                 'CheckoutDiscountApplyError',
@@ -196,8 +281,8 @@ class CheckoutDiscountController extends Controller
         }
 
         try {
-            $this->couponService
-                ->removeCoupon();
+            $hasCouponFreeGift =
+			$this->couponService->removeCoupon();
 
             $checkout =
                 $this->checkoutService
@@ -223,6 +308,7 @@ class CheckoutDiscountController extends Controller
                 'totals' =>
                     $checkout['totals']
                     ?? [],
+               'coupon_free_gift_removed' => $hasCouponFreeGift,     
             ]);
         } catch (\Throwable $e) {
             addLog(

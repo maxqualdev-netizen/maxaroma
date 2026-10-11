@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\Coupon;
 use App\Models\Manufacture;
 use App\Models\Products;
+use App\Models\ProductsCategory;
 use App\Models\QuantityDiscount;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -576,9 +577,50 @@ class QuantityDiscountService
              * -----------------------------------------------------
              * orders == ''
              *
-             * Normal SKU quantity rule.
+             * Generic rule:
+             * when SKU is blank, apply the rule to all eligible
+             * cart items. This preserves the Old Checkout behavior
+             * for generic Quantity Discount rules.
+             *
+             * Otherwise process the rule as a normal SKU rule.
              * -----------------------------------------------------
              */
+            if (
+                trim(
+                    (string)
+                    $rule->sku
+                ) === ''
+            ) {
+                $result =
+                    $this->applyGenericRule(
+                        $rule,
+                        $cartItems,
+                        $excludeSkuList
+                    );
+
+                if (
+                    $result['matched']
+                ) {
+                    $quantityDiscountFlag =
+                        $rule->discount_coupon_flag;
+
+                    $quantityDiscount =
+                        $this->selectHigherDiscount(
+                            $quantityDiscount,
+                            $result['discount']
+                        );
+
+                    /*
+                     * Generic rule does not populate SKU remove
+                     * list because it applies to the eligible cart
+                     * as a whole.
+                     */
+                    break;
+                }
+
+                continue;
+            }
+
             $result =
                 $this->applySkuRule(
                     $rule,
@@ -642,6 +684,212 @@ class QuantityDiscountService
         );
 
         return;
+    }
+
+    /**
+     * Generic quantity-discount rule.
+     *
+     * Old Checkout behavior for a Quantity Discount rule with
+     * orders = '' and a blank SKU: apply the rule to all eligible
+     * cart items.
+     *
+     * Excluded:
+     * - Deal products
+     * - Free gifts
+     * - Free samples
+     * - Explicitly excluded SKUs
+     * - Pocket perfume when configured
+     */
+    protected function applyGenericRule(
+        $rule,
+        array $cart,
+        array $excludeSkuList
+    ): array {
+        $matched = false;
+        $totalQty = 0;
+        $totalAmount = 0;
+
+        foreach (
+            $cart as $index => $item
+        ) {
+            if (
+                ($item['IsDealProducts'] ?? '') ===
+                'Yes'
+            ) {
+                continue;
+            }
+
+            if (
+                ($item['IS_Free_Gift'] ?? '') ===
+                'Yes'
+            ) {
+                continue;
+            }
+
+            if (
+                ($item['Is_Free_Sample'] ?? '') ===
+                'Yes'
+            ) {
+                continue;
+            }
+
+            if (
+                in_array(
+                    $item['SKU'] ?? '',
+                    $excludeSkuList,
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            if (
+                $rule->exclude_pocketperfume ===
+                    'Yes' &&
+                $this->isPocketPerfume(
+                    $item['CategoryID'] ?? 0
+                )
+            ) {
+                continue;
+            }
+
+            $matched = true;
+
+            $qty =
+                (int)
+                (
+                    $item['Qty'] ?? 0
+                );
+
+            $lineAmount =
+                (float)
+                (
+                    $item['TotPrice'] ?? 0
+                );
+
+            $totalQty += $qty;
+            $totalAmount += $lineAmount;
+        }
+
+        if (
+            !$matched ||
+            $totalQty <
+                (int)
+                $rule->quantity
+        ) {
+            return [
+                'matched' => false,
+                'discount' => 0,
+                'skuRemoveArr' => '',
+            ];
+        }
+
+        /*
+         * Percentage discount is calculated only from the
+         * eligible generic-rule amount.
+         */
+        if (
+            (int)
+            $rule->type === 1
+        ) {
+            $discount =
+                $totalAmount *
+                (
+                    (float)
+                    $rule->quantity_discount_amount
+                    / 100
+                );
+
+            /*
+             * Preserve item-wise discount used by checkout.
+             */
+            foreach (
+                $cart as $index => $item
+            ) {
+                if (
+                    ($item['IsDealProducts'] ?? '') ===
+                    'Yes'
+                ) {
+                    continue;
+                }
+
+                if (
+                    ($item['IS_Free_Gift'] ?? '') ===
+                    'Yes'
+                ) {
+                    continue;
+                }
+
+                if (
+                    ($item['Is_Free_Sample'] ?? '') ===
+                    'Yes'
+                ) {
+                    continue;
+                }
+
+                if (
+                    in_array(
+                        $item['SKU'] ?? '',
+                        $excludeSkuList,
+                        true
+                    )
+                ) {
+                    continue;
+                }
+
+                if (
+                    $rule->exclude_pocketperfume ===
+                        'Yes' &&
+                    $this->isPocketPerfume(
+                        $item['CategoryID'] ?? 0
+                    )
+                ) {
+                    continue;
+                }
+
+                $itemDiscount =
+                    (
+                        (float)
+                        (
+                            $item['Price'] ?? 0
+                        )
+                        *
+                        (
+                            (int)
+                            (
+                                $item['Qty'] ?? 0
+                            )
+                        )
+                    )
+                    *
+                    (
+                        (float)
+                        $rule->quantity_discount_amount
+                        / 100
+                    );
+
+                Session::put(
+                    'ShoppingCart.Cart.'
+                    . $index
+                    . '.QuantityItemWiseDiscout',
+                    $itemDiscount
+                );
+            }
+        } else {
+            /*
+             * Fixed generic discount.
+             */
+            $discount =
+                (float)
+                $rule->quantity_discount_amount;
+        }
+
+        return [
+            'matched' => true,
+            'discount' =>
+                NumberFormat($discount),
+            'skuRemoveArr' => '',
+        ];
     }
 
     /**
@@ -1490,19 +1738,19 @@ class QuantityDiscountService
         }
 
         /*
-         * Category IDs are represented in the cart
-         * through ProductID. The exact existing query
-         * depends on the Products schema.
+         * Category membership is stored in the existing
+         * pu_products_category mapping table.
          *
-         * Keep the query isolated here.
+         * Do not query category_id from pu_products:
+         * that column does not exist on the Products table.
          */
-        return Products::whereIn(
-            'products_id',
-            $tempProductIds
-        )
-        ->whereIn(
+        return ProductsCategory::whereIn(
             'category_id',
             $activeCategoryIds
+        )
+        ->whereIn(
+            'products_id',
+            $tempProductIds
         )
         ->distinct()
         ->pluck(

@@ -17,370 +17,439 @@ class CartAttributeService
      * Payment methods, coupons, credit limits and OrderType
      * are handled by their respective services.
      */
-    public function getAttributes(): array
-    {
-        $attrs = [];
 
-        $onlyGCPurchased = 1;
-        $checkGCPurchasedVal = 0;
-        $rewardPointItemWiseTotal = 0;
+	public function getAttributes(): array
+{
+    $attrs = [];
 
-        $critieostr = '';
+    $onlyGCPurchased = 1;
+    $checkGCPurchasedVal = 0;
+    $rewardPointItemWiseTotal = 0;
 
-        $isVenderItem = 'No';
-        $isCosmo = 'No';
-        $isNandansons = 'No';
-        $isPerfumePW = 'No';
-        $isPCA = 'No';
-        $isND = 'No';
+    $critieostr = '';
 
-        $isMaxaromaTwoDelivery = 'No';
-        $isMax2day = '';
-        $isMaxTwoItem = 'No';
+    $isVenderItem = 'No';
+    $isCosmo = 'No';
+    $isNandansons = 'No';
+    $isPerfumePW = 'No';
+    $isPCA = 'No';
+    $isND = 'No';
 
-        $cart = Session::get(
-            'ShoppingCart.Cart',
-            []
-        );
+    $isMaxaromaTwoDelivery = 'No';
+    $isMax2day = '';
+    $isMaxTwoItem = 'No';
 
-        if (
-            !empty($cart)
-            &&
-            is_array($cart)
-        ) {
-            $tempCart = [];
+    $cart = Session::get(
+        'ShoppingCart.Cart',
+        []
+    );
 
-            foreach ($cart as $shopItem) {
+    if (
+        !empty($cart)
+        &&
+        is_array($cart)
+    ) {
+        $tempCart = [];
 
-                /*
-                 * -------------------------------------------------
-                 * Gift checkbox
-                 * -------------------------------------------------
-                 */
-                $giftChkOpt = 'Yes';
+        foreach ($cart as $shopItem) {
 
-                if (
-                    (
-                        isset($shopItem['IS_Free_Gift'])
-                        &&
-                        $shopItem['IS_Free_Gift'] === 'Yes'
-                    )
-                    ||
-                    (
-                        isset($shopItem['Is_Free_Sample'])
-                        &&
-                        $shopItem['Is_Free_Sample'] === 'Yes'
-                    )
-                ) {
-                    $giftChkOpt = 'No';
-                }
+            /*
+             * -------------------------------------------------
+             * Gift checkbox
+             * -------------------------------------------------
+             */
+            $giftChkOpt = 'Yes';
 
-                /*
-                 * -------------------------------------------------
-                 * Gift Certificate
-                 * -------------------------------------------------
-                 *
-                 * IMPORTANT:
-                 * Existing controller uses checkGiftCertificateItem().
-                 *
-                 * We intentionally keep this logic behind a
-                 * dedicated method so the existing helper can be
-                 * connected without duplicating its business rules.
-                 */
-                $isGiftCertificateItem =
-                    $this->checkGiftCertificateItem(
-                        $shopItem
-                    );
-
-                if (
-                    $isGiftCertificateItem === 'Yes'
-                ) {
-                    $giftChkOpt = 'No';
-                    $checkGCPurchasedVal = 1;
-                }
-
-                /*
-                 * Product cannot have gift option.
-                 */
-                if (
-                    isset(
-                        $shopItem['IsGiftWrapProduct']
-                    )
+            if (
+                (
+                    isset($shopItem['IS_Free_Gift'])
                     &&
-                    $shopItem['IsGiftWrapProduct']
-                        === 'No'
-                ) {
-                    $giftChkOpt = 'No';
-                }
-
-                /*
-                 * Product having handling time
-                 * cannot have gift option.
-                 */
-                if (
-                    isset(
-                        $shopItem['HandlingTimeStr']
-                    )
+                    $shopItem['IS_Free_Gift'] === 'Yes'
+                )
+                ||
+                (
+                    isset($shopItem['Is_Free_Sample'])
                     &&
-                    $shopItem['HandlingTimeStr'] !== ''
-                ) {
-                    $giftChkOpt = 'No';
-                }
-
-                /*
-                 * -------------------------------------------------
-                 * onlyGCPurchased
-                 * -------------------------------------------------
-                 *
-                 * If ANY non-Gift-Certificate product exists,
-                 * this becomes 0.
-                 */
-                if (
-                    $isGiftCertificateItem === 'No'
-                ) {
-                    $onlyGCPurchased = 0;
-                }
-
-                $shopItem['ShowGiftChkOpt'] =
-                    $giftChkOpt;
-
-                /*
-                 * -------------------------------------------------
-                 * Reward item-wise total
-                 * -------------------------------------------------
-                 */
-                $normalUser =
-                    $this->getCurrentUser();
-
-                if (
-                    $normalUser
-                    &&
-                    strtolower(
-                        $normalUser->eusertype ?? ''
-                    ) === 'retailer'
-                    &&
-                    Session::get(
-                        'sess_icustomerid'
-                    ) > 0
-                    &&
-                    Session::get(
-                        'etype'
-                    ) === 'M'
-                ) {
-                    if (
-                        isset(
-                            $shopItem['PointMultipier']
-                        )
-                        &&
-                        $shopItem['PointMultipier'] > 0
-                    ) {
-                        $rewardItemWise =
-                            $shopItem['TotPrice']
-                            *
-                            $shopItem['PointMultipier'];
-
-                        $rewardItemWise =
-                            NumberFormat(
-                                $rewardItemWise
-                            );
-
-                        $rewardPointItemWiseTotal +=
-                            $rewardItemWise;
-                    }
-                }
-
-                /*
-                 * -------------------------------------------------
-                 * Critieo string
-                 * -------------------------------------------------
-                 */
-                $critieostr .=
-                    '{ id: "'
-                    . ($shopItem['SKU'] ?? '')
-                    . '", price: '
-                    . ($shopItem['Price'] ?? 0)
-                    . ', quantity: '
-                    . ($shopItem['Qty'] ?? 0)
-                    . ' } ,';
-
-                /*
-                 * -------------------------------------------------
-                 * Vendor flags
-                 * -------------------------------------------------
-                 */
-                $vendorFlags = [
-                    'IsCosmo',
-                    'IsNandansons',
-                    'IsPerfumePW',
-                    'IsPCA',
-                    'IsND',
-                ];
-
-                foreach (
-                    $vendorFlags as $vendorFlag
-                ) {
-                    if (
-                        isset(
-                            $shopItem[$vendorFlag]
-                        )
-                        &&
-                        $shopItem[$vendorFlag] === 'Yes'
-                        &&
-                        isset(
-                            $shopItem['VendorSKU']
-                        )
-                        &&
-                        $shopItem['VendorSKU'] !== ''
-                    ) {
-                        $isVenderItem = 'Yes';
-                        break;
-                    }
-                }
-
-                /*
-                 * Individual vendor flags.
-                 */
-                if (
-                    $this->isVendorItem(
-                        $shopItem,
-                        'IsCosmo'
-                    )
-                ) {
-                    $isCosmo = 'Yes';
-                }
-
-                if (
-                    $this->isVendorItem(
-                        $shopItem,
-                        'IsNandansons'
-                    )
-                ) {
-                    $isNandansons = 'Yes';
-                }
-
-                if (
-                    $this->isVendorItem(
-                        $shopItem,
-                        'IsPerfumePW'
-                    )
-                ) {
-                    $isPerfumePW = 'Yes';
-                }
-
-                if (
-                    $this->isVendorItem(
-                        $shopItem,
-                        'IsPCA'
-                    )
-                ) {
-                    $isPCA = 'Yes';
-                }
-
-                if (
-                    $this->isVendorItem(
-                        $shopItem,
-                        'IsND'
-                    )
-                ) {
-                    $isND = 'Yes';
-                }
-
-                /*
-                 * -------------------------------------------------
-                 * Maxaroma Two Delivery
-                 * -------------------------------------------------
-                 */
-                if (
-                    isset(
-                        $shopItem['IsMaxaromaTwoDelivery']
-                    )
-                    &&
-                    $shopItem[
-                        'IsMaxaromaTwoDelivery'
-                    ] === 'Yes'
-                    &&
-                    $shopItem[
-                        'IsMaxaromaTwoDelivery'
-                    ] !== ''
-                ) {
-                    $isMaxaromaTwoDelivery = 'Yes';
-                    $isMaxTwoItem = 'Yes';
-                } else {
-                    $isMax2day = 'No';
-                }
-
-                $tempCart[] =
-                    $shopItem;
+                    $shopItem['Is_Free_Sample'] === 'Yes'
+                )
+            ) {
+                $giftChkOpt = 'No';
             }
 
             /*
-             * Existing behavior:
-             * Updated cart is saved back to session.
+             * -------------------------------------------------
+             * Gift Certificate
+             * -------------------------------------------------
              */
-            Session::put(
-                'ShoppingCart.Cart',
-                $tempCart
-            );
+            $isGiftCertificateItem =
+                $this->checkGiftCertificateItem(
+                    $shopItem
+                );
 
-            Session::put(
-                'ShoppingCart.RewardPointItemWiseTotal',
-                ceil(
-                    $rewardPointItemWiseTotal
+            if (
+                $isGiftCertificateItem === 'Yes'
+            ) {
+                $giftChkOpt = 'No';
+                $checkGCPurchasedVal = 1;
+            }
+
+            /*
+             * Product cannot have gift option.
+             */
+            if (
+                isset(
+                    $shopItem['IsGiftWrapProduct']
                 )
-            );
+                &&
+                $shopItem['IsGiftWrapProduct']
+                    === 'No'
+            ) {
+                $giftChkOpt = 'No';
+            }
+
+            /*
+             * Product having handling time
+             * cannot have gift option.
+             */
+            if (
+                isset(
+                    $shopItem['HandlingTimeStr']
+                )
+                &&
+                $shopItem['HandlingTimeStr'] !== ''
+            ) {
+                $giftChkOpt = 'No';
+            }
+
+            /*
+             * -------------------------------------------------
+             * onlyGCPurchased
+             * -------------------------------------------------
+             */
+            if (
+                $isGiftCertificateItem === 'No'
+            ) {
+                $onlyGCPurchased = 0;
+            }
+
+            $shopItem['ShowGiftChkOpt'] =
+                $giftChkOpt;
+
+            /*
+             * -------------------------------------------------
+             * Reward item-wise total
+             * -------------------------------------------------
+             */
+            $normalUser =
+                $this->getCurrentUser();
+
+            if (
+                $normalUser
+                &&
+                strtolower(
+                    $normalUser->eusertype ?? ''
+                ) === 'retailer'
+                &&
+                Session::get(
+                    'sess_icustomerid'
+                ) > 0
+                &&
+                Session::get(
+                    'etype'
+                ) === 'M'
+            ) {
+                if (
+                    isset(
+                        $shopItem['PointMultipier']
+                    )
+                    &&
+                    $shopItem['PointMultipier'] > 0
+                ) {
+                    $rewardItemWise =
+                        $shopItem['TotPrice']
+                        *
+                        $shopItem['PointMultipier'];
+
+                    $rewardItemWise =
+                        NumberFormat(
+                            $rewardItemWise
+                        );
+
+                    $rewardPointItemWiseTotal +=
+                        $rewardItemWise;
+                }
+            }
+
+            /*
+             * -------------------------------------------------
+             * Critieo string
+             * -------------------------------------------------
+             */
+            $critieostr .=
+                '{ id: "'
+                . ($shopItem['SKU'] ?? '')
+                . '", price: '
+                . ($shopItem['Price'] ?? 0)
+                . ', quantity: '
+                . ($shopItem['Qty'] ?? 0)
+                . ' } ,';
+
+            /*
+             * -------------------------------------------------
+             * Vendor flags
+             * -------------------------------------------------
+             */
+            $vendorFlags = [
+                'IsCosmo',
+                'IsNandansons',
+                'IsPerfumePW',
+                'IsPCA',
+                'IsND',
+            ];
+
+            foreach (
+                $vendorFlags as $vendorFlag
+            ) {
+                if (
+                    isset(
+                        $shopItem[$vendorFlag]
+                    )
+                    &&
+                    $shopItem[$vendorFlag] === 'Yes'
+                    &&
+                    isset(
+                        $shopItem['VendorSKU']
+                    )
+                    &&
+                    $shopItem['VendorSKU'] !== ''
+                ) {
+                    $isVenderItem = 'Yes';
+                    break;
+                }
+            }
+
+            /*
+             * Individual vendor flags.
+             */
+            if (
+                $this->isVendorItem(
+                    $shopItem,
+                    'IsCosmo'
+                )
+            ) {
+                $isCosmo = 'Yes';
+            }
+
+            if (
+                $this->isVendorItem(
+                    $shopItem,
+                    'IsNandansons'
+                )
+            ) {
+                $isNandansons = 'Yes';
+            }
+
+            if (
+                $this->isVendorItem(
+                    $shopItem,
+                    'IsPerfumePW'
+                )
+            ) {
+                $isPerfumePW = 'Yes';
+            }
+
+            if (
+                $this->isVendorItem(
+                    $shopItem,
+                    'IsPCA'
+                )
+            ) {
+                $isPCA = 'Yes';
+            }
+
+            if (
+                $this->isVendorItem(
+                    $shopItem,
+                    'IsND'
+                )
+            ) {
+                $isND = 'Yes';
+            }
+
+            /*
+             * -------------------------------------------------
+             * Maxaroma Two Delivery
+             * -------------------------------------------------
+             *
+             * IMPORTANT:
+             *
+             * This follows the OLD ShippingMethods /
+             * SetCartAttributes behavior.
+             *
+             * Old logic uses the cart item's
+             * IsMaxaromaTwoDelivery value.
+             *
+             * Eligible item:
+             *   IsMaxaromaTwoDelivery = Yes
+             *   ISMaxTwoItem = Yes
+             *
+             * Non-eligible item:
+             *   ISMax2day = No
+             *
+             * IMPORTANT:
+             *
+             * Do NOT set ISMax2day = Yes for an eligible item.
+             *
+             * This is required for mixed carts such as:
+             *
+             *   $248  -> non Max2Day
+             *   $985  -> Max2Day
+             *
+             * In the OLD checkout:
+             *
+             *   IsMaxaromaTwoDelivery = Yes
+             *   ISMaxTwoItem = Yes
+             *   ISMax2dayVal = No
+             *
+             * which triggers the existing Max2Day upgrade logic.
+             */
+            if (
+                isset(
+                    $shopItem[
+                        'IsMaxaromaTwoDelivery'
+                    ]
+                )
+                &&
+                $shopItem[
+                    'IsMaxaromaTwoDelivery'
+                ] === 'Yes'
+                &&
+                $shopItem[
+                    'IsMaxaromaTwoDelivery'
+                ] !== ''
+            ) {
+
+                /*
+                 * Exact old behavior.
+                 */
+                $isMaxaromaTwoDelivery =
+                    'Yes';
+
+                $isMaxTwoItem =
+                    'Yes';
+
+                /*
+                 * DO NOT set:
+                 *
+                 * $isMax2day = 'Yes';
+                 *
+                 * Old checkout does not do that here.
+                 */
+            }
+            else {
+
+                /*
+                 * Exact old behavior for a
+                 * non-Max2Day item.
+                 */
+                $isMax2day =
+                    'No';
+            }
+
+            /*
+             * -------------------------------------------------
+             * Deal product
+             * -------------------------------------------------
+             *
+             * Old behavior:
+             *
+             * Deal product cannot qualify for
+             * Max2Day delivery.
+             */
+            if (
+                isset(
+                    $shopItem['IsDealProducts']
+                )
+                &&
+                $shopItem[
+                    'IsDealProducts'
+                ] === 'Yes'
+            ) {
+                $isMaxaromaTwoDelivery =
+                    'No';
+            }
+
+            $tempCart[] =
+                $shopItem;
         }
 
         /*
-         * ---------------------------------------------------------
-         * Return cart attributes
-         * ---------------------------------------------------------
+         * Existing behavior:
+         * Updated cart is saved back to session.
          */
-        $attrs['IsVenderItem'] =
-            $isVenderItem;
+        Session::put(
+            'ShoppingCart.Cart',
+            $tempCart
+        );
 
-        $attrs['IsCosmo'] =
-            $isCosmo;
-
-        $attrs['IsNandansons'] =
-            $isNandansons;
-
-        $attrs['IsPerfumePW'] =
-            $isPerfumePW;
-
-        $attrs['IsPCA'] =
-            $isPCA;
-
-        $attrs['IsND'] =
-            $isND;
-
-        $attrs['IsMaxaromaTwoDelivery'] =
-            $isMaxaromaTwoDelivery;
-
-        $attrs['ISMaxTwoItem'] =
-            $isMaxTwoItem;
-
-        $attrs['onlyGCPurchased'] =
-            $onlyGCPurchased;
-
-        $attrs['CheckGCPurchasedVal'] =
-            $checkGCPurchasedVal;
-
-        $attrs['ISMax2dayVal'] =
-            $isMax2day;
-
-        $attrs['critieostr'] =
-            $critieostr !== ''
-                ? substr(
-                    $critieostr,
-                    0,
-                    -1
-                )
-                : '';
-
-        return $attrs;
+        Session::put(
+            'ShoppingCart.RewardPointItemWiseTotal',
+            ceil(
+                $rewardPointItemWiseTotal
+            )
+        );
     }
 
-    /**
+    /*
+     * ---------------------------------------------------------
+     * Return cart attributes
+     * ---------------------------------------------------------
+     */
+    $attrs['IsVenderItem'] =
+        $isVenderItem;
+
+    $attrs['IsCosmo'] =
+        $isCosmo;
+
+    $attrs['IsNandansons'] =
+        $isNandansons;
+
+    $attrs['IsPerfumePW'] =
+        $isPerfumePW;
+
+    $attrs['IsPCA'] =
+        $isPCA;
+
+    $attrs['IsND'] =
+        $isND;
+
+    $attrs['IsMaxaromaTwoDelivery'] =
+        $isMaxaromaTwoDelivery;
+
+    $attrs['ISMaxTwoItem'] =
+        $isMaxTwoItem;
+
+    $attrs['onlyGCPurchased'] =
+        $onlyGCPurchased;
+
+    $attrs['CheckGCPurchasedVal'] =
+        $checkGCPurchasedVal;
+
+    $attrs['ISMax2dayVal'] =
+        $isMax2day;
+
+    $attrs['critieostr'] =
+        $critieostr !== ''
+            ? substr(
+                $critieostr,
+                0,
+                -1
+            )
+            : '';
+
+    return $attrs;
+}
+   /**
      * Check whether the cart item is a vendor item.
      */
     protected function isVendorItem(

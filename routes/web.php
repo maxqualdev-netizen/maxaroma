@@ -27,12 +27,12 @@ use App\Http\Controllers\TestController;
 use App\Http\Controllers\BlogController;
 use App\Http\Controllers\PhoneOrderController;
 use App\Http\Controllers\TempUserController;
+//POS Start
 use App\Http\Controllers\POSController;
 use App\Http\Middleware\POSMaintainMode;
 use App\Http\Controllers\POSAdmController;
 use App\Http\Controllers\StripeTerminalController;
 use App\Http\Controllers\POSConnecterController;
-
 
 use App\Http\Controllers\Checkout\CheckoutController;
 use App\Http\Controllers\Checkout\CheckoutCartController;
@@ -40,6 +40,12 @@ use App\Http\Controllers\Checkout\CheckoutAddressController;
 use App\Http\Controllers\Checkout\CheckoutShippingController;
 use App\Http\Controllers\Checkout\CheckoutDiscountController;
 use App\Http\Controllers\Checkout\CheckoutTotalsController;
+use App\Http\Controllers\Checkout\CheckoutAfterpayController;
+use App\Http\Controllers\Checkout\CheckoutStripeController;
+use App\Http\Controllers\Checkout\CheckoutAmazonpayController;
+
+use App\Http\Controllers\CustomProductSearchController;
+use App\Http\Controllers\SearchSettingController;
 
 //POS End
 /*
@@ -71,18 +77,36 @@ Route::prefix('checkoutnew')->group(function () {
     | Checkout
     |--------------------------------------------------------------------------
     */
-
+	Route::post(
+    '/free-sample/popup',
+    [CheckoutCartController::class, 'freeSamplePopup']
+);
+Route::post(
+    '/free-sample/add',
+    [CheckoutCartController::class, 'freeSampleAdd']
+);
+    Route::post(
+    '/free-gift/check',
+    [
+        CheckoutCartController::class,
+        'resolveFreeGiftAfterCartChange'
+    ]
+)->name('checkoutnew.free-gift.check');
     Route::get('/', [
         CheckoutController::class,
         'index'
     ])->name('checkoutnew.index');
-
 
     /*
     |--------------------------------------------------------------------------
     | Cart
     |--------------------------------------------------------------------------
     */
+
+	Route::post('/free-gift/resolve', [
+    CheckoutCartController::class,
+    'resolveFreeGiftAfterCartChange'
+])->name('checkoutnew.free-gift.resolve');
 
     Route::prefix('cart')->group(function () {
 
@@ -112,7 +136,6 @@ Route::prefix('checkoutnew')->group(function () {
         ])->name('checkoutnew.cart.summary');
     });
 
-
     /*
     |--------------------------------------------------------------------------
     | Totals
@@ -124,7 +147,6 @@ Route::prefix('checkoutnew')->group(function () {
         'calculate'
     ])->name('checkoutnew.totals');
 
-
     /*
     |--------------------------------------------------------------------------
     | Address
@@ -135,7 +157,6 @@ Route::prefix('checkoutnew')->group(function () {
         CheckoutAddressController::class,
         'update'
     ])->name('checkoutnew.address.update');
-
 
     /*
     |--------------------------------------------------------------------------
@@ -173,7 +194,6 @@ Route::prefix('checkoutnew')->group(function () {
         'setGiftWrapping'
     ])->name('checkoutnew.gift-wrapping');
 
-
     /*
     |--------------------------------------------------------------------------
     | Discount
@@ -195,7 +215,6 @@ Route::prefix('checkoutnew')->group(function () {
         'removeYotpoReward'
     ])->name('checkoutnew.discount.remove-yotpo-reward');
 
-
     /*
     |--------------------------------------------------------------------------
     | Payment
@@ -208,6 +227,7 @@ Route::prefix('checkoutnew')->group(function () {
     ])->name('checkoutnew.payment.availability');
 
 });;
+
 Route::get('/clear-cache', function() {
    $exitCode = Artisan::call('cache:clear');
 });
@@ -218,6 +238,7 @@ Route::get('/clear-view', function() {
 
 /** Homepage Module Start **/
 Route::get('/', [HomeController::class,'index'])->name('home');
+Route::get('/newhome', [HomeController::class,'Home26'])->name('home26');
 Route::get('/homepagebanners', [HomeController::class,'HomePageBanners']);
 /** Homepage Module End **/
 
@@ -524,7 +545,17 @@ Route::get('/{category_name}/tpid/{category_id}', [CategoryController::class,'Ca
 
 /** Product Controller Start **/
 
-Route::get('/p4u/key-{keyword}/view', [ProductController::class,'ProductList'])->name('product-list5');
+// Search results page: ?is_custom=1 → Meili custom search; else SearchSpring (live default).
+// Do NOT use $request at route-file top level — routes boot once; check per request here.
+Route::get('/p4u/key-{keyword}/view', function (\Illuminate\Http\Request $request, $keyword) {
+	if (useCustomProductSearch($request)) {
+		return app(CustomProductSearchController::class)->search($request);
+	}
+	return app(ProductController::class)->ProductList($request);
+})
+	->middleware(\App\Http\Middleware\SearchRedirectRules::class)
+	->name('product-list5');
+/** Product Controller End **/
 
 Route::get('/p4u/mid-/view', function () {
 return redirect('/brand-name-perfumes.html', 301);
@@ -560,12 +591,19 @@ return redirect('/p4u/key-Roja/view', 301);
 
 Route::get('/usr', [TempUserController::class, 'index']);
 
+Route::get('/product-list-new', [ProductController::class,'ProductList26'])->where('filters', '(.*)')->name('product-list26');
+
 Route::get('/{category_name}/{category_name1}/p4u/cid-{category_id}/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)')->name('product-list1');
 Route::get('/{category_name}/p4u/cid-{category_id}/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)')->name('product-list2');
 Route::get('/{category_name}/p4u/cid-{category_id}/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)')->name('product-list3');
 Route::get('/p4u/cid-{category_id}/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)')->name('product-list4');
 
-Route::post('/get_products', [ProductController::class,'ProductListPage']);
+Route::post('/get_products', function (\Illuminate\Http\Request $request) {
+	if (useCustomProductSearch($request)) {
+		return app(CustomProductSearchController::class)->productListPage($request);
+	}
+	return app(ProductController::class)->ProductListPage($request);
+});
 //Route::get('/{brand_name}/p4u/mid-{mid}/{filters?}', [ProductController::class,'BrandProductList'])->where('filters', '(.*)');
 Route::get('/{brand_name}/p4u/mid-{mid}/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)');
 Route::get('/{category_name}/p4u/{filters?}', [ProductController::class,'ProductList'])->where('filters', '(.*)');
@@ -581,7 +619,13 @@ Route::post('/getdealofweek', [ProductController::class,'GetDealOfWeek']);
 Route::get('/maxtwoday.html/{filters?}', [ProductController::class,'Maxtwoday'])->where('filters', '(.*)');
 Route::post('/getmaxtwoday', [ProductController::class,'GetMaxtwoday']);
 
-Route::post('/searchspring_autocomplete',[ProductController::class, 'SearchSpringAutocomplete']);
+// Autocomplete: same is_custom toggle (default SearchSpring).
+Route::post('/searchspring_autocomplete', function (\Illuminate\Http\Request $request) {
+	if (useCustomProductSearch($request)) {
+		return app(CustomProductSearchController::class)->autocomplete($request);
+	}
+	return app(ProductController::class)->SearchSpringAutocomplete($request);
+});
 Route::get('/p4u/{filters?}/view', [ProductController::class,'ProductList'])->where('filters', '(.*)')->name('product-note');
 // Catch URLs with 'pp-all' and redirect
 Route::get('/p4u/key-{keyword}/pp-all/view', function ($keyword) {
@@ -643,8 +687,6 @@ Route::post('/checkcoupontoredeem',[ShoppingcartController::class,'CheckCouponTo
 
 /** One Page Checkout - Shipping **/
 
-
-
 Route::post('/checkout/{method?}',[ShoppingcartController::class,'CheckoutPage'])->name('billing');
 Route::get('/checkout/{method?}',[ShoppingcartController::class,'CheckoutPage'])->name('billing');
 Route::match(['get', 'post'],'/shipping',[ShoppingcartController::class,'ShippingMethods'])->name('billing-shipping');
@@ -671,7 +713,6 @@ Route::get('/secure-checkout',[ShoppingcartController::class,'CheckoutPageNew'])
 Route::post('/secure-checkout1/{method?}', [CheckoutController::class, 'index'])->name('checkout-new');
 Route::get('/secure-checkout1/{method?}', [CheckoutController::class, 'index'])->name('checkout-new');
 
-
 Route::post(
     '/checkoutnew/shipping-insurance',
     [CheckoutShippingController::class, 'setShippingInsurance']
@@ -681,8 +722,6 @@ Route::post(
     '/checkoutnew/shipping-signature',
     [CheckoutShippingController::class, 'setShippingSignature']
 )->name('checkoutnew.shipping.signature');
-
-
 
 Route::post(
     '/checkoutnew/shipping-methods',
@@ -706,6 +745,8 @@ Route::get('/gift-guide-preview', [LandingpageController::class,'GiftGuidePrevie
 Route::post('/getgiftproductspreview', [LandingpageController::class,'GetGiftGuideProductsPreview']);
 
 Route::get('/fragrance', [LandingpageController::class,'FragranceLandingPage']);
+
+Route::get('/page/{pageslug}', [LandingpageController::class,'AdvancedLandingPage'])->name('Advanced Landing Page');
 
 /** Newsletter Starts **/
 Route::post('/newsletter-subscribe', [NewsletterController::class,'NewsletterSubscribe']);
@@ -750,6 +791,11 @@ Route::post('/applepaylogupdate',[ShoppingcartController::class,'updateApplePayL
 Route::post('/paypalordercollect',[ShoppingcartController::class,'PaypalOrderCollect']);
 Route::post('/dopaymentpaypalpdp',[PaypalController::class,'DoPaymentPaypalPDP']);
 Route::post('/dopaymentpaypal',[PaypalController::class,'DoPaymentPaypal']);
+
+/* New Paypal Routes */
+Route::post('/prepare-paypal-cart',[CheckoutController::class,'PreparePaypalCart']);
+Route::post('/paypal-update',[CheckoutController::class,'CheckoutPaypalUpdate']);
+/* New Paypal Routes */
 
 Route::post('/stripe/placeorder',[StripeController::class,'SetStripe']);
 //Route::get('/stripe/placeorder',[StripeController::class,'SetStripe']);
@@ -821,6 +867,7 @@ Route::post('amazon-phoneorder-process',[AmazonpayController::class, 'AmazonPhon
 
 /** Cache Clear Start **/
 Route::post('/clearfrontcache',[FrontCacheController::class,'ClearFrontCache']);
+Route::post('/clearfrontcachenew',[FrontCacheController::class,'ClearFrontCacheNew']);
 /** Cache Clear End **/
 Route::post('/createfrontcache',[FrontCacheController::class,'CreateFrontCache']);
 
@@ -1027,8 +1074,6 @@ Route::get('/luxury-edit', [LandingpageController::class,'LuxuryEdit']);
 
 /* New Checkout */
 
-
-
 Route::post(
     '/checkout/gift-certificate',
     [CheckoutShippingController::class, 'setGiftCertificate']
@@ -1057,4 +1102,41 @@ Route::post(
 )->name('checkout.discount.remove-yotpo-reward');
 /** One Page Checkout - Discount End **/
 
+//New Stripe Integration
+Route::post('/create-stripe-payment-intent',[CheckoutStripeController::class,'CreatePaymentIntent'])->name('create-stripe-intent');
 
+Route::get('/checkout/payment/stripe/config',[CheckoutController::class,'stripeConfig'])->name('checkout.payment.stripe.config');
+Route::post('/checkout/payment/stripe/pay',[CheckoutController::class,'stripePay'])->name('checkout.payment.stripe.pay');
+Route::post('/checkout/payment/stripe/verify',[CheckoutController::class,'stripeVerify'])->name('checkout.payment.stripe.verify');
+Route::get('/checkout/payment/stripe/return',[CheckoutController::class,'stripeReturn'])->name('checkout.payment.stripe.return');
+
+Route::post('/get-stipe-cart',[CheckoutStripeController::class,'GetCartForStripe'])->name('checkout.stipe-cart');
+Route::post('/get-shipping-methods',[CheckoutStripeController::class,'StripeShippingMethods'])->name('checkout.stipe-shipping-methods');
+Route::post('/set-shipping-method',[CheckoutStripeController::class,'SetStripeShippingMethod'])->name('checkout.set-shipping-method');
+Route::post('/get-client-secret',[CheckoutStripeController::class,'GetStripeClientSecret'])->name('checkout.get-client-secret');
+
+Route::post('/checkout/order/create',[CheckoutController::class,'MaxOrder'])->name('checkout.order.create');
+Route::post('/checkout/order/update',[CheckoutController::class,'UpdateOrder'])->name('checkout.order.update');
+Route::post('/checkout/order/dropshipper',[CheckoutController::class,'DropshipperDetails'])->name('checkout.order.dropshipper');
+
+Route::post('/checkout/afterpay/placeorder_express',[CheckoutAfterpayController::class,'SetAfterpay_Express']);
+Route::get('/checkout/afterpay/placeorder_express',[CheckoutAfterpayController::class,'SetAfterpay_Express']);
+Route::get('checkout/afterpay-billing-checkout-express/{status}/{orderToken}',[CheckoutAfterpayController::class,'Billing_Checkout_Express']);
+
+Route::get('/setup-amazon/{page_from?}',[CheckoutAmazonpayController::class,'SetupAmazon'])->name('checkout.setup-amazon');
+//New Stripe Integration
+
+// Search Change
+Route::controller(SearchSettingController::class)->group(function () {
+  Route::get('/search-settings', 'index')->name('searchsettings.index')->middleware('searchvars.auth');
+});
+include_once base_path('routes/productsearch.php');
+
+Route::get('/popular_searches', [CustomProductSearchController::class, 'popularSearches']);
+// Same-origin proxy so UAT browsers can ingest without ngrok interstitial / CORS issues.
+Route::post('/max_analytics/search', [CustomProductSearchController::class, 'proxyAnalyticsSearch']);
+Route::post('/max_analytics/click', [CustomProductSearchController::class, 'proxyAnalyticsClick']);
+
+// Always register — gate inside controller (APP_DEBUG or ?token=).
+// Do NOT wrap in if (config('app.debug')): route:cache / config:cache would omit it forever.
+Route::get('/__search/meili-debug', [CustomProductSearchController::class, 'meilisearchDebug']);

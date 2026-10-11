@@ -26,12 +26,10 @@ $(document).ready(function(){
 	$(".amazon-btn").on('click',function(){
 		$(".amazonpay-button-inner-image").trigger('click');
 	});
-	if($("#guest_email").val() !== "" && $("#guest_email").val() === sess_storeuseremail){
-		$("#SkipEmailValidation").prop("checked", true);
-	}
-	if($("#SkipEmailValidation").is(":checked") && $("#firstname").val() == "" && $("#guest_email").val()!="" && isValidEmail($("#guest_email").val())){
-		setAjaxGuestData($("#guest_email").val());
-	}
+	
+	// if (window.storeAuth.check && $("#guest_email").val() == '' && $("#firstname").val() == '' && $("#lastname").val() == '') {		
+	// 	$("#btnguest").attr("style","display:none !important");
+	// }
 
 	// var chkYotpoDrop = setInterval(function() {
 	// 	if ($('#vs1__listbox li').length) {
@@ -74,11 +72,12 @@ $(document).ready(function(){
 	if($("#issStore").length > 0 && $("#issStore").val() === "Y"){
 		customer_auto_complete();
 	}
+
 })
 
 $(document).ready(function () {
-    const nonEnglishMessage = "Please enter the state name using english only.";
-	const nonEnglishMessageCity = "Please enter the city name using english only.";
+    const nonEnglishMessage = "Please enter the state name using English only.";
+	const nonEnglishMessageCity = "Please enter the city name using English only.";
 
     $("#bill_other_state").on("input", function () {
         const enteredValue = $(this).val();
@@ -669,15 +668,87 @@ function AutoLogin()
         success: function (res) {
 
             console.log(res);
-
+			//$("#btnbill_step1").attr("style","display:none !important");				
             if (res.success === '1') {
+				
+                // $.each(res.billing, function(key, value){
+                //     let el = $("#" + key);
+                //     if(el.length){
+                //         el.val(value);
+                //     }
+                // });
 
-                $.each(res.billing, function(key, value){
-                    let el = $("#" + key);
-                    if(el.length){
-                        el.val(value);
-                    }
-                });
+				if(res.billing){
+					if (res && res.billing && res.billing.first_name) {
+						$("#bill_fname").val(res.billing.first_name);
+						$("#bill_fname").parent().addClass('input-fcs');						
+					}
+					if (res && res.billing && res.billing.last_name) {
+						$("#bill_lname").val(res.billing.last_name);
+						$("#bill_lname").parent().addClass('input-fcs');						
+					}
+					if (res && res.billing && res.billing.company) {
+						$("#bill_company").val(res.billing.company);
+						$("#bill_company").parent().addClass('input-fcs');
+					}
+					if (res && res.billing && res.billing.address1) {
+						$("#bill_address1").val(res.billing.address1);
+						$("#bill_address1").parent().addClass('input-fcs');
+					}
+					if (res && res.billing && res.billing.address2) {
+						$("#bill_address2").val(res.billing.address2);
+						$("#bill_address2").parent().addClass('input-fcs');
+					}
+					if (res && res.billing && res.billing.city) {
+						$("#bill_city").val(res.billing.city);
+						$("#bill_city").parent().addClass('input-fcs');
+					}
+					if (res && res.billing && res.billing.country) {
+						$("#bill_country").val(res.billing.country);
+						$("#bill_country").parent().addClass('input-fcs');
+					}
+					if (res && res.billing && res.billing.country && res.billing.country != 'US' && res.billing.state!='') {
+						$("#bill_other_state").val(res.billing.state);
+						$("#bill_other_state").parent().addClass('input-fcs');
+						$("#divotherstate").show();
+					} else {
+						$("#bill_other_state").val('');
+						$("#divotherstate").hide();
+					}
+					if (res && res.billing && res.billing.country && res.billing.country == 'US' && res.billing.state) {
+						$("#bill_state").val(res.billing.state);
+						$("#bill_state").parent().addClass('input-fcs');
+						$("#divstate").show();
+					} else {
+						$("#bill_state").val('');
+						$("#divstate").hide();
+					}
+					if (res && res.billing && res.billing.zip) {
+						$("#bill_zip").val(res.billing.zip);
+						$("#bill_zip").parent().addClass('input-fcs');
+					}
+					if (res && res.billing && res.billing.phone) {
+						$("#bill_phone").val(res.billing.phone);
+						$("#bill_phone").parent().addClass('input-fcs');						
+					}
+					if (res && res.billing && res.billing.email) {
+						$("#bill_email").val(res.billing.email);
+						$("#bill_email").parent().addClass('input-fcs');
+					}
+
+					// if($("#bill_fname").val() != '' && $("#bill_lname").val() != '' && $("#bill_address1").val() != '' && 
+					// 	$("#bill_country").val() != '' && $("#bill_city").val() != '' && ($("#bill_state").val() != '' || $("#bill_other_state").val() != '') && $("#bill_zip").val() != '' && $("#bill_email").val() != ''  && $("#bill_phone").val() != ''){						
+					// 	$("#btnbill_step1").attr("style","display:block !important");
+					// }
+				}
+
+				if($("#guest_email").val() != ''){
+					if(!$('#BillingSkip').is(':checked') && $("#firstname").val() != '' && $("#lastname").val() != '' && isValidEmail($("#guest_email").val())){
+						$("#btnguest").attr("style","display:block !important");
+					} else if($('#BillingSkip').is(':checked') && $("#guest_email").val() != '' && isValidEmail($("#guest_email").val())){
+						$("#btnguest").attr("style","display:block !important");
+					}						
+				}
 
             } else {
 
@@ -786,6 +857,7 @@ $(document).on('change', '#SkipEmailValidation', function () {
 	 $('#phonenumber').val('');
 	 $('#chlabelval').hide();
     if ($(this).is(':checked')) {
+
         //$('#guest_email').val('');
         $('#error_guest_email').html('').hide();
         $('#guest_email').removeClass('error');
@@ -793,10 +865,7 @@ $(document).on('change', '#SkipEmailValidation', function () {
             .val(sess_storeuseremail)
             .closest('.form-group')
             .addClass('input-fcs');
-		if(isValidEmail(sess_storeuseremail)){
-			setAjaxGuestData(sess_storeuseremail);		
-		}
-		
+
 		//$('#guest_email').val(sess_storeuseremail);
 		$('#chlabelval').show();
 		$('#chlabelval').html('This order will be linked to the store email address.');
@@ -1779,9 +1848,8 @@ function customer_auto_complete()
 			$("#firstname").val(ui.item.first_name);
 			$("#lastname").val(ui.item.last_name);
 			$("#phonenumber").val(ui.item.phone);
-			if(isValidEmail(ui.item.email)) {
-				setAjaxGuestData(ui.item.email,ui.item.first_name,ui.item.last_name,ui.item.phone);
-			}	
+			////$("#btnpmnt").attr("style","display:block !important");
+			setAjaxGuestData(ui.item.email,ui.item.first_name,ui.item.last_name,ui.item.phone);
 			/*if($("#chlabelval").length > 0){
 				$("#chlabelval").hide();
 			}*/
@@ -1874,32 +1942,42 @@ $(document).on("click",".clear-input",function(){
 	$("#firstname").val("");
 	$("#lastname").val("");
 	$("#phonenumber").val("");
-	$('#checkoutYotpoWidget').empty().html("");
 
 });
 $("#guest_email").on("input blur", function(){
     if($(this).val().length > 0){
         $(".clear-input").removeClass("d-none").show();
 		$(".dropdown-arrow").removeClass("d-none").show();
+		if($("#guest_email").val() != "" &&	$("#firstname").val() == "" && isValidEmail($("#guest_email").val())){
+			setAjaxGuestData($("#guest_email").val());
+		}
     }else{
         $("#ui-id-1").hide();
         $(".clear-input").addClass("d-none");
         $(".dropdown-arrow").addClass("d-none");
     }
-
-	if(event.type === "blur") {
-		var email = $(this).val().trim();
-        var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if(emailRegex.test(email) && isValidEmail(email))  {		
-            setAjaxGuestData(email,$("#firstname").val(),$("#lastname").val(),$("#phonenumber").val());
-        }
-    }
 });
 
+function isValidEmail(email) {
+    email = $.trim(email);
+    var regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return regex.test(email);
+}
+
+// $("#bill_fname, #bill_lname, #bill_address, #bill_country, #bill_city, #bill_state, #bill_other_state, #bill_zip, #bill_email, #bill_phone").on("blur", function () {
+// 	if (window.storeAuth.check) {
+// 		if($("#bill_fname").val() != '' && $("#bill_lname").val() != '' && $("#bill_address1").val() != '' && $("#bill_country").val() != '' && $("#bill_city").val() != '' && ($("#bill_state").val() != '' || $("#bill_other_state").val() != '') && $("#bill_zip").val() != '' && $("#bill_email").val() != ''  && $("#bill_phone").val() != '')	{						
+// 				$("#btnbill_step1").attr("style","display:block !important");
+// 			}
+// 		}		
+// })
+
 $("#formguest #firstname, #formguest #lastname, #formguest #phonenumber").on("blur", function () {
-	if($("#guest_email").val() != "" && isValidEmail($("#guest_email").val())) {
-    	setAjaxGuestData($("#guest_email").val(), $("#firstname").val(), $("#lastname").val(), $("#phonenumber").val());
-	}	
+	if($("#guest_email").val() != "" && $("#firstname").val() != "" && isValidEmail($("#guest_email").val())){
+		setAjaxGuestData($("#guest_email").val(), $("#firstname").val(), $("#lastname").val(), $("#phonenumber").val());
+		$("#btnpmnt").attr("style","display:block !important");
+	}
+    
 });
 
 $("#firstname").on("focus", function(){
@@ -1923,15 +2001,10 @@ function fixSuggestions()
 		clearInterval(checkData);
 	}, 1000);
 }
-
-function isValidEmail(email) {
-    email = $.trim(email);
-    var regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return regex.test(email);
-}
-
 let guestTypingTimer = null;
-function setAjaxGuestData(email,first_name = "",last_name = "",phone = ""){	
+function setAjaxGuestData(email,first_name = "",last_name = "",phone = ""){
+	console.log("setAjaxGuestData called from:");
+	console.trace();
 	clearTimeout(guestTypingTimer);
     guestTypingTimer = setTimeout(function () {
         setAjaxGuestDataSchedule(email, first_name, last_name, phone);
@@ -1940,6 +2013,7 @@ function setAjaxGuestData(email,first_name = "",last_name = "",phone = ""){
 
 function setAjaxGuestDataSchedule(email,first_name = "",last_name = "",phone = "")
 {
+	
 	$.ajax({
 		type:'POST',
 		url:site_url+'setguestcustomerautocomplete',
@@ -1951,8 +2025,7 @@ function setAjaxGuestDataSchedule(email,first_name = "",last_name = "",phone = "
 			guest_email : email,
 			firstname : first_name,
 			lastname : last_name,
-			phonenumber : phone,
-			SkipEmailValidation : $("#SkipEmailValidation").is(":checked") ? 'Yes' : 'No'
+			phonenumber : phone
 		},
 		success:function(data) {
 			$("#bill_fname").val("");
@@ -1961,12 +2034,11 @@ function setAjaxGuestDataSchedule(email,first_name = "",last_name = "",phone = "
 			$("#bill_address1").val("");
 			$("#bill_address2").val("");
 			$("#bill_city").val("");
-			//$("#bill_country").val("");
-			//$("#bill_state").val("");
+			$("#bill_country").val("");
+			$("#bill_state").val("");
 			$("#bill_zip").val("");
 			$("#bill_phone").val("");
 			$("#bill_email").val("");
-
 			var addInName = "N";
 			if(first_name == "" && last_name == "" && phone == ""){
 				addInName = "Y";
@@ -2015,15 +2087,14 @@ function setAjaxGuestDataSchedule(email,first_name = "",last_name = "",phone = "
 			} else {
 				$("#bill_other_state").val('');
 				$("#divotherstate").hide();
-				$("#divstate").show();
 			}
-			if (data && data.Billing && data.Billing.country && data.Billing.country == 'US') {
+			if (data && data.Billing && data.Billing.country && data.Billing.country == 'US' && data.Billing.state) {
 				$("#bill_state").val(data.Billing.state);
 				$("#bill_state").parent().addClass('input-fcs');
 				$("#divstate").show();
 			} else {
-				//$("#bill_state").val('');
-				//$("#divstate").hide();
+				$("#bill_state").val('');
+				$("#divstate").hide();
 			}
 			if (data && data.Billing && data.Billing.zip) {
 				$("#bill_zip").val(data.Billing.zip);
@@ -2032,7 +2103,8 @@ function setAjaxGuestDataSchedule(email,first_name = "",last_name = "",phone = "
 			if (data && data.Billing && data.Billing.phone) {
 				$("#bill_phone").val(data.Billing.phone);
 				$("#bill_phone").parent().addClass('input-fcs');
-				if(addInName == "Y"){										
+				if(addInName == "Y"){					
+					//$("#phonenumber").val(data.Billing.phone);
 					$("#phonenumber").val((data.Billing.phone || '').replace(/\D/g, ''));
 					$("#phonenumber").parent().addClass('input-fcs');
 				}
@@ -2043,87 +2115,16 @@ function setAjaxGuestDataSchedule(email,first_name = "",last_name = "",phone = "
 				$("#bill_email").parent().addClass('input-fcs');
 			}
 
-			if(data && data.yotpo_widget && data.yotpo_widget.length > 0 && $("#checkoutYotpoWidget").length > 0){
-				 $('#checkoutYotpoWidget').empty().html(data.yotpo_widget);
-				 initYotpoWidget();
+			if($("#guest_email").val() != ''){
+				if($('#BillingSkip').is(':checked') && $("#firstname").val() != '' && $("#lastname").val() != '' && isValidEmail($("#guest_email").val())){
+					$("#btnguest").attr("style","display:block !important");
+				} else if(!$('#BillingSkip').is(':checked') && $("#guest_email").val() != '' && isValidEmail($("#guest_email").val())){
+					$("#btnguest").attr("style","display:block !important");
+				}						
 			}
-
-			//initiateYotpoWidgets(data.newcustid, data.Billing.email,data.Billing.first_name,data.Billing.last_name);
-			// setTimeout(function () {
-			// 	if (typeof yotpoWidgetsContainer !== 'undefined') {
-			// 		console.log('one');
-			// 		yotpoWidgetsContainer.initWidgets();
-			// 	} else if (typeof Yotpo !== 'undefined') {
-			// 		console.log('two');
-			// 		var api = new Yotpo.API();
-			// 		api.refreshWidgets();
-			// 	}
-			// }, 3000);
 
 		}
 	});
-}
-
-function initYotpoWidget() {
-    let tries = 0;
-    const maxTries = 30;
-
-    function waitForYotpo() {
-        tries++;
-
-        if (
-            window.yotpoWidgetsContainer &&
-            document.getElementById('swell-customer-identification') &&
-            document.getElementById('yotpo-loyalty-cart-data') &&
-            document.getElementById('yotpo-loyalty-checkout-data')
-        ) {
-            //console.log('Initializing Yotpo widgets...');
-            window.yotpoWidgetsContainer.initWidgets();
-            return;
-        }
-
-        if (tries < maxTries) {
-            setTimeout(waitForYotpo, 300);
-        } else {
-            console.error('Yotpo failed to initialize');
-        }
-    }
-
-    waitForYotpo();
-}
-
-function initiateYotpoWidgets(customer_id, customer_email, first_name, last_name) {
-
-	window.yotpoConfig = {
-		appKey: "uIl5V6C_LVeCr5BT4bhDLQ",
-		customerEmail: customer_email,
-		customerId: customer_id, //"1",
-		customerName: first_name + " " + last_name,//"Test User"
-	};
-
-    let tries = 0;
-
-    let interval = setInterval(function () {
-        tries++;
-        
-        if (window.yotpoWidgetsContainer && typeof window.yotpoWidgetsContainer.initWidgets === 'function') {
-            window.yotpoWidgetsContainer.initWidgets();
-            clearInterval(interval);
-            console.log('Yotpo WidgetsContainer initialized');			
-        }
-        
-        else if (window.yotpo && typeof window.yotpo.initWidgets === 'function') {
-            window.yotpo.initWidgets();
-            clearInterval(interval);
-            console.log('Yotpo initWidgets fallback');
-        }
-
-        if (tries > 20) {
-            clearInterval(interval);
-            console.log('Yotpo not loaded');
-        }
-
-    }, 500);
 }
 
 $(document).ready(function () {
