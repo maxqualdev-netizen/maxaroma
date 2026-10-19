@@ -1,0 +1,18 @@
+.border {
+  border:1px solid #CCCCCC
+}
+.m10 {
+  margin: 10px;
+}
+.display-none {
+  display: none;
+}
+.cp {
+  cursor: pointer;
+}
+.bg-f2 {
+  background: #f2f2f2;
+}
+.p10 {
+  padding: 10px;
+}

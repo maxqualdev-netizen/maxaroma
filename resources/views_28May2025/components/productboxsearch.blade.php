@@ -1,0 +1,213 @@
+<?php
+
+$prodData->sale_item = '0';
+if(isset($prodData->sale_price) && $prodData->sale_price > 0 && Auth::user() && Auth::user()->eusertype == 'Wholesaler')
+{
+	$prodData->sale_item = '1';
+}
+
+?>
+
+<div class="product {{$sliderClass}}">
+	<a href="{{$prodData->product_url}}" class="p-thumb"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')">
+		<img src="{{$prodData->imageUrl}}" alt="{{$prodData->name}}" title="{{$prodData->name}}" />
+		<span class="cornar">
+		@if(isset($prodData->website_stock) && $prodData->website_stock > 0 && $prodData->max_two_day_delivery == "Yes" && (isset($prodData->is_deal_of_week) && $prodData->is_deal_of_week == "No"))
+			<img src="{{config('global.SITE_IMAGES')}}maxtwoday.png" alt="" width="44" height="20" />
+		@endif
+		@if(isset($prodData->is_deal_of_week) && $prodData->is_deal_of_week == "Yes")
+			<span class="d-block">
+				<svg class="sv sv-topdeal" aria-hidden="true" role="img" width="24" height="24">
+					<use href="#sv-topdeal" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#sv-topdeal"></use>
+				</svg>
+			</span>
+		@endif
+		</span>
+		@if(isset($prodData->sale_item) && $prodData->sale_item == 1)
+			<svg class="sv-sale" aria-hidden="true" role="img" width="100" height="20">
+				<use href="#sv-sale" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#sv-sale"></use>
+			</svg>
+		@endif
+	</a>
+	@if(isset($prodData->inventory_count) && $prodData->inventory_count > 0)
+    <a href="javascript:void(0);" onclick="productquickview('{{$prodData->uid}}')" class=" lable-quickview" data-pid="{{$prodData->uid}}" rel="nofollow"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')">Quick View</a>
+	@endif
+	@if(isset($prodData->inventory_count) && $prodData->inventory_count <= 0)
+    <a href="javascript:void(0);" onclick="DisplayPopupBoxAlertMe('{{$prodData->uid}}','{{$prodData->sku}}');" class="lable-quickview" data-pid="{{$prodData->uid}}" rel="nofollow"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')">Notify Me</a>
+	@endif
+	</span>	
+	<ul class="product_icon">
+		<?php if(isset($prodData->gender)){?>
+		<!--<li>
+			<?php
+				if ($prodData->gender == 'M'){
+					$prodData->gender = "sv-men";
+					$prodData->gendernames = "Men";
+					$for_gender = ' for Men';
+				} elseif ($prodData->gender == 'W'){
+					$prodData->gender = "sv-women";
+					$prodData->gendernames = "Women";
+					$for_gender = ' for Women';
+				} elseif ($prodData->gender == 'K'){
+					$prodData->gender = "sv-kids";
+					$prodData->gendernames = "Kids";
+					$for_gender = ' for Kids';
+				} elseif ($prodData->gender == 'U'){
+					$prodData->gender = "sv-unisex";
+					$prodData->gendernames = "Unisex";
+					$for_gender = ' Unisex';
+				} else{
+					$prodData->gender = "";
+					$prodData->gendernames = "";
+					$for_gender = '';
+				}
+			?>
+			<a href="javascript:void(0);" title="{{$prodData->gendernames}} Item">
+				<svg class="{{$prodData->gender}} sv-bor" aria-hidden="true" role="img" width="15" height="15">
+					<use href="#{{$prodData->gender}}" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#{{$prodData->gender}}"></use>
+				</svg>
+			</a>
+		</li>-->
+		<?php }?>
+		<li>
+			<a href="javascript:void(0);" class="svg-h" title="Add to wishlist" onclick="DisplayPopupBoxWishlist('{{$prodData->uid}}','yes');"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')">
+				<svg class="sv-heart sv-bor" aria-hidden="true" role="img" width="14" height="14">
+					<use href="#sv-heart" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#sv-heart"></use>
+				</svg>
+				<svg class="sv-heart-fill sv-fill" aria-hidden="true" role="img" width="14" height="14">
+					<use href="#sv-heart-fill" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#sv-heart-fill"></use>
+				</svg>
+			</a>
+		</li>
+		@if(isset($prodData->inventory_count) && $prodData->inventory_count <= 0)
+		<li>
+			<a class="label-cart-outstock" title="Out of stock" href="javascript:void(0);" rel="nofollow" onclick="DisplayPopupBoxAlertMe('{{$prodData->uid}}','{{$prodData->sku}}');"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')">
+    				<svg class="sv-cart-outstock" aria-hidden="true" role="img" width="14" height="13">
+						<use href="#sv-cart-outstock" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#sv-cart-outstock"></use>
+					</svg>
+			</a>
+		</li>
+		@elseif(Auth::user() && Auth::user()->eusertype == 'Wholesaler' && isset($prodData->product_type) && $prodData->product_type == 'retailer')
+		@else 	
+		<li>	
+			<a href="javascript:void(0);" title="Add to cart" class="prodaddcart" data-product="{{$prodData->uid}}"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')">
+				<svg class="sv-cartnw vam" aria-hidden="true" role="img" width="15" height="15">
+					<use href="#sv-cartnw" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#sv-cartnw"></use>
+				</svg>
+			</a>	
+		</li>
+		@endif
+	</ul>
+	<div class="product-name">
+		<a href="{{$prodData->product_url}}"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')"><strong><u> {!! stripslashes($prodData->name) !!}</u></strong></a>
+	</div>
+	
+	<?php
+	$prodData->yousave = $prodData->msrp - $prodData->price;
+	if($prodData->yousave > 0)
+	{
+		$prodData->yousave = ($prodData->yousave / $prodData->msrp) * 100;
+		$prodData->yousave = (int)$prodData->yousave;
+	}
+	if(isset($prodData->rating) && $prodData->rating > 0){
+		$setRatingAvg = (int)$prodData->rating_avg + 1;
+	}
+	?>
+	
+	@if(isset($prodData->same_variation_min_price) && isset($prodData->same_variation_max_price) && $prodData->same_variation_min_price != $prodData->same_variation_max_price)
+		<div class="minheightprodbox">
+		<div class="product-price">
+			<div class="price pb-1 opstion-avl">
+				@if($prodData->same_variation_product_count < 1 || $prodData->same_variation_product_count == 1)
+					@if($prodData->same_variation_min_price == $prodData->same_variation_max_price)
+						{{Price($prodData->same_variation_min_price)}}
+					@else
+						{{Price($prodData->same_variation_min_price).' - '.Price($prodData->same_variation_max_price)}}
+					@endif
+				@endif
+				@if($prodData->category_id == 2 && $prodData->same_variation_product_count <= 1)
+				<a href="javascript:void(0);" onclick="NicheFragrances()" tabindex="0"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')"> <span class="avl-round" ></span></a>
+				@endif
+			</div>
+		</div>
+		@if($prodData->inventory_count > 0)
+		<div class="pb-2 product-price">
+			<div class="price">
+				@if($prodData->same_variation_product_count > 1)
+						@if($prodData->same_variation_min_price != $prodData->same_variation_max_price)
+							{{Price($prodData->same_variation_min_price).' - '.Price($prodData->same_variation_max_price)}}
+						@endif
+				@endif
+			</div>
+		</div>
+		@endif
+		@if($prodData->category_id == 2)
+			<div class="opstion-avl">
+				@if($prodData->same_variation_product_count > 1)
+					{{$prodData->same_variation_product_count}} Options Available  
+					<a href="javascript:void(0);" onclick="NicheFragrances()" tabindex="0"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')"> <span class="avl-round" ></span></a>
+				@endif
+			</div>
+		@else 
+			@if($prodData->same_variation_product_count > 1)
+				<div class="opstion-avl">{{$prodData->same_variation_product_count}} Options Available</div>
+			@endif		
+		@endif
+			
+		@if($prodData->yousave != '' && $prodData->yousave != 0 && $prodData->yousave > 0 && $prodData->inventory_count > 0 && $prodData->same_variation_product_count <= 1)
+			<div class="you-save pb-2 pt-2">
+				You Save: {{$prodData->yousave}}%
+			</div>
+		@endif
+		</div>				
+	@else
+		<div class="minheightprodbox">
+		@if($prodData->inventory_count > 0)
+			<div class="product-price pb-2">
+				<div class="price opstion-avl">
+					@if(isset($prodData->same_variation_product_count) && ($prodData->same_variation_product_count < 1 || $prodData->same_variation_product_count == 1))
+						@if($prodData->same_variation_min_price == $prodData->same_variation_max_price)
+							{{Price($prodData->same_variation_min_price)}}
+						@else
+							{{Price($prodData->same_variation_min_price).' - '.Price($prodData->same_variation_max_price)}}
+						@endif
+					@endif		
+					@if($prodData->category_id == 2 && isset($prodData->same_variation_product_count) && $prodData->same_variation_product_count <= 1)
+						<a href="javascript:void(0);" onclick="NicheFragrances()" tabindex="0"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')"> <span class="avl-round" ></span></a>
+					@endif	
+				</div>	
+			</div>	
+		@endif
+		@if($prodData->inventory_count > 0)	
+		<div class="product-price">
+			<div class="price">
+				@if(isset($prodData->same_variation_product_count) && $prodData->same_variation_product_count > 1)
+						@if($prodData->same_variation_min_price != $prodData->same_variation_max_price)
+							{{Price($prodData->same_variation_min_price).' - '.Price($prodData->same_variation_max_price)}}
+						@endif
+				@endif
+			</div>
+		</div>
+		@endif
+		@if($prodData->category_id == 2)
+			<div class="opstion-avl">
+				@if(isset($prodData->same_variation_product_count) && $prodData->same_variation_product_count > 1)
+					{{$prodData->same_variation_product_count}} Options Available
+					<a href="javascript:void(0);" onclick="NicheFragrances()" tabindex="0"  onmousedown="return intellisuggestTrackClick(this, '{{$prodData->intellisuggestData}}', '{{$prodData->intellisuggestSignature}}')"> <span class="avl-round" ></span></a>
+				@endif
+			</div>
+		@else 
+			@if(isset($prodData->same_variation_product_count) && $prodData->same_variation_product_count > 1)
+				<div class="opstion-avl">{{$prodData->same_variation_product_count}} Options Available </div>
+			@endif		
+		@endif
+		@if($prodData->yousave != 0 && $prodData->yousave > 0 && $prodData->inventory_count > 0)
+			<div class="you-save">
+				You Save: {{$prodData->yousave}}%
+			</div>
+		@endif
+		
+		</div>					
+	@endif
+	
+</div>

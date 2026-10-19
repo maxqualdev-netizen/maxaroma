@@ -1,0 +1,59 @@
+<div class="vertical-alignment-helper" role="dialog" aria-modal="true" aria-labelledby="claim-police-title" aria-describedby="claim-police-desc">
+    <div class="modal-dialog vertical-align-center">
+        <div class="modal-content">
+            <a class="close" type="button" data-dismiss="modal" aria-label="Close dialog">
+                <svg class="sv-close vam" aria-hidden="true" role="img" width="16" height="16">
+                    <use href="#sv-close" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#sv-close"></use>
+                </svg>
+            </a>
+            <div class="modal-body" id="claim-police-desc">
+                <div class="friend-mail-modal">
+                    <div class="modal-hd">
+                        <h1 id="claim-police-title">{{ $pgTitle }}</h1>
+                    </div>
+                    <div class="modal-space">
+                        @if (Session::has('successef'))
+                        <x-message :attr="[
+                            'classname' => 'frmsuccess', 
+                            'message' => Session::get('successef')]" />
+                        @endif
+                        <form method="post" id="frmPoliceReportOrder" name="frmPoliceReportOrder" action="{{ url('claimed_order_police_report') }}" enctype="multipart/form-data" aria-labelledby="claim-police-title" aria-describedby="claim-police-desc">
+                            {{ csrf_field() }}
+                            <input type="hidden" name="isAction" value="{{$is_action}}">
+                            <input type="hidden" name="orders_id" value="{{$orders_id}}">
+                            <input type="hidden" name="check_value" value="1" id="check_value">
+                
+                            <div class="row" role="region" aria-labelledby="claim-police-title">
+                                <div class="pb-md-3 col-12 text-right fw500 requd-feild"><span class="errmsg">*</span>Required Fields</div>
+                                <div class="col-md-12 pt-3">
+                                    <div class="field required">
+                                        <label for="attach_item_file" class="col-form-label" id="label-attach-item-file">{{$lblTitle}} :</label>
+                                        @if($is_police_report == "Y")
+                                        <input type="file" placeholder="Attachment" name="attach_item_file" id="attach_item_file" value="" class="form-control" accept="{{$accept_files}}" {{$is_multiple}} required aria-labelledby="label-attach-item-file" aria-label="Attachment">
+                                        <small class="pt-1 d-block">* Maximum file size upload 2 MB and format should be JPG, PDF</small>
+                                        @else
+                                        <input type="file" placeholder="Attachment" name="attach_item_file[]" id="attach_item_file" value="" class="form-control" accept="{{$accept_files}}" {{$is_multiple}} required aria-labelledby="label-attach-item-file" aria-label="Attachment">
+                                        <ul>
+                                            <li><small class="pt-1 d-block">* You can upload maximum 3 files</small></li>
+                                            <li><small class="pt-1 d-block">* Maximum file size upload 2 MB and format should be JPG, MP4, PDF</small></li>
+                                        </ul>
+                                        @endif
+                                    </div>
+                                </div>
+                                <div class="col-12 pt-3">
+                                    <div class="form-actions clearfix pt-0 pb-0">
+                                        <div class="float-right">
+                                            <a href="javascript:void(0);" id="claimReportclick" class="btn btn-primary return-btn" aria-label="Upload Police Report Attachment">Upload</a>
+                                            <a href="javascript:void(0)" onclick="resetform('frmPoliceReportOrder')" class="btn btn-secondary" aria-label="Reset Form">Reset</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="{{ asset('public/js/core/claimorder.js?ver=6') }}"></script>

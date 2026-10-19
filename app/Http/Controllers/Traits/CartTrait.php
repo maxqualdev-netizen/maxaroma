@@ -35,6 +35,7 @@ use App\Models\RewardRule;
 use App\Models\RewardPoint;
 use App\Models\StoreInventory;
 use App\Models\FreeVialSampleProduct;
+use App\Models\DiscountUsage;
 use App\Http\Services\CacheService;
 use Carbon\Carbon;
 use DB;
@@ -114,8 +115,7 @@ trait CartTrait
 			{
 				for($a=0; $a < count($Cart); $a++)
 				{
-					//if($Cart[$a]['ProductID'] == $products_id && $products_id != 0 && !isset($Cart[$a]['IS_Free_Gift'])){
-					if($Cart[$a]['ProductID'] == $products_id && $products_id != 0 && !isset($Cart[$a]['IS_Free_Gift'])  && !isset($Cart[$a]['Is_Free_Sample']) ){
+					if($Cart[$a]['ProductID'] == $products_id && $products_id != 0 && !isset($Cart[$a]['IS_Free_Gift']) && !isset($Cart[$a]['Is_Free_Sample'])){
 						//if($Cart[$a]['Qty'] > 20){
 						if(($Cart[$a]['Qty'] + $qty) > 20){
 							$CartErrors[] = "The maximum quantity you can add is 20 pieces.";
@@ -174,7 +174,7 @@ trait CartTrait
 
 			$query->join('pu_store_inventory as ps', 'pu_products.products_id', '=', 'ps.products_id')
 				->where('ps.store_id', $store->store_id)
-				->select('pu_products.*', 'ps.current_stock as store_currentStock');
+				->select('pu_products.*', 'ps.current_stock as store_currentStock', 'ps.location_json as store_location');
 		} else {
 			$query->select('pu_products.*');
 		}
@@ -197,6 +197,17 @@ trait CartTrait
 		}
 
 		$ProductRs = $this->SetProduct($ProdInfo[0]);
+
+		//$store_location = json_decode($ProductRs->store_location, true);
+		$locationCodesWithQuantity = [];
+		$storeLocations = [];
+		$remainingQty = max(0, (int) $qty);
+		if ($isStore) {
+			//$ProductRs->store_location = '[{"WarehouseCode":"SOHOSTORE","LocationCode":"1-C-3","Quantity":2,"Reserve":true},{"WarehouseCode":"MAINWAREHOUSE","LocationCode":"05-AF-01","Quantity":46,"Reserve":false}]';
+			//$ProductRs->store_location = '[{"WarehouseCode":"MAINWAREHOUSE","LocationCode":"05-AF-01","Quantity":1,"Reserve":false},{"WarehouseCode":"SOHOSTORE","LocationCode":"1-C-3","Quantity":2,"Reserve":true}]';
+			$storeLocations = json_decode($ProductRs->store_location ?? '[]', true);
+		}
+		$LocationCode = json_encode($storeLocations);
 
 		$CodeVal = "";
 		if($ProductRs->private_code!='' && $ProductRs->is_private == 'Yes' && $ProductRs->status == '2')
@@ -331,14 +342,22 @@ trait CartTrait
 		$fetch_category = CacheService::ProductCategories()->firstWhere('products_id',(int)$ProductRs->products_id);
 
 	   $CategoryID = '0';
-		if($fetch_category && $fetch_category->count() > 0)
+	   	if($fetch_category)
 		{
 			$gcat = stripcslashes($fetch_category->category_name);
 			$CatInfo = config('CATEGORY_INFO');
 			$breadcrumbs = $CatInfo['CatForProd'][$fetch_category->category_id]['subcatbredcrum'];
 			$CategoryID	= $fetch_category->category_id;
 		}
-
+	/*
+	   if($fetch_category && $fetch_category->count() > 0)
+		{
+			$gcat = stripcslashes($fetch_category[0]->category_name);
+			$CatInfo = config('CATEGORY_INFO');
+			$breadcrumbs = $CatInfo['CatForProd'][$fetch_category[0]->category_id]['subcatbredcrum'];
+			$CategoryID	= $fetch_category[0]->category_id;
+		}
+		*/
 		/* = "";
 		if(($CategoryID==68 || $CategoryID==69 || $CategoryID==70 || $CategoryID==71) && $ProductRs->is_atomizer=="Yes")
 		{
@@ -379,7 +398,7 @@ trait CartTrait
 		$temp_ary['CouponDisItemWiseDiscout']	= 0;
 		$temp_ary['RewardItemWiseDiscout']	= 0;
 		$temp_ary['BogoItemWiseDiscout']	= 0;
-
+		$temp_ary['LocationCode'] = $LocationCode;
 		$temp_ary['IsGiftCertificateItem'] = 'No';
 
 		$temp_ary['OrderType'] = $OrderType;
@@ -503,6 +522,11 @@ trait CartTrait
 		if($Cart && count($Cart) > 0)
 			$Cart = array_values($Cart);
 		$Cart[] = $temp_ary;
+
+		// Log::warning('Cart Info', [
+		// 	'CartRs' => json_encode($Cart)
+		// ]);
+
 		Session::put('ShoppingCart.Cart',$Cart);
 		Session::put('ShoppingCart.YotpoFreeGiftCoupon',$YotpoFreeGiftCoupon);
 		if(!Session::has('eusertype') && $temp_ary['Product_Type'] == 'wholesaler' && $OrderType != "Store")
@@ -523,7 +547,7 @@ trait CartTrait
 		$AllDiscounts = $this->GetAllDiscounts();
 		$TotalValue = NumberFormat(Session::get('ShoppingCart.SubTotal')) - $AllDiscounts['TotalDiscount'];
 		/*
-		if(config('Settings.FREEGIFTFLAG')=="Yes" && (!Session::has('eusertype') || (Session::has('eusertype') && strtolower(trim(Session::has('eusertype') ?? '') != 'wholesaler'))) && !Auth::guard('store')->check())
+		if(config('Settings.FREEGIFTFLAG')=="Yes" && (!Session::has('eusertype') || (Session::has('eusertype') && strtolower(trim(Session::has('eusertype') ?? '') != 'wholesaler'))))
 		{
 			if(!Session::has('isPhoneOrder')){
 				$TotalFreeGiftItems = $this->GetTotalItemsOfFreegift();
@@ -1061,6 +1085,8 @@ trait CartTrait
 			if(trim($couponCode) == '' )
 				$CouponDiscount = 0;
 
+			Session::forget('ShoppingCart.CountShipTax');
+			Session::forget('ShoppingCart.CouponPercentage');
 			if($CouponRS && $CouponRS->count() > 0)
 			{
 
@@ -1161,7 +1187,6 @@ trait CartTrait
 				$GrandTotal = $GrandTotal - $gc_certi_total;
 				$GrandTotalSale = $GrandTotalSale - $gc_certi_total;
 			}
-
 			Session::put("count_ship_tax",0);
 			Session::put("coupon_per",0);
 
@@ -1676,6 +1701,7 @@ trait CartTrait
 							{
 								if($CouponRS[0]['type'] == 1 )
 								{
+
 									if(!empty($this->GetAllCharges('TaxValue')))
 										$CouponDiscount  = $CouponDiscount  + $this->GetAllCharges('TaxValue');
 									if($shippingCharge > 0)
@@ -2196,6 +2222,1477 @@ trait CartTrait
 			$Info = ['error' => $error, 'message' => $msg];
 			addLog('ApplyCouponDiscount',$Info);
 			return $Info;
+	}
+
+	public function ApplyCouponDiscount_This($couponCode, $customer_id =
+	NULL,$Flag="No",$OrderType="Website")
+	{
+		/*if(Session::has('ShoppingCart.PromoCoupon'))
+			Session::forget('ShoppingCart.PromoCoupon');
+		if(Session::has('Niche_Fragrances_Membership'))
+			Session::forget('Niche_Fragrances_Membership');
+		*/
+
+		$log['couponCode'] = $couponCode;
+		addLog('ApplyCouponDiscountStart',$log);
+
+		$error = 0;
+		$CouponDiscount  = 0.0 ;
+		$couponCode 	 = trim($couponCode);
+		$customer_id 	 = (int)$customer_id;
+		$FreeShippingFlg = false;
+		$CouponDiscountItemWise = 0;
+		$CartInfo = array();
+		if(Session::get('ShoppingCart.Cart') && is_array(Session::get('ShoppingCart.Cart')))
+		{
+			$CartInfo 		 = Session::get('ShoppingCart.Cart');
+		}
+		$TotalItems 	 = count($CartInfo);
+		$is_loggedin = 0;
+
+		$CouponQry = Coupon::where('coupon_number','=',$couponCode)
+							->where('status','=','1')
+							->where('start_date','<=',DB::raw('curdate()'))
+							->where('end_date','>=',DB::raw('curdate()'));
+		$normaluser = Auth::user();
+		if (Auth::guard('store')->check()) {
+			$normaluser = Auth::guard('web')->user();
+		}
+		//if(Auth::user())
+		if($normaluser)
+		{
+			$is_loggedin = 1;
+			/*if(Auth::user()->eusertype !='')
+				$CouponQry->where('coupon_user_type','=',Auth::user()->eusertype);
+			else
+				$CouponQry->where('coupon_user_type','=','Retailer');*/
+
+			if($normaluser->eusertype !='')
+				$CouponQry->where('coupon_user_type','=',$normaluser->eusertype);
+			else
+				$CouponQry->where('coupon_user_type','=','Retailer');
+		} else {
+			//$CouponQry->where('coupon_user_type','=','Retailer');
+			//added during phoneorder in admin 15022024
+			if(Session::has('isPhoneOrder') && Session::has('eusertype') && Session::get('eusertype')!=''){
+				$eusertype = Session::get('eusertype');
+				$CouponQry->where('coupon_user_type','=',$eusertype);
+			} else {
+				$CouponQry->where('coupon_user_type','=','Retailer');
+			}
+		}
+
+		$CouponRS = $CouponQry->get();
+
+		$log['CouponRS'] = json_encode($couponCode);
+		addLog('ApplyCouponRecordSet',$log);
+
+		//echo "<pre>"; print_r($CouponRS); exit;
+
+		$CouponCode = $this->GetAllCoupons('CouponCode');
+		/*
+        if($CouponRS[0]['source']=="Website" && $CouponCode!='')
+		{
+			$msg = "Coupon Code already applied.";
+			$error = 1;
+			$Info = ['error' => $error, 'message' => $msg];
+            if(Session::has('ShoppingCart.PromoCoupon'))
+                Session::forget('ShoppingCart.PromoCoupon');
+            if(Session::has('Niche_Fragrances_Membership'))
+                Session::forget('Niche_Fragrances_Membership');
+			return $Info;
+		}
+		*/
+
+		$UnsetCart = 0;
+		$shippingChargeItemWise = 0;
+		if($this->GetShippingCharge() > 0 && !Auth::guard('store')->check())
+		{
+			$websiteQty = collect($CartInfo)->sum('Qty');
+
+			$shippingChargeItemWise = ($this->GetShippingCharge()/$websiteQty);
+
+			$shippingChargeItemWise = NumberFormat($shippingChargeItemWise);
+		}
+		if($CouponRS && $CouponRS->count() > 0 )
+		{
+
+			if (Session::has('ShoppingCart.Cart') && count(Session::get('ShoppingCart.Cart')) > 0 && Auth::guard('store')->check() && $this->GetShippingCharge() > 0) {
+			$CartItem = Session::get('ShoppingCart.Cart');
+			$grouped = collect($CartItem)->groupBy('OrderType');
+			$websiteQty = $grouped->get('Website', collect())->sum('Qty');
+				if($websiteQty > 0)
+				{
+					$shippingChargeItemWise = ($this->GetShippingCharge()/$websiteQty);
+					$shippingChargeItemWise = NumberFormat($shippingChargeItemWise);
+				}
+			}
+
+			if($CouponRS[0]["source"]!= "Yotpo")
+			{
+				foreach($CartInfo as $i => $Cart)
+				{
+					if(isset($Cart["FreeGiftCoupon"]) && $Cart["FreeGiftCoupon"]=="Yes")
+					{
+						Session::forget('ShoppingCart.Cart.'.$i);
+						$UnsetCart = 1;
+					}
+
+				}
+			}
+		}
+		if($UnsetCart == 1)
+		{
+			$NewShoppingCart = array_values(Session::get('ShoppingCart.Cart'));
+			Session::put('ShoppingCart.Cart',$NewShoppingCart);
+		}
+
+        $CartInfo 		 = Session::get('ShoppingCart.Cart');
+		$TotalItems 	 = count($CartInfo);
+
+		$IsDeal="Yes";
+		$TotalDealPrice = 0;
+
+        $CartItem = "No";
+		if($CouponRS && $CouponRS->count() > 0 )
+		{
+			//Exclude Pocket Perfume
+			$pocketPerfumeCategory = $this->getPocketPerfumeCategory();
+			//Exclude Pocket Perfume
+
+			for($p = 0; $p < $TotalItems; $p++)
+			{
+				Session::put("ShoppingCart.Cart." . $p . ".CouponDiscountID",0);
+			}
+
+			foreach($CartInfo as $i => $Cart)
+			{
+				$IsGiftCertificateItem = $this->checkGiftCertificateItem('IsGiftCertificateItem',$Cart);
+
+				if($IsGiftCertificateItem == "No")
+				{
+					$CartItem = "Yes";
+				}
+
+				if((isset($Cart["IsDealProducts"]) && $Cart["IsDealProducts"]=="No") || (isset($Cart["IsDealProducts"]) && $Cart["IsDealProducts"]=="Yes" && ($Cart["DealDiscountFlag"]=="Yes" ||  (isset($CouponRS[0]["dealdiscount_flag"]) && $CouponRS[0]["dealdiscount_flag"]=="Yes"))))
+					$IsDeal = "No";
+
+				if((isset($Cart["IsDealProducts"]) && $Cart["IsDealProducts"]=="Yes") && ($Cart["DealDiscountFlag"]=="No" || $Cart["DealDiscountFlag"]=='') && $CouponRS[0]["dealdiscount_flag"]=="No")
+					$TotalDealPrice =  $TotalDealPrice  + $Cart["TotPrice"];
+
+			}
+			if($CartItem=="No")
+			{
+				if(Session::has('ShoppingCart.PromoCoupon'))
+					Session::forget('ShoppingCart.PromoCoupon');
+				if(Session::has('Niche_Fragrances_Membership'))
+					Session::forget('Niche_Fragrances_Membership');
+
+				if(Session::has('ShoppingCart.YotpoRewardCode'))
+					Session::forget('ShoppingCart.YotpoRewardCode');
+
+				if(Session::has('ShoppingCart.YotpoRewardDiscount'))
+					Session::forget('ShoppingCart.YotpoRewardDiscount');
+
+				$CouponDiscount = 0;
+				$couponCode='';
+				$msg = "Coupon code does not apply to the item you have in your bag.";
+				$error = 1;
+				$Info = ['error' => $error, 'message' => $msg];
+				addLog('ApplyCouponDiscount',$Info);
+				return $Info;
+			}
+			if($IsDeal == "Yes")
+			{
+				if(Session::has('ShoppingCart.PromoCoupon'))
+					Session::forget('ShoppingCart.PromoCoupon');
+				if(Session::has('Niche_Fragrances_Membership'))
+					Session::forget('Niche_Fragrances_Membership');
+				$CouponDiscount = 0;
+				$couponCode='';
+				$msg = "Coupon code does not apply to the item you have in your bag.";
+				$error = 1;
+				$Info = ['error' => $error, 'message' => $msg];
+				addLog('ApplyCouponDiscount',$Info);
+				return $Info;
+			}
+			if(trim($couponCode) == '' )
+				$CouponDiscount = 0;
+
+			if($CouponRS && $CouponRS->count() > 0)
+			{
+				if($CouponRS[0]["autodiscount_flag"]=='No')
+				{
+					Session::put('ShoppingCart.AutoDiscount',0.0);
+					Session::put('ShoppingCart.AutoDiscountFlag', '');
+				}
+				if($CouponRS[0]["bogodiscount_flag"]=='No')
+				{
+					Session::put('ShoppingCart.DogoDiscount', 0.0);
+					Session::put('ShoppingCart.BogoDiscountFlag','');
+				}
+				if($CouponRS[0]["quantitydiscount_flag"]=='No')
+				{
+					Session::put('ShoppingCart.QuantityDiscount', 0.0);
+					Session::put('ShoppingCart.QuantityDiscountFlag','');
+				}
+
+				if($CouponRS && $CouponRS->count() <= 0)
+					Session::put('ShoppingCart.PromoCoupon.CouponCode','');
+
+				if(Session::has('ShoppingCart.PromoCoupon.CouponCode') && Session::get('ShoppingCart.PromoCoupon.CouponCode') == '' && $CouponRS[0]["allow_free_gift_product"] == "Yes" && $CouponRS[0]["free_gift_product_value"] != '')
+				{
+					$this->RemoveFreeGiftValueProduct($CouponRS[0]["free_gift_product_value"]);
+					$this->RemoveFreeGiftValueProduct($CouponRS[0]["freegift_product_sku"]);
+				}
+				if($CouponRS[0]['source']=="Yotpo")
+				{
+					$this->getAllDiscountBlank("Reward");
+				}
+				else
+				{
+				    $this->getAllDiscountBlank("Coupon");
+				}
+
+			}
+
+			$TotalExcludePrice = 0;
+			$ExcludeSKUListArr = [];
+			if($TotalItems > 0 && $CouponRS && $CouponRS->count() > 0 && trim($CouponRS[0]["exclude_sku"])!='')
+			{
+				$ExcludeSKUListArr = [];
+				$ExcludeSKUListArr  = explode(",",$CouponRS[0]["exclude_sku"]);
+				$ExcludeSKUListArr 	= array_unique(array_map('trim',$ExcludeSKUListArr));
+				$ExcludeSKUListArr  = array_filter($ExcludeSKUListArr, 'strlen');
+
+				foreach($CartInfo as $i => $Cart)
+				{
+					if(in_array($Cart["SKU"],$ExcludeSKUListArr))
+						$TotalExcludePrice =  $TotalExcludePrice  + $Cart["TotPrice"];
+				}
+			}
+
+			//Exclude Pocket Perfume
+			if($TotalItems > 0 && $CouponRS && $CouponRS->count() > 0 && trim($CouponRS[0]["exclude_pocketperfume"]) =='Yes')
+			{
+				foreach($CartInfo as $i => $Cart)
+				{
+					if(isset($Cart['CategoryID']) && in_array($Cart['CategoryID'], $pocketPerfumeCategory))
+					{
+						$ExcludeSKUListArr[] = $Cart['SKU'];
+						$TotalExcludePrice =  $TotalExcludePrice  + $Cart["TotPrice"];
+						continue;
+					}
+				}
+			}
+			//Exclude Pocket Perfume
+
+			$GiftCertiTotal = 0;
+			if(Session::has('ShoppingCart.GiftCertiTotal'))
+				$GiftCertiTotal = NumberFormat(Session::get('ShoppingCart.GiftCertiTotal'));
+			$SubTotal = Session::get('ShoppingCart.SubTotal');
+			$subTotal = NumberFormat($SubTotal - $GiftCertiTotal - $TotalDealPrice - $TotalExcludePrice);
+			$shippingCharge = $this->GetShippingCharge();
+
+			$gc_certi_total = 0;
+			if($CouponRS && $CouponRS->count() > 0 && $CouponRS[0]['count_gc_purchase'] == '0' && Session::has('ShoppingCart.GiftCertiTotal'))
+				$gc_certi_total = Session::get('ShoppingCart.GiftCertiTotal');
+
+			$SubTotal = Session::get('ShoppingCart.SubTotal');
+			$GrandTotal = $SubTotal - $TotalDealPrice - $TotalExcludePrice;
+			$GrandTotalSale = $SubTotal - $TotalDealPrice - $TotalExcludePrice;
+
+			if($CouponRS && $CouponRS->count() > 0 && $CouponRS[0]['count_ship_tax'] == '1')
+			{
+				Session::put("ShoppingCart.count_ship_tax_include",1);
+				$TaxValue = $this->GetAllCharges('TaxValue');
+
+				$GrandTotal = ($GrandTotal - $gc_certi_total) + $shippingCharge + $TaxValue;
+				$GrandTotalSale = ($GrandTotalSale  - $gc_certi_total) + $shippingCharge + $TaxValue;
+			}else{
+				Session::put("ShoppingCart.count_ship_tax_include",0);
+				$GrandTotal = $GrandTotal - $gc_certi_total;
+				$GrandTotalSale = $GrandTotalSale - $gc_certi_total;
+			}
+
+			Session::put("count_ship_tax",0);
+			Session::put("coupon_per",0);
+
+			if (!empty($CouponRS) && $CouponRS->count() > 0 && in_array($CouponRS[0]['is_once'], ['1', '2']) && !Session::has('sess_useremail'))
+            {
+				$msg = "Please log in to your account to apply this coupon.";
+				$Info = ['error' => 1, 'message' => $msg];
+				addLog('ApplyCouponDiscount',$Info);
+				return $Info;
+			}
+
+			if($CouponRS && $CouponRS->count() > 0 && $CouponRS[0]['is_once'] == '1')
+			{ // only one time use
+				if($CouponRS[0]['source']=="Yotpo")
+				{
+				$sqlorder = Order::where('Second_coupon_id','=',trim($CouponRS[0]['coupon_number']))->where('status','!=','Declined')->where('pay_status','=','Paid')->get();
+				}
+				else
+				{
+				$sqlorder = Order::where('coupon_id','=',(int)$CouponRS[0]['coupon_id'])->where('status','!=','Declined')->where('pay_status','=','Paid')->get();
+				}
+				if($sqlorder && $sqlorder->count() > 0 )
+					$switchCase = '';
+				else
+					$switchCase = $CouponRS[0]['orders'];
+			}else if($CouponRS && $CouponRS->count() > 0 && $CouponRS[0]['is_once'] == '2' &&  Session::get('sess_icustomerid') != 0){
+				// Once per customer
+
+				if($CouponRS[0]['source']=="Yotpo")
+				{
+				$sqlorder = Order::where('customer_id','=',Session::get('sess_icustomerid'))->where('Second_coupon_id','=',trim($CouponRS[0]['coupon_number']))->where('status','!=','Declined')->where('pay_status','=','Paid')->get();
+				}
+				else
+				{
+				$sqlorder = Order::where('customer_id','=',Session::get('sess_icustomerid'))->where('coupon_id','=',(int)$CouponRS[0]['coupon_id'])->where('status','!=','Declined')->where('pay_status','=','Paid')->get();
+				}
+				if($sqlorder && $sqlorder->count() > 0 )
+				{
+
+					$switchCase = '';
+				}else{
+					if(Session::get('etype') == "G" && isset($Billing['email']) && $Billing['email']!='')
+					{
+						$Billing  = Session::get('ShoppingCart.BillingAddress');
+
+						if($CouponRS[0]['source']=="Yotpo")
+						{
+						$sqlorder = Order::select('orders_id')->where('Second_coupon_id','=',trim($CouponRS[0]['coupon_number']))
+									->where('bill_email','=',$Billing['email'])->get();
+						}
+						else
+						{
+
+						$sqlorder = Order::select('orders_id')->where('coupon_id','=',(int)$CouponRS[0]['coupon_id'])
+									->where('bill_email','=',$Billing['email'])->get();
+						}
+
+						if($sqlorder && $sqlorder->count() > 0 )
+							$switchCase = '';
+						else
+							$switchCase = $CouponRS[0]['orders'];
+					}else{
+						$switchCase = $CouponRS[0]['orders'];
+					}
+				}
+			}else{
+				$switchCase = $CouponRS[0]['orders'];
+			}
+			//echo $switchCase; exit;
+			switch ($switchCase)
+			{
+				## On Order Amount
+				case '0' :
+					$tempsubTotal = $GrandTotal;
+					$tempSaleTotal = $GrandTotalSale;
+					$log['tempsubTotal'] = $tempsubTotal;
+					$log['tempSaleTotal'] = $tempSaleTotal;
+					// Added code on 17 July 2012
+					if($CouponRS[0]['count_ship_tax']=='1'){
+						// Added by CK on 7th Feb, 2012 for Sale Item Coupon
+						$tempSaleTotal=$tempSaleTotal;
+						Session::put("count_ship_tax",1);
+					}else{
+						$tempsubTotal = $SubTotal;
+						$tempSaleTotal = Session::get('ShoppingCart.SubTotal') - $gc_certi_total - $TotalDealPrice - $TotalExcludePrice;
+						$tempSaleTotal = $tempSaleTotal;
+					}
+
+					if($CouponRS[0]['discount']<=0 && isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!='')
+					{
+
+						$CouponDiscount = 0;
+					}
+					if($tempSaleTotal >= $CouponRS[0]['order_amount'] && $tempSaleTotal >= $CouponRS[0]["minimum_order_amount"])
+					{
+						if($CouponRS[0]['type'] == 1 )
+							$CouponDiscount = ( $tempSaleTotal * ($CouponRS[0]['discount']/100) );
+						else
+							$CouponDiscount = $CouponRS[0]['discount'];
+					}
+					else
+					{
+
+						$msg = "Coupon code does not apply to the item you have in your bag.";
+						$error = 1;
+						$log['msg'] = $msg;
+					}
+
+					if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='' && $CouponDiscount > 0)
+					{
+						Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+						Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID', explode(",",$CouponRS[0]["free_shipping_value"]));
+						Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+						$FreeShippingFlg = true;
+					}
+
+					if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"] != '' && $error!=1)
+					{
+							$this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+					}
+					$TotalAmount = 0;
+
+					$tempCart  = Session::get('ShoppingCart.Cart');
+
+						for ($a=0; $a<count($tempCart); $a++)
+						{
+							if(($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'],$ExcludeSKUListArr))
+							{
+
+								$TotalAmount =  $TotalAmount + $tempCart[$a]['TotPrice'];
+								if($CouponRS[0]['type'] == 1)
+								{
+									$TotalNewPrice = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty']);
+									//$this->checkItemBaseTaxCalculation($TotalNewPrice,$a);
+									$taxAmt = $this->ItemWiseTax($TotalNewPrice,$a);
+									if($CouponRS[0]['count_ship_tax'] == '1')
+									{
+										if($shippingChargeItemWise > 0)
+										{
+											$TotalNewPrice  = $TotalNewPrice  + $shippingChargeItemWise;
+										}
+										if(isset($taxAmt) && $taxAmt > 0)
+										{
+											//Session::put('ShoppingCart.Cart.'.$a.'.TotalItemTaxAmount',$taxAmt);
+											$TotalNewPrice = $TotalNewPrice + $taxAmt;
+										}
+										//if($tempCart[$a]["TotalItemTaxAmount"] > 0)
+										// if(isset($tempCart[$a]["TotalItemTaxAmount"]) && $tempCart[$a]["TotalItemTaxAmount"] > 0)
+										// {
+										// 	$TotalNewPrice = $TotalNewPrice + $tempCart[$a]["TotalItemTaxAmount"];
+										// }
+									}
+
+									$CouponDiscountItemWise = (($TotalNewPrice)  * ($CouponRS[0]['discount']/100));
+
+									if($CouponRS[0]['source']=="Yotpo")
+									{
+										Session::put('ShoppingCart.Cart.'.$a.'.RewardItemWiseDiscout',$CouponDiscountItemWise);
+									}
+									else
+									{
+										Session::put('ShoppingCart.Cart.'.$a.'.CouponDisItemWiseDiscout',$CouponDiscountItemWise);
+										Session::put("ShoppingCart.Cart." . $a . ".CouponDiscountID",$CouponRS[0]['coupon_id']);
+									}
+								}
+
+							}
+						}
+
+					if($CouponRS[0]['type'] == 0 && $TotalAmount > 0)
+					{
+						$tempCart  = Session::get('ShoppingCart.Cart');
+
+						for ($a=0; $a<count($tempCart); $a++)
+						{
+							if(($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'],$ExcludeSKUListArr))
+							{
+								$CouponDiscountItemWise = (($CouponRS[0]['discount']*100)/$TotalAmount);
+								$CouponDiscountCal = (($tempCart[$a]['TotPrice']  * $CouponDiscountItemWise)/100);
+
+								if($CouponRS[0]['source']=="Yotpo")
+								{
+
+								Session::put('ShoppingCart.Cart.'.$a.'.RewardItemWiseDiscout',$CouponDiscountCal);
+
+								}
+								else
+								{
+								Session::put('ShoppingCart.Cart.'.$a.'.CouponDisItemWiseDiscout',$CouponDiscountCal);
+								Session::put("ShoppingCart.Cart." . $a . ".CouponDiscountID",$CouponRS[0]['coupon_id']);
+								}
+
+							}
+						}
+					}
+					addLog('ApplyCouponOrderAmount',$log);
+					break;
+				## On Product SKU
+				case '1' :
+					$CouponSKU = trim($CouponRS[0]['sku']);
+					########### For Multiple SKU ###############
+					$arr_CouponSKU  = explode(",",$CouponSKU);
+					$arr_CouponSKU 	= array_unique(array_map('trim',$arr_CouponSKU));
+					$arr_CouponSKU  = array_filter($arr_CouponSKU, 'strlen');
+
+					$Matched_Item_Total = 0;
+					$IS_Any_Matched 	= 0;
+					$TotalAmount 		= 0;
+					if(is_array($arr_CouponSKU) and !empty($arr_CouponSKU))
+					{
+						$tempCart  = Session::get('ShoppingCart.Cart');
+						for ($a=0; $a<count($tempCart); $a++)
+						{
+							if(in_array( $tempCart[$a]['SKU'] , $arr_CouponSKU) && ($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'] , $ExcludeSKUListArr))
+							{
+								$IS_Any_Matched = $IS_Any_Matched+1;
+								$TotalAmount = $TotalAmount + $tempCart[$a]['TotPrice'];
+								if($CouponRS[0]['type'] == 1 )
+								{
+
+									$TotalNewPrice = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty']);
+									//$this->checkItemBaseTaxCalculation($TotalNewPrice,$a);
+									$taxAmt = $this->ItemWiseTax($TotalNewPrice,$a);
+									if($CouponRS[0]['count_ship_tax'] == '1')
+									{
+										if($shippingChargeItemWise > 0 && isset($tempCart[$a]["OrderType"]) && $tempCart[$a]["OrderType"] == "Website")
+										{
+											$TotalNewPrice  = $TotalNewPrice  + $shippingChargeItemWise;
+										}
+										if(isset($taxAmt) && $taxAmt > 0)
+										{
+											//Session::put('ShoppingCart.Cart.'.$a.'.TotalItemTaxAmount',$taxAmt);
+											$TotalNewPrice = $TotalNewPrice + $taxAmt;
+										}
+										// if(isset($tempCart[$a]["TotalItemTaxAmount"]) && $tempCart[$a]["TotalItemTaxAmount"] > 0)
+										// {
+										// 	$TotalNewPrice = $TotalNewPrice + $tempCart[$a]["TotalItemTaxAmount"];
+										// }
+									}
+
+									$CouponDiscountItemWise = (($TotalNewPrice)  * ($CouponRS[0]['discount']/100));
+									if($CouponRS[0]['source']=="Yotpo")
+									{
+										Session::put('ShoppingCart.Cart.'.$a.'.RewardItemWiseDiscout',$CouponDiscountItemWise);
+									}
+									else
+									{
+										Session::put('ShoppingCart.Cart.'.$a.'.CouponDisItemWiseDiscout',$CouponDiscountItemWise);
+										Session::put("ShoppingCart.Cart." . $a . ".CouponDiscountID",$CouponRS[0]['coupon_id']);
+									}
+									$Matched_Item_Total = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty'])+ $Matched_Item_Total;
+								}
+							}
+						}
+						if($CouponRS[0]['type'] == 0 && $TotalAmount > 0)
+						{
+							for ($a=0; $a<count($tempCart); $a++)
+							{
+								if(in_array( $tempCart[$a]['SKU'] , $arr_CouponSKU) && ($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'] , $ExcludeSKUListArr))
+								{
+
+										$CouponDiscountItemWise = (($CouponRS[0]['discount']*100)/$TotalAmount);
+										$CouponDiscountCal = (($tempCart[$a]['TotPrice']  * $CouponDiscountItemWise)/100);
+										$Matched_Item_Total = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty'])+ $Matched_Item_Total;//27012026
+										if($CouponRS[0]['source']=="Yotpo")
+										{
+											Session::put('ShoppingCart.Cart.'.$a.'.RewardItemWiseDiscout',$CouponDiscountCal);
+										}
+										else
+										{
+											Session::put('ShoppingCart.Cart.'.$a.'.CouponDisItemWiseDiscout',$CouponDiscountCal);
+											Session::put("ShoppingCart.Cart." . $a . ".CouponDiscountID",$CouponRS[0]['coupon_id']);
+										}
+								}
+							}
+						}
+					}
+					if($IS_Any_Matched >0 )
+					{
+						if($CouponRS[0]["count_ship_tax"]=='1')
+						{
+							//echo $Matched_Item_Total; exit;
+							if($CouponRS[0]['type'] == 1 )
+							{
+								if(Session::has('ShoppingCart.Tax') && Session::get('ShoppingCart.Tax') > 0)
+									$Matched_Item_Total = $Matched_Item_Total + Session::get('ShoppingCart.Tax');
+								if($shippingCharge > 0)
+									$Matched_Item_Total = $Matched_Item_Total + $shippingCharge;
+							}
+						}
+
+						if($CouponRS[0]["count_gc_purchase"]=='1')
+						{
+							$GiftCertiTotal = 0;
+							if(Session::has('ShoppingCart.GiftCertiTotal'))
+								$GiftCertiTotal = NumberFormat(Session::get('ShoppingCart.GiftCertiTotal'));
+							$Matched_Item_Total = $Matched_Item_Total + $GiftCertiTotal;
+						}
+						if($CouponRS[0]['discount']<=0 && isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!='')
+						{
+							$CouponDiscount = 0;
+						}
+						else if($CouponRS[0]['minimum_order_amount']==0.00 || $CouponRS[0]['minimum_order_amount']==0)
+						{
+							if($CouponRS[0]['type'] == 1)
+							{
+
+								$CouponDiscount = ($Matched_Item_Total * ($CouponRS[0]['discount']/100));
+							}
+							else
+							{
+								 $CouponDiscount = ($CouponRS[0]['discount'] * $IS_Any_Matched);
+							}
+						}
+						elseif($Matched_Item_Total >= $CouponRS[0]['minimum_order_amount'])
+						{
+							if($CouponRS[0]['type'] == 1)
+							{
+
+								$CouponDiscount = ($Matched_Item_Total * ($CouponRS[0]['discount']/100));
+							}
+							else
+							{
+								 $CouponDiscount = ($CouponRS[0]['discount'] * $IS_Any_Matched);
+							}
+						}
+						else
+						{
+							$CouponDiscount = 0;
+							$msg = "Coupon code is invalid or does not exists.";
+							$error = 1;
+						}
+					}
+					else
+					{
+						$msg = "Coupon code is invalid or does not exists.";
+						$error = 1;
+					}
+					if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='' && $CouponDiscount > 0)
+					{
+						Session::put('ShoppingCart.PromoCoupon.FreeShipping', 'Yes');
+						Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID', explode(",",$CouponRS[0]["free_shipping_value"]));
+						Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+						$FreeShippingFlg = true;
+					}
+					/*
+					if($CouponRS[0]["allow_free_gift_product"]=="Yes" && $CouponRS[0]["free_gift_product_value"]!='' && $CouponDiscount > 0)
+					{
+
+						$this->FreeGiftInsertProductValue($CouponRS[0]["free_gift_product_value"]);
+					}*/
+					if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!='' && $error!=1 && $TotalAmount >= $CouponRS[0]['minimum_order_amount'])
+					{
+
+						$this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+					}
+					addLog('ApplyCouponProductSKU');
+					####################################################
+					break;
+				case '7' :
+						$CouponSKU = trim($CouponRS[0]['sku']);
+
+						$CouponSKU = unserialize($CouponSKU);
+						$arr_CouponSKU = array();
+						$arr_CouponDiscount = array();
+						for($d=0;$d<count($CouponSKU);$d++)
+						{
+							if($CouponSKU[$d]["sku"]!='')
+							{
+								$arr_CouponSKU[] = $CouponSKU[$d]["sku"];
+								$arr_CouponDiscount[$CouponSKU[$d]["sku"]] = $CouponSKU[$d]["discount"];
+							}
+						}
+						########### For Multiple SKU ###############
+						$arr_CouponSKU 	= array_unique(array_map('trim',$arr_CouponSKU));
+						$arr_CouponSKU  = array_filter($arr_CouponSKU, 'strlen');
+					//	echo "<pre>"; print_r($arr_CouponSKU); exit;
+
+						$Matched_Item_Total = 0;
+						$IS_Any_Matched 	= 0;
+						$CouponDiscountCalculate	= 0;
+						$CouponDiscount = 0;
+						$TotalAmount =0;
+						if(is_array($arr_CouponSKU) and !empty($arr_CouponSKU))
+						{
+							$tempCart  = Session::get('ShoppingCart.Cart');
+							for ($a=0; $a<count($tempCart); $a++)
+							{
+								if(in_array( $tempCart[$a]['SKU'] , $arr_CouponSKU) && ($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'] , $ExcludeSKUListArr))
+								{
+
+									$IS_Any_Matched = $IS_Any_Matched+1;
+									$Current_Item_Total  = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty']);
+									//$this->checkItemBaseTaxCalculation($Current_Item_Total,$a);
+									$taxAmt = $this->ItemWiseTax($TotalNewPrice,$a);
+									if($CouponRS[0]['count_ship_tax'] == '1')
+									{
+										if($shippingChargeItemWise > 0)
+										{
+										$Current_Item_Total  = $Current_Item_Total  +$shippingChargeItemWise;
+										}
+										if(isset($taxAmt) && $taxAmt > 0)
+										{
+											//Session::put('ShoppingCart.Cart.'.$a.'.TotalItemTaxAmount',$taxAmt);
+											$Current_Item_Total = $Current_Item_Total + $taxAmt;
+										}
+										// if(isset($tempCart[$a]["TotalItemTaxAmount"]) && $tempCart[$a]["TotalItemTaxAmount"] > 0)
+										// {
+										// 	$Current_Item_Total  = $Current_Item_Total + $tempCart[$a]["TotalItemTaxAmount"];
+										// }
+									}
+
+									$Matched_Item_Total = $Current_Item_Total + $Matched_Item_Total;
+
+									$CouponDiscountCalculate = ($Current_Item_Total *($arr_CouponDiscount[$tempCart[$a]['SKU']] /100));
+									$CouponDiscountCalculate = NumberFormat($CouponDiscountCalculate);
+									$CouponDiscount = $CouponDiscount + $CouponDiscountCalculate;
+									//item wise discount for cj
+									$tempCart[$a]['ItemWiseCouponDiscount_CJ'] = $CouponDiscountCalculate;
+									$TotalAmount = $TotalAmount + $tempCart[$a]['TotPrice'];
+									//item wise discount for cj
+									if($CouponRS[0]['source']=="Yotpo")
+									{
+										$tempCart[$a]['RewardItemWiseDiscout']  = $CouponDiscountCalculate;
+									}
+									else
+									{
+										$tempCart[$a]['CouponDisItemWiseDiscout']  = $CouponDiscountCalculate;
+										$tempCart[$a]['CouponDiscountID'] = $CouponRS[0]['coupon_id'];
+									}
+								}
+							}
+							Session::put('ShoppingCart.Cart',$tempCart);
+						}
+
+						if($IS_Any_Matched >0 )
+						{
+							if($CouponRS[0]['minimum_order_amount']==0.00 || $CouponRS[0]['minimum_order_amount']==0)
+							{
+								$CouponDiscount = $CouponDiscount;
+							}
+							elseif($Matched_Item_Total >= $CouponRS[0]['minimum_order_amount'])
+							{
+								$CouponDiscount = $CouponDiscount;
+							}
+							else
+							{
+								$CouponDiscount = 0;
+								$msg = "Coupon code is invalid or does not exists.";
+								$error = 1;
+							}
+						}
+						else
+						{
+							$msg = "Coupon code is invalid or does not exists.";
+							$error = 1;
+						}
+
+						if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='' && $CouponDiscount > 0)
+						{
+							Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+							Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID', explode(",",$CouponRS[0]["free_shipping_value"]));
+							Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+							$FreeShippingFlg = true;
+						}
+						/*
+						if($CouponRS[0]["allow_free_gift_product"]=="Yes" && $CouponRS[0]["free_gift_product_value"]!='' && $CouponDiscount > 0)
+						{
+							$this->FreeGiftInsertProductValue($CouponRS[0]["free_gift_product_value"]);
+						}
+						*/
+						if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!= ''  && $error!=1 && $TotalAmount >= $CouponRS[0]['minimum_order_amount'])
+						{
+							$this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+						}
+						addLog('ApplyCouponCase7');
+						####################################################
+						break;
+				## On Product Brand
+				case '2' :
+						break;
+				## On Product Category
+				case '3' :
+						$CouponCatID    	= trim($CouponRS[0]['sku']); // Category IDS
+						$arr_CouponCatID    = explode(",",$CouponCatID);
+
+						$CouponDiscount = 0;
+						$found_cat = false; // Use for if coupon valid but category not found in cart;
+
+						## Get Active Cat ID
+						$Res_active_CatID = Category::where('status','=','1')->whereIn('category_id',$arr_CouponCatID)->get();
+						$arr_active_CatID = array();
+						if($Res_active_CatID && $Res_active_CatID->count() > 0)
+						{
+							for($h=0;$h<$Res_active_CatID->count();$h++)
+							{
+								$arr_active_CatID[] = $Res_active_CatID[$h]['category_id'];
+							}
+						}
+
+						if(count($arr_active_CatID) > 0 )
+						{
+							$log['active_cat_id'] = json_encode($arr_active_CatID);
+							## Get Cart Prod ID
+							$tempCart  	    = Session::get('ShoppingCart.Cart');
+							$temp_prod_id   = array();
+
+							for ($a=0; $a<count($tempCart); $a++)
+							{
+								$temp_prod_id[$a] = $tempCart[$a]['ProductID'];
+							}
+
+							$ProdIds = ProductsCategory::select('products_id')->distinct()
+										->whereIn('category_id',$arr_active_CatID)
+										->whereIn('products_id',$temp_prod_id)
+										->get();
+							$cat_prod_id  = array();
+							for ($a=0; $a < $ProdIds->count(); $a++)
+							{
+								$cat_prod_id[$a] = $ProdIds[$a]['products_id'];
+							}
+							$log['cat_prod_id'] = json_encode($cat_prod_id);
+							$TotalAmount = 0;
+							for ($a=0; $a<count($tempCart); $a++)
+							{
+								if (in_array( $tempCart[$a]['ProductID'] , $cat_prod_id) && ($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'] , $ExcludeSKUListArr))
+								{
+									$TotalAmount = $TotalAmount + $tempCart[$a]['TotPrice'];
+									if($CouponRS[0]['type'] == 1 )
+									{
+
+										$TotalNewPrice = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty']);
+										$taxAmt = $this->ItemWiseTax($TotalNewPrice,$a);
+
+										if($CouponRS[0]['count_ship_tax'] == '1')
+										{
+											if($shippingChargeItemWise > 0)
+											{
+												$TotalNewPrice  = $TotalNewPrice  + $shippingChargeItemWise;
+											}
+											if(isset($taxAmt) && $taxAmt > 0)
+											{
+												$TotalNewPrice = $TotalNewPrice + $taxAmt;
+											}
+										}
+
+										$CouponDiscountItemWise = (($TotalNewPrice)  * ($CouponRS[0]['discount']/100));
+										if($CouponRS[0]['source']=="Yotpo")
+										{
+											Session::put('ShoppingCart.Cart.'.$a.'.RewardItemWiseDiscout',$CouponDiscountItemWise);
+
+										}
+										else
+										{
+											Session::put('ShoppingCart.Cart.'.$a.'.CouponDisItemWiseDiscout',$CouponDiscountItemWise);
+											Session::put("ShoppingCart.Cart." . $a . ".CouponDiscountID",$CouponRS[0]['coupon_id']);
+										}
+										$CouponDiscount = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty']) + $CouponDiscount;
+									}
+									$found_cat = true; // make true if category match
+									$log['found_cat'] = json_encode($found_cat);
+								}
+							}
+							if($CouponRS[0]['type'] == 0 && $TotalAmount > 0)
+							{
+								for ($a=0; $a<count($tempCart); $a++)
+								{
+									if (in_array( $tempCart[$a]['ProductID'] , $cat_prod_id) && ($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'] , $ExcludeSKUListArr))
+									{
+										$CouponDiscountItemWise = (($CouponRS[0]['discount']*100)/$TotalAmount);
+										$CouponDiscountCal = (($tempCart[$a]['TotPrice']  * $CouponDiscountItemWise)/100);
+										$CouponDiscount = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty']) + $CouponDiscount;//27012026
+											if($CouponRS[0]['source']=="Yotpo")
+											{
+											 Session::put('ShoppingCart.Cart.'.$a.'.RewardItemWiseDiscout',$CouponDiscountCal);
+											}
+											else
+											{
+											 Session::put('ShoppingCart.Cart.'.$a.'.CouponDisItemWiseDiscout',$CouponDiscountCal);
+											 Session::put("ShoppingCart.Cart." . $a . ".CouponDiscountID",$CouponRS[0]['coupon_id']);
+											}
+
+									}
+								}
+							}
+						}
+						else
+						{
+							$CouponDiscount = 0;
+						}
+
+						if($found_cat==true)
+						{
+
+							if($CouponRS[0]["count_ship_tax"]=='1')
+							{
+								if($CouponRS[0]['type'] == 1 )
+								{
+									if(Session::has('ShoppingCart.Tax') && Session::get('ShoppingCart.Tax') > 0)
+										$CouponDiscount  = $CouponDiscount  + Session::get('ShoppingCart.Tax');
+									if($shippingCharge > 0)
+										$CouponDiscount  = $CouponDiscount  + $shippingCharge;
+								}
+						  }
+						  if($CouponRS[0]["count_gc_purchase"]=='1')
+						  {
+								$GiftCertiTotal = 0;
+								if(Session::has('ShoppingCart.GiftCertiTotal'))
+									$GiftCertiTotal = NumberFormat(Session::get('ShoppingCart.GiftCertiTotal'));
+								$CouponDiscount  = $CouponDiscount  + $GiftCertiTotal;
+						  }
+						  if($CouponRS[0]['discount']<=0 && isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!='')
+						  {
+							$CouponDiscount = 0;
+						  }
+						  elseif($CouponRS[0]['minimum_order_amount']==0.00 || $CouponRS[0]['minimum_order_amount']==0)
+						  {
+								if($CouponRS[0]['type'] == 1)
+								{
+									$CouponDiscount = ($CouponDiscount  * ($CouponRS[0]['discount']/100));
+								}
+								else
+								{
+									 $CouponDiscount = $CouponRS[0]['discount'];
+								}
+						  }
+						  elseif($CouponDiscount >= $CouponRS[0]['minimum_order_amount'])
+						  {
+							  if($CouponRS[0]['type'] == 1)
+								{
+									$CouponDiscount = ($CouponDiscount  * ($CouponRS[0]['discount']/100));
+								}
+								else
+								{
+									 $CouponDiscount = $CouponRS[0]['discount'];
+								}
+						  }
+						  else
+						  {
+							  $CouponDiscount = 0;
+							  $msg = "Coupon code is invalid or does not exists.";
+							  $error = 1;
+						  }
+						}
+						if($found_cat==false)
+						{
+							$msg = "Coupon code does not apply to the item you have in your bag.";
+							$error = 1;
+						}
+
+						if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='' && $CouponDiscount > 0 && $found_cat==true)
+						{
+							Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+							Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID',explode(",",$CouponRS[0]["free_shipping_value"]));
+							Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+							$FreeShippingFlg = true;
+						}
+						/*
+						if($CouponRS[0]["allow_free_gift_product"]=="Yes" && $CouponRS[0]["free_gift_product_value"]!='' && $CouponDiscount > 0 && $found_cat==true)
+						{
+							$this->FreeGiftInsertProductValue($CouponRS[0]["free_gift_product_value"]);
+						}
+						*/
+						if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!='' && $found_cat==true && $TotalAmount >= $CouponRS[0]['minimum_order_amount'])
+						{
+								$this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+						}
+						addLog('ApplyDiscountProductCategory',$log);
+						break;
+
+				case '5' :
+							break;
+
+				## On Product Brand
+				case '6' :
+						$CouponBrandID    	= trim($CouponRS[0]['sku']); // Brand IDS
+						$arr_CouponBrandID  = explode(",",$CouponBrandID);
+
+						$CouponDiscount = 0;
+						$found_brand = false; // Use for if coupon valid but category not found in cart;
+
+						## Get Active Cat ID
+						$Res_active_BrandID = Manufacture::where('status','=','1')
+												->whereIn('imanufactureid',$arr_CouponBrandID)->get();
+						$arr_active_BrandID = array();
+						for($h=0;$h<count($Res_active_BrandID);$h++)
+						{
+							$arr_active_BrandID[] = $Res_active_BrandID[$h]['imanufactureid'];
+						}
+						$log['arr_active_BrandID'] = json_encode($arr_active_BrandID);
+						if(count($arr_active_BrandID) > 0 )
+						{
+							$log['arr_active_BrandID'] = json_encode($arr_active_BrandID);
+							## Get Cart Prod ID
+							$tempCart = Session::get('ShoppingCart.Cart');
+							$temp_prod_id   = array();
+
+							for ($a=0; $a<count($tempCart); $a++)
+							{
+								if(isset($tempCart[$a]['IS_Free_Gift']) && $tempCart[$a]['IS_Free_Gift']=="Yes")
+								{
+									continue;
+								}
+
+								$temp_prod_id[$a] = $tempCart[$a]['ProductID'];
+							}
+
+							$ProdIds = Products::select('products_id')->distinct()
+										->whereIn('imanufactureid',$arr_active_BrandID)
+										->whereIn('products_id',$temp_prod_id)
+										->get();
+							$brand_prod_id  = array();
+							for ($a=0; $a<count($ProdIds); $a++)
+							{
+								$brand_prod_id[$a] = $ProdIds[$a]['products_id'];
+							}
+							$log['brand_prod_id'] = json_encode($brand_prod_id);
+							$TotalAmount = 0;
+
+							for ($a=0; $a<count($tempCart); $a++)
+							{
+								if(isset($tempCart[$a]['IS_Free_Gift']) && $tempCart[$a]['IS_Free_Gift']=="Yes")
+								{
+									continue;
+								}
+								if (in_array( $tempCart[$a]['ProductID'] , $brand_prod_id) && ($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'] , $ExcludeSKUListArr))
+								{
+									$TotalAmount = $TotalAmount + $tempCart[$a]['TotPrice'];
+
+									$TotalNewPrice = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty']);
+									//$this->checkItemBaseTaxCalculation($TotalNewPrice,$a);
+									$taxAmt = $this->ItemWiseTax($TotalNewPrice,$a);
+									if($CouponRS[0]['type'] == 1 )
+									{
+
+										if($CouponRS[0]['count_ship_tax'] == '1')
+										{
+											if($shippingChargeItemWise > 0)
+											{
+												$TotalNewPrice  = $TotalNewPrice  + $shippingChargeItemWise;
+											}
+											if(isset($taxAmt) && $taxAmt > 0)
+											{
+												//Session::put('ShoppingCart.Cart.'.$a.'.TotalItemTaxAmount',$taxAmt);
+												$TotalNewPrice = $TotalNewPrice + $taxAmt;
+											}
+											// if(isset($tempCart[$a]["TotalItemTaxAmount"]) && $tempCart[$a]["TotalItemTaxAmount"] > 0)
+											// {
+											// 	$TotalNewPrice = $TotalNewPrice + $tempCart[$a]["TotalItemTaxAmount"];
+											// }
+										}
+
+										$CouponDiscountItemWise = (($TotalNewPrice)  * ($CouponRS[0]['discount']/100));
+										if($CouponRS[0]['source']=="Yotpo")
+										{
+											if(empty(Session::get('ShoppingCart.YotpoRewardDiscount')) || Session::get('ShoppingCart.YotpoRewardDiscount') <= 0)
+											{
+												Session::put('ShoppingCart.Cart.'.$a.'.RewardItemWiseDiscout',$CouponDiscountItemWise);
+											}
+										}
+										else
+										{
+											Session::put('ShoppingCart.Cart.'.$a.'.CouponDisItemWiseDiscout',$CouponDiscountItemWise);
+											Session::put("ShoppingCart.Cart." . $a . ".CouponDiscountID",$CouponRS[0]['coupon_id']);
+										}
+										$CouponDiscount = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty'])+$CouponDiscount;
+									}
+									else
+									{
+										$CouponDiscount = $CouponRS[0]['discount']  ;
+									}
+									$found_brand = true; // make true if category match
+								}
+							}
+							if($CouponRS[0]['type'] == 0 && $TotalAmount > 0)
+							{
+
+								for ($a=0; $a<count($tempCart); $a++)
+								{
+									if(isset($tempCart[$a]['IS_Free_Gift']) && $tempCart[$a]['IS_Free_Gift']=="Yes")
+									{
+										continue;
+									}
+
+									if (in_array( $tempCart[$a]['ProductID'] , $brand_prod_id) && ($tempCart[$a]["IsDealProducts"]!="Yes" || ($tempCart[$a]["IsDealProducts"]=="Yes" && ($tempCart[$a]["DealDiscountFlag"]=="Yes" || $CouponRS[0]["dealdiscount_flag"]=="Yes"))) && !in_array($tempCart[$a]['SKU'] , $ExcludeSKUListArr))
+									{
+
+										$CouponDiscountItemWise = (($CouponRS[0]['discount']*100)/$TotalAmount);
+										$CouponDiscountCal = (($tempCart[$a]['TotPrice']  * $CouponDiscountItemWise)/100);
+										$CouponDiscount = ($tempCart[$a]['Price'] * $tempCart[$a]['Qty'])+$CouponDiscount;//27012026
+										if($CouponRS[0]['source']=="Yotpo")
+										{
+										Session::put('ShoppingCart.Cart.'.$a.'.RewardItemWiseDiscout',$CouponDiscountCal);
+										}
+										else
+										{
+										Session::put('ShoppingCart.Cart.'.$a.'.CouponDisItemWiseDiscout',$CouponDiscountCal);
+										Session::put("ShoppingCart.Cart." . $a . ".CouponDiscountID",$CouponRS[0]['coupon_id']);
+										}
+
+									}
+								}
+
+							}
+						}
+						else
+						{
+							$CouponDiscount = 0;
+						}
+
+						if($found_brand==true)
+						{
+							$log['found_brand'] = json_encode($found_brand);
+						  if($CouponRS[0]["count_ship_tax"]=='1')
+						  {
+							if($CouponRS[0]['type'] == 1 )
+							{
+								if(Session::has('ShoppingCart.Tax') && Session::get('ShoppingCart.Tax') > 0)
+									$CouponDiscount  = $CouponDiscount  + Session::has('ShoppingCart.Tax');
+								if($shippingCharge > 0)
+									$CouponDiscount  = $CouponDiscount  + $shippingCharge;
+							}
+						  }
+						  if($CouponRS[0]["count_gc_purchase"]=='1')
+						  {
+							$GiftCertiTotal = 0;
+							if(Session::has('ShoppingCart.GiftCertiTotal'))
+								$GiftCertiTotal = NumberFormat(Session::get('ShoppingCart.GiftCertiTotal'));
+							$CouponDiscount  = $CouponDiscount  + $GiftCertiTotal;
+						  }
+
+						    if($CouponRS[0]['discount']<=0 && isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!='')
+							{
+							$CouponDiscount = 0;
+						    }
+							elseif($CouponRS[0]['minimum_order_amount']==0.00 || $CouponRS[0]['minimum_order_amount']==0)
+							{
+								if($CouponRS[0]['type'] == 1)
+								{
+									$CouponDiscount = ($CouponDiscount  * ($CouponRS[0]['discount']/100));
+								}
+								else
+								{
+									 $CouponDiscount = $CouponRS[0]['discount'];
+								}
+							}
+							elseif($CouponDiscount >= $CouponRS[0]['minimum_order_amount'])
+							{
+								if($CouponRS[0]['type'] == 1)
+								{
+									$CouponDiscount = ($CouponDiscount  * ($CouponRS[0]['discount']/100));
+								}
+								else
+								{
+									 $CouponDiscount = $CouponRS[0]['discount'];
+								}
+							}
+							else
+							{
+							  $CouponDiscount = 0;
+							  $msg = "Coupon code is invalid or does not exists.";
+							  $error = 1;
+							}
+
+						}
+
+						if($found_brand==false)
+						{
+							$log['found_brand'] = json_encode($found_brand);
+							$msg = "Coupon code does not apply to the item you have in your bag.";
+							$log['msg'] = $msg;
+							$error = 1;
+						}
+
+						if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='' && $CouponDiscount > 0 && $found_brand==true)
+						{
+							Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+							Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID',explode(",",$CouponRS[0]["free_shipping_value"]));
+							Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+							$FreeShippingFlg = true;
+							$log['FreeShippingFlg'] = json_encode($FreeShippingFlg);
+						}
+						if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!= '' && $found_brand==true && $TotalAmount >= $CouponRS[0]['minimum_order_amount'])
+						{
+						    $this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+						}
+						addLog('ApplyDiscountProductBrand',$log);
+						break;
+
+				## For Free Shipping
+				case '4' :
+						$CouponDiscount = 0;
+						$Total_Item_count_val  = Session::get('ShoppingCart.TotalItemInCart');
+
+						if($CouponRS[0]['minimum_order_amount'] == 0.00 ||  $CouponRS[0]['minimum_order_amount'] == 0)
+						{
+							if($Total_Item_count_val >= $CouponRS[0]['total_free_shipping'])
+							{
+								$ShippingID     = trim($CouponRS[0]['sku']); // Shipping method id
+								Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+								Session::put('ShoppingCart.PromoCoupon.FreeShippingModeID',$ShippingID);
+
+								if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='')
+								{
+									Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+									Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID', explode(",",$CouponRS[0]["free_shipping_value"]));
+									Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+									$FreeShippingFlg = true;
+								}
+								/*
+								if($CouponRS[0]["allow_free_gift_product"]=="Yes" && $CouponRS[0]["free_gift_product_value"]!='')
+								{
+									$this->FreeGiftInsertProductValue($CouponRS[0]["free_gift_product_value"]);
+								}*/
+								if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!= '')
+								{
+										$this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+
+								}
+								$FreeShippingFlg = true;
+							}
+							else if($Total_Item_count_val==0 ||$Total_Item_count_val =='')
+							{
+								$ShippingID     = trim($CouponRS[0]['sku']); // Shipping method id
+								Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+								Session::put('ShoppingCart.PromoCoupon.FreeShippingModeID',$ShippingID);
+
+									if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='')
+									{
+										Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+										Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID', explode(",",$CouponRS[0]["free_shipping_value"]));
+										Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+										$FreeShippingFlg = true;
+									}
+									/*
+									if($CouponRS[0]["allow_free_gift_product"]=="Yes" && $CouponRS[0]["free_gift_product_value"]!='')
+									{
+										$this->FreeGiftInsertProductValue($CouponRS[0]["free_gift_product_value"]);
+									}*/
+									if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!= '')
+									{
+											$this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+
+									}
+									$FreeShippingFlg = true;
+							}
+							else
+							{
+								$FreeShippingFlg = false;
+							}
+					   }
+
+					  elseif(Session::get('ShoppingCart.SubTotal') >= $CouponRS[0]['minimum_order_amount'])
+						{
+							if($Total_Item_count_val >= $CouponRS[0]['total_free_shipping'])
+							{
+								$ShippingID     = trim($CouponRS[0]['sku']); // Shipping method id
+								Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+								Session::put('ShoppingCart.PromoCoupon.FreeShippingModeID',$ShippingID);
+
+								if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='')
+								{
+									Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+									Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID', explode(",",$CouponRS[0]["free_shipping_value"]));
+									Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+									$FreeShippingFlg = true;
+								}
+								/*
+								if($CouponRS[0]["allow_free_gift_product"]=="Yes" && $CouponRS[0]["free_gift_product_value"]!='')
+								{
+									$this->FreeGiftInsertProductValue($CouponRS[0]["free_gift_product_value"]);
+								}*/
+								if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!= '')
+								{
+									$this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+								}
+								$FreeShippingFlg = true;
+							}
+							else if($Total_Item_count_val==0 ||$Total_Item_count_val =='')
+							{
+								$ShippingID     = trim($CouponRS[0]['sku']); // Shipping method id
+								Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+								Session::put('ShoppingCart.PromoCoupon.FreeShippingModeID',$ShippingID);
+
+								if($CouponRS[0]["allow_free_shipping"]=="Yes" && $CouponRS[0]["free_shipping_value"]!='')
+								{
+									Session::put('ShoppingCart.PromoCoupon.FreeShipping','Yes');
+									Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeID', explode(",",$CouponRS[0]["free_shipping_value"]));
+									Session::put('ShoppingCart.PromoCoupon.FreeShippingCouponModeIDFlag',"Yes");
+									$FreeShippingFlg = true;
+								}
+								/*
+								if($CouponRS[0]["allow_free_gift_product"]=="Yes" && $CouponRS[0]["free_gift_product_value"]!='')
+								{
+									$this->FreeGiftInsertProductValue($CouponRS[0]["free_gift_product_value"]);
+								}*/
+								if(isset($CouponRS[0]["freegift_product_sku"]) && $CouponRS[0]["freegift_product_sku"]!= '')
+								{
+									$this->FreeGiftInsertWithCoupon($CouponRS[0]["freegift_product_sku"]);
+								}
+								$FreeShippingFlg = true;
+							}
+							else
+							{
+								$FreeShippingFlg = false;
+							}
+					   }
+					   else
+					   {
+							$msg = "Coupon code does not apply to the item you have in your bag.";
+							$error = 1;
+							$FreeShippingFlg = false;
+					   }
+					   addLog('ApplyDiscountFreeShipping',$log);
+					break;
+				default :
+						$CouponDiscount = 0;
+						$couponCode='';
+						$msg = "Coupon code does not apply to the item you have in your bag.";
+						$error = 1;
+						break;
+			}
+			if($FreeShippingFlg==false)
+			{
+				Session::put('ShoppingCart.PromoCoupon.FreeShipping','No');
+			}
+			$CouponDiscount = NumberFormat($CouponDiscount);
+			$msg='';
+
+			if(isset($CouponRS[0]['source']) && $CouponRS[0]['source'] == "Yotpo" && strtolower(Session::get('eusertype') ?? '') == "retailer" && Session::get('sess_icustomerid') > 0)
+			{
+				if(!empty(Session::get('ShoppingCart.YotpoRewardDiscount')) && Session::get('ShoppingCart.YotpoRewardDiscount') > 0)
+				{
+					Session::forget('ShoppingCart.YotpoRewardCode');
+					Session::forget('ShoppingCart.YotpoRewardDiscount');
+					Session::put('ShoppingCart.YotpoRewardCode',$couponCode);
+					Session::put('ShoppingCart.YotpoRewardDiscount',$CouponDiscount);
+					//$msg = "Remove existing reward discount.";
+					//$error = 1;
+				}
+				else
+				{
+					if(isset($CouponDiscount) && $CouponDiscount > 0 && strtolower(Session::get('eusertype') ?? '') == "retailer" && Session::get('sess_icustomerid') > 0)
+					{
+						Session::put('ShoppingCart.YotpoRewardCode',$couponCode);
+						Session::put('ShoppingCart.YotpoRewardDiscount',$CouponDiscount);
+						$msg = "Reward discount code applied.";
+					}
+					else
+					{
+
+						Session::forget('ShoppingCart.YotpoRewardCode');
+						Session::forget('ShoppingCart.YotpoRewardDiscount');
+						$msg = "Reward discount code not found.";
+					}
+				}
+			}
+			else
+			{
+			if($CouponDiscount > 0 or $FreeShippingFlg==true)
+			{
+				if($CouponRS[0]['source'] != "Yotpo")
+				{
+					Session::put('ShoppingCart.PromoCoupon.CouponCode',$couponCode);
+					Session::put('ShoppingCart.Coupon_Detail_CJ.CouponCode',$couponCode);
+					Session::put('ShoppingCart.Coupon_Detail_CJ.orders',$CouponRS[0]['orders']);
+				}
+			}
+			else
+			{
+				$CartInfoVal 		 = Session::get('ShoppingCart.Cart');
+				$FreeGiftCouponVal = "No";
+				foreach($CartInfoVal as $i => $Cart)
+				{
+					if(isset($Cart["FreeGiftCoupon"]) && $Cart["FreeGiftCoupon"]=="Yes")
+					{
+						$FreeGiftCouponVal = "Yes";
+						break;
+					}
+				}
+
+				if($FreeGiftCouponVal=="Yes")
+				{
+					Session::put('ShoppingCart.PromoCoupon.CouponCode',$couponCode);
+					Session::put('ShoppingCart.Coupon_Detail_CJ.CouponCode',$couponCode);
+					Session::put('ShoppingCart.Coupon_Detail_CJ.orders',$CouponRS[0]['orders']);
+				}
+
+				if($FreeGiftCouponVal == "No")
+				{
+					if(Session::has('ShoppingCart.PromoCoupon'))
+						Session::forget('ShoppingCart.PromoCoupon');
+					if(Session::has('Niche_Fragrances_Membership'))
+						Session::forget('Niche_Fragrances_Membership');
+				}
+				//Session::put('ShoppingCart.PromoCoupon.CouponCode','');
+			}
+
+			if($CouponDiscount > 0 && $CouponRS[0]['source'] != "Yotpo")
+			{
+				Session::put('ShoppingCart.PromoCoupon.FirstCouponDiscount',$CouponDiscount);
+			}
+			else
+			{
+				Session::put('ShoppingCart.PromoCoupon.CouponDiscount',0);
+				Session::put('ShoppingCart.PromoCoupon.FirstCouponDiscount',0);
+			}
+			if(Session::get('ShoppingCart.PromoCoupon.CouponCode') !='' && $CouponRS[0]['source'] != "Yotpo")
+			{
+				$msg = "Coupon code applied successfully.";
+			}
+			else
+			{
+				$error = 1;
+				$msg = "Invalid Coupon Code.";
+				$log['message'] = $msg;
+				addLog('ApplyDiscountInvalidCoupon',$log);
+				if($is_loggedin == 0 && $CouponRS[0]['source'] == "Yotpo"){
+					$error = 1;
+					$msg = "Please login or create an account with Maxaroma to use the Referral Coupon code";
+					$log['message'] = $msg;
+					addLog('ApplyDiscountInvalidYotpoCoupon',$log);
+				}
+			}
+		}
+		} else {
+			$error = 1;
+			$msg = "Invalid Coupon Code.";
+			$log['message'] = $msg;
+			addLog('ApplyDiscountInvalidCoupon',$log);
+		}
+
+		if($CouponRS->count() <= 0)
+		{
+			if(Session::has('ShoppingCart.PromoCoupon'))
+                Session::forget('ShoppingCart.PromoCoupon');
+            if(Session::has('Niche_Fragrances_Membership'))
+                Session::forget('Niche_Fragrances_Membership');
+		}
+			$Info = ['error' => $error, 'message' => $msg];
+			addLog('ApplyCouponDiscount',$Info);
+			return $Info;
+	}
+
+	public function checkItemBaseTaxCalculation($TotalNewPrice = 0,$i = 0){
+
+		$ship_country = '';
+		$ship_state = '';
+		$ship_zip = '';
+		$ship_city = '';
+
+		if($TotalNewPrice > 0){
+			//Log::info('TotalNewPrice: '.json_encode($TotalNewPrice));
+			Session::put('ShoppingCart.TempItemSubTotal',$TotalNewPrice);
+			if(Session::has('ShoppingCart.ShippingAddress.country') && Session::get('ShoppingCart.ShippingAddress.country') != ''){
+				$ship_country = Session::get('ShoppingCart.ShippingAddress.country');
+			}
+			if(Session::has('ShoppingCart.ShippingAddress.state') && Session::get('ShoppingCart.ShippingAddress.state') != ''){
+				$ship_state = Session::get('ShoppingCart.ShippingAddress.state');
+			}
+			if(Session::has('ShoppingCart.ShippingAddress.zip') && Session::get('ShoppingCart.ShippingAddress.zip') != ''){
+				$ship_zip = Session::get('ShoppingCart.ShippingAddress.zip');
+			}
+			if(Session::has('ShoppingCart.ShippingAddress.city') && Session::get('ShoppingCart.ShippingAddress.city') != ''){
+				$ship_city = Session::get('ShoppingCart.ShippingAddress.city');
+			}
+			$onlyGCPurchased = 0;
+			$this->TempItemTaxCalculation($ship_country, $ship_state, $ship_zip,$onlyGCPurchased,'',$ship_city,0,'Y');
+
+			//$ret_item_tax = Session::get('ShoppingCart.TempItemSubTotal_Tax');
+			// Log::info('TempItemSubTotal: '.Session::get('ShoppingCart.TempItemSubTotal'));
+			// Log::info('TempItemSubTotal_Tax: '.Session::get('ShoppingCart.TempItemSubTotal_Tax'));
+			Session::put('ShoppingCart.Cart.'.$i.'.TotalItemTaxAmount',Session::get('ShoppingCart.TempItemSubTotal_Tax'));
+
+			Session::forget('ShoppingCart.TempItemSubTotal');
+			Session::forget('ShoppingCart.TempItemSubTotal_Tax');
+
+		}
 	}
 
 	public function ApplyCouponDiscountOLD($couponCode, $customer_id = NULL)
@@ -3986,7 +5483,7 @@ trait CartTrait
 					->orderByDesc('end_order_amount')
 					->get();
 			}
-
+			//echo "<pre>"; print_r($AutoRS); exit;
 			$log['AutoRS'] = $AutoRS;
 			addLog('ApplyAutoDiscount',$log);
 
@@ -4095,6 +5592,7 @@ trait CartTrait
 									$SKURemoveArr.= $tempCart[$a]['SKU'].",";
 								}
 							}
+
 							if($AutoRS[$i]['type'] == 0 && $TotalAmount > 0)
 							{
 								for ($a=0; $a<count($tempCart); $a++)
@@ -4134,6 +5632,7 @@ trait CartTrait
 							if($AutoRS[$i]['type'] == 1)
 							{
 								$auto_discount = ($AutoDiscount1 * ($AutoRS[$i]['auto_discount_amount']/100));
+
 							}
 							else
 							{
@@ -4296,6 +5795,8 @@ trait CartTrait
                             {
                                 $MatchNewAutoDiscount = $auto_discount;
                             }
+
+                           // echo $AutoDiscount1; exit;
                             if($AutoRS[$i]['type'] == 1)
                             {
                                 $auto_discount = ($AutoDiscount1  * $AutoRS[$i]['auto_discount_amount']/100);
@@ -4331,7 +5832,7 @@ trait CartTrait
 								->first();
 						}
 
-                        if($AutoRS1 > 0)
+                        if($AutoRS1)
                         {
 							$log['AutoRS1'] = $AutoRS1;
 							addLog('ApplyAutoDiscount',$log);
@@ -4370,7 +5871,7 @@ trait CartTrait
 									}
 
 									$totalPrice = $totalPrice + $tempCart[$a]['TotPrice'];
-                                    if($AutoRS1[0]["type"] == 1 )
+                                    if($AutoRS1->type == 1 )
                                     {
 										$AutoDiscountItemWise = (($tempCart[$a]['Price'] * $tempCart[$a]['Qty'])  * $AutoRS1->auto_discount_amount/100);
 										Session::put('ShoppingCart.Cart.'.$a.'.AutoItemWiseDiscout',$AutoDiscountItemWise);
@@ -4380,7 +5881,7 @@ trait CartTrait
                                 }
                             }
 
-							if($AutoRS1[0]["type"] == 0 && $totalPrice > 0)
+							if($AutoRS1->type == 0 && $totalPrice > 0)
                             {
 								for ($a=0; $a<count($tempCart); $a++)
 								{
@@ -4396,7 +5897,7 @@ trait CartTrait
 									if (isset($tempCart[$a]["IsDealProducts"]) && $tempCart[$a]["IsDealProducts"]!="Yes" &&  $FreeGift != "Yes" &&  $FreeSample != "Yes" && !in_array($tempCart[$a]['SKU'] , $ExcludeSKUListArr) &&  !in_array($tempCart[$a]['SKU'] , $SKURemoveArrNew))
 									{
 
-										if(isset($AutoRS1[0]["exclude_pocketperfume"]) && $AutoRS1[0]["exclude_pocketperfume"]=="Yes" && !empty($tempCart[$a]["CategoryID"]) && $tempCart[$a]["CategoryID"] > 0 && in_array($tempCart[$a]["CategoryID"],$pocketPerfumeCategory))
+										if(isset($AutoRS1->exclude_pocketperfume) && $AutoRS1->exclude_pocketperfume=="Yes" && !empty($tempCart[$a]["CategoryID"]) && $tempCart[$a]["CategoryID"] > 0 && in_array($tempCart[$a]["CategoryID"],$pocketPerfumeCategory))
 										{
 											continue;
 										}
@@ -4410,7 +5911,7 @@ trait CartTrait
 
                             $discount_coupon_flag = $AutoRS1->discount_coupon_flag;
                             $subTotal = $subTotal - $TotalExcludePrice;
-                            if($AutoRS1[0]['type'] == '1')
+                            if($AutoRS1->type == '1')
                                 $auto_discount = ( $subTotal * ($AutoRS1->auto_discount_amount/100) );
                             else
                                 $auto_discount = $AutoRS1->auto_discount_amount;
@@ -4588,7 +6089,7 @@ trait CartTrait
 		}
 	}
 
-	public function ApplyQuantityDiscount()
+		public function ApplyQuantityDiscount()
 	{
 		$pocketPerfumeCategory = $this->getPocketPerfumeCategory();
 		$QuantityDiscount = 0;
@@ -5309,7 +6810,7 @@ trait CartTrait
 						$IS_Any_Matched 	= 0;
 						$total_qty			= 0;
 						$TotalAmount 		= 0;
-						//echo "<pre>"; print_r($QtyRS1)
+
 						if($QtyRS1)
 						{
 							$tempCart  = Session::get('ShoppingCart.Cart');
@@ -5337,14 +6838,14 @@ trait CartTrait
 									$total_qty = $total_qty + $tempCart[$a]['Qty'];
 									$subTotal+=$tempCart[$a]['TotPrice'];
 									$TotalAmount = $TotalAmount + $tempCart[$a]['TotPrice'];
-									if($QtyRS1[0]['type'] == '1')
+									if($QtyRS1->type == '1')
 									{
 									$QuantityDiscountItemWise = (($tempCart[$a]['Price'] * $tempCart[$a]['Qty'])  * $QtyRS1->quantity_discount_amount/100);
 									Session::put('ShoppingCart.Cart.'.$a.'.QuantityItemWiseDiscout',$QuantityDiscountItemWise);
 									}
 								}
 							}
-							if($QtyRS1[0]['type'] == '0' && $TotalAmount > 0)
+							if($QtyRS1->type == '0' && $TotalAmount > 0)
 							{
 								for ($a=0; $a<count($tempCart); $a++)
 								{
@@ -5373,7 +6874,7 @@ trait CartTrait
 							}
 							if($IS_Any_Matched > 0  && $total_qty >=$QtyRS1->quantity)
 							{
-								if($QtyRS1[0]['type'] == '1')
+								if($QtyRS1->type == '1')
 								$QuantityDiscount = ( $subTotal * ($QtyRS1->quantity_discount_amount/100) );
 								else
 								$QuantityDiscount = $QtyRS1->quantity_discount_amount;
@@ -5517,7 +7018,7 @@ trait CartTrait
 			return false;
 	}
 
-	public function SetCartAttributes($cartpopup='')
+   public function SetOnePageCartAttributes($cartpopup='')
 	{
 
 		$Attrs = [];
@@ -5818,6 +7319,395 @@ trait CartTrait
 		$Attrs['TotalValue'] = $TotalValue;
 
 		if(config('Settings.CHECKOUT_SHOIPPINGCART') == "No")
+		{
+			$this->RemoveFreeGiftCache();
+		}
+
+		if($cartpopup=='')
+		{
+			$CreditData = $this->GetCreditLimitAmount();
+			$Attrs = array_merge($Attrs,$CreditData);
+		}
+		if(Session::has('ShoppingCart.Reward_array') && count(Session::get('ShoppingCart.Reward_array')) > 0)
+		{
+			$Attrs['RemainRewardPoint'] = Session::get('ShoppingCart.Reward_array.RemainRewardPoint');
+			$Attrs['TotalRewardPoint'] = Session::get('ShoppingCart.Reward_array.TotalRewardPoint');
+			$Attrs['AppliedRewardPoint'] = Session::get('ShoppingCart.Reward_array.AppliedRewardPoint');
+		}
+		$Attrs['IsVenderItem'] = $IsVenderItem;
+		$Attrs['IsCosmo'] = $IsCosmo;
+		$Attrs['IsNandansons'] = $IsNandansons;
+		$Attrs['IsPerfumePW'] = $IsPerfumePW;
+		$Attrs['IsPCA'] = $IsPCA;
+		$Attrs['IsND'] = $IsND;
+		$Attrs['IsMaxaromaTwoDelivery'] = $IsMaxaromaTwoDelivery;
+		$Attrs['ISMaxTwoItem'] = $ISMaxTwoItem;
+		$Attrs['onlyGCPurchased'] = $onlyGCPurchased;
+		$Attrs['onlyAmazonPaypal'] = $onlyAmazonPaypal;
+		$Attrs['onlyWireTrabsfer'] = $onlyWireTrabsfer;
+		$Attrs['CheckGCPurchasedVal'] = $CheckGCPurchasedVal;
+		$Attrs['ISMax2dayVal'] = $ISMax2day;
+		if($cartpopup=='')
+		{
+			$Attrs['isCouponsAvailable'] = $this->isCouponsAvailable();
+		}
+		$Attrs['coupon_number'] = $CouponCode;
+		if($cartpopup=='')
+		{
+			//$Attrs['isSecondCouponAvalilabe'] = $this->isSecondCouponsAvailable(); // Comment not used
+		}
+		$Attrs['second_coupon_number'] = $CouponCodeSecond;
+		if($cartpopup=='')
+		{
+			$Attrs['isGiftCouponsAvailable'] = $this->isGiftCouponsAvailable();
+		}
+		$Attrs['Amazon_pay_Checkout'] = $Amazon_pay_Checkout;
+		$Attrs['IsPaypalExpressCheckout'] = $IsPaypalExpressCheckout;
+		$Attrs['Afterpay_Checkout'] = $Afterpay_Checkout;
+		if($cartpopup=='')
+		{
+			$Attrs['show_AP'] = $show_AP;
+		}
+		$Attrs['critieostr'] = ($critieostr != '' ? substr($critieostr,0,-1):'');
+		$Attrs['allow_gift'] = 0;
+		if(strtolower(trim(Session::get('eusertype') ?? '')) !="wholesaler" && trim(Session::get('is_dropshipper') ?? '') != "Yes" )
+		{
+			$Attrs['allow_gift'] = 1;
+		}
+		$Attrs['FundFlag'] = 0;
+		$Attrs['available_funds'] = 0;
+		$normaluser = Auth::user();
+		if (Auth::guard('store')->check()) {
+			$normaluser = Auth::guard('web')->user();
+		}
+		//if(Auth::user() && Auth::user()->is_dropshipper == "Yes" && Auth::user()->eusertype == "Wholesaler")
+		if($normaluser && $normaluser->is_dropshipper == "Yes" && $normaluser->eusertype == "Wholesaler")
+		{
+			$Attrs['FundFlag'] = 1;
+			/*if(Auth::user()->available_funds > 0)
+				$Attrs['available_funds'] = Auth::user()->available_funds;*/
+			if($normaluser->available_funds > 0)
+				$Attrs['available_funds'] = $normaluser->available_funds;
+		}
+
+		$CartItem = Session::get('ShoppingCart.Cart');
+		$grouped = collect($CartItem)->groupBy('OrderType');
+		$storeCount = $grouped->get('Store', collect())->count();
+		$websiteCount = $grouped->get('Website', collect())->count();
+
+		Session::put('ShoppingCart.OrderType', "Website");
+		if ($storeCount > 0 && $websiteCount > 0) {
+			Session::put('ShoppingCart.OrderType', "Both");
+		} else if ($storeCount > 0) {
+			Session::put('ShoppingCart.OrderType', "Store");
+		}
+
+		return $Attrs;
+
+	}
+
+	public function SetCartAttributes($cartpopup='')
+	{
+
+		$Attrs = [];
+		$onlyGCPurchased = 1;
+		$CheckGCPurchasedVal = 0;
+		$RewardPointItemWiseTotal = 0;
+		$critieostr = '';
+		$IsVenderItem = "No";
+		$IsCosmo = "No";
+		$IsNandansons = "No";
+		$IsPerfumePW = "No";
+		$IsPCA = "No";
+		$IsND = "No";
+		$IsMaxaromaTwoDelivery = "No";
+		$ISMax2day = "";
+		$ISMaxTwoItem = "No";
+
+		$IsGiftCertificateItem = $IsGiftCertificateItem1 = '';
+
+		if(Session::has('ShoppingCart.Cart') && count(Session::get('ShoppingCart.Cart')) > 0)
+		{
+			$ShopCartItems = Session::get('ShoppingCart.Cart');
+			$TempCart = [];
+			foreach($ShopCartItems as $ShopItem)
+			{
+				$GiftChkOpt = "Yes";
+				//if(isset($ShopItem['IS_Free_Gift']) && $ShopItem['IS_Free_Gift'] =="Yes")
+				if((isset($ShopItem['IS_Free_Gift']) && $ShopItem['IS_Free_Gift'] =="Yes") || (isset($ShopItem['Is_Free_Sample']) && $ShopItem['Is_Free_Sample'] == 'Yes'))
+					$GiftChkOpt = "No";
+
+				$IsGiftCertificateItem = $this->checkGiftCertificateItem('IsGiftCertificateItem',$ShopItem);
+
+				//if($ShopItem['SKU'] == config('global.GIFT_CERTIFICATE_SKU') || $ShopItem['SKU'] == config('global.GIFT_CERTIFICATE_SKU1'))
+				if($IsGiftCertificateItem == 'Yes')
+				{
+					$GiftChkOpt = "No";
+					$CheckGCPurchasedVal = 1;
+				}
+
+				if(isset($ShopItem['IsGiftWrapProduct']) && $ShopItem['IsGiftWrapProduct'] == 'No')
+					$GiftChkOpt = "No";
+				if(isset($ShopItem['HandlingTimeStr']) && $ShopItem['HandlingTimeStr'] != '')
+					$GiftChkOpt = "No";
+
+				$IsGiftCertificateItem1 = $this->checkGiftCertificateItem('IsGiftCertificateItem',$ShopItem);
+
+				//if($ShopItem['SKU']!= config('global.GIFT_CERTIFICATE_SKU') && $ShopItem['SKU']!= config('global.GIFT_CERTIFICATE_SKU1'))
+				if($IsGiftCertificateItem1 == 'No'){
+					$onlyGCPurchased = 0;
+				}
+
+				$ShopItem['ShowGiftChkOpt'] = $GiftChkOpt;
+				$normaluser = Auth::user();
+				if (Auth::guard('store')->check()) {
+					$normaluser = Auth::guard('web')->user();
+				}
+
+				//if(Auth::user() && strtolower(Auth::user()->eusertype ?? '') == 'retailer' && Session::get('sess_icustomerid') > 0 && Session::get('etype') == 'M')
+				if($normaluser && strtolower($normaluser->eusertype ?? '') == 'retailer' && Session::get('sess_icustomerid') > 0 && Session::get('etype') == 'M')
+				{
+					if(isset($ShopItem['PointMultipier']) && $ShopItem['PointMultipier'] > 0)
+					{
+						$ShopItem['RewardItemWise'] = $ShopItem['TotPrice'] * $ShopItem['PointMultipier'];
+						$ShopItem['RewardItemWise'] = NumberFormat($ShopItem['RewardItemWise']);
+						$RewardPointItemWiseTotal = $RewardPointItemWiseTotal + $ShopItem['RewardItemWise'];
+					}
+				}
+
+				$critieostr.='{ id: "'.$ShopItem["SKU"].'", price: '.$ShopItem["Price"].', quantity: '.$ShopItem["Qty"].' } ,';
+
+				if(((isset($ShopItem['IsCosmo']) && $ShopItem['IsCosmo']=="Yes") || (isset($ShopItem['IsNandansons']) && $ShopItem['IsNandansons']=='Yes') || (isset($ShopItem['IsPerfumePW']) && $ShopItem['IsPerfumePW']=='Yes') || (isset($ShopItem['IsPCA']) && $ShopItem['IsPCA']=='Yes') || (isset($ShopItem['IsND']) && $ShopItem['IsND']=='Yes')) && (isset($ShopItem['VendorSKU']) && $ShopItem['VendorSKU']!=''))
+				{
+					$IsVenderItem = "Yes";
+				}
+				if((isset($ShopItem['IsCosmo']) && $ShopItem['IsCosmo']=="Yes") && (isset($ShopItem['VendorSKU']) && $ShopItem['VendorSKU']!=''))
+				{
+					$IsCosmo = "Yes";
+				}
+				if((isset($ShopItem['IsNandansons']) && $ShopItem['IsNandansons']=="Yes") && (isset($ShopItem['VendorSKU']) && $ShopItem['VendorSKU']!=''))
+				{
+					$IsNandansons = "Yes";
+				}
+				if((isset($ShopItem['IsPerfumePW']) && $ShopItem['IsPerfumePW']=="Yes") && (isset($ShopItem['VendorSKU']) && $ShopItem['VendorSKU']!=''))
+				{
+					$IsPerfumePW = "Yes";
+				}
+				if((isset($ShopItem['IsPCA']) && $ShopItem['IsPCA']=="Yes") && (isset($ShopItem['VendorSKU']) && $ShopItem['VendorSKU']!=''))
+				{
+					$IsPCA = "Yes";
+				}
+				if((isset($ShopItem['IsND']) && $ShopItem['IsND']=="Yes") && (isset($ShopItem['VendorSKU']) && $ShopItem['VendorSKU']!=''))
+				{
+					$IsND = "Yes";
+				}
+
+				if(isset($ShopItem['IsMaxaromaTwoDelivery']) && $ShopItem['IsMaxaromaTwoDelivery']=="Yes" && $ShopItem['IsMaxaromaTwoDelivery']!='')
+				{
+					$IsMaxaromaTwoDelivery = "Yes";
+					$ISMaxTwoItem = "Yes";
+				}
+				else
+				{
+					$ISMax2day = "No";
+				}
+
+				$TempCart[] = $ShopItem;
+			}
+			Session::put('ShoppingCart.Cart',$TempCart);
+			Session::put('ShoppingCart.RewardPointItemWiseTotal', ceil($RewardPointItemWiseTotal));
+		}
+
+		/*if($ISMax2day=="No")
+		{
+			$IsMaxaromaTwoDelivery = "No";
+		}*/
+		//echo "dd".$IsMaxaromaTwoDelivery; exit;
+		$onlyWireTrabsfer = 0;
+		$onlyAmazonPaypal = 0;
+		if(Session::get('payment_amount') > 0 && Session::get('sess_icustomerid') > 0 && Session::get('etype') == "M")
+		{
+			$NetTotal = $this->GetNetTotal();
+			if($NetTotal <= Session::get('payment_amount')){
+				$onlyAmazonPaypal = 1;
+				$onlyWireTrabsfer = 1;
+			}else if($NetTotal > Session::get('payment_amount')){
+				$onlyAmazonPaypal = 0;
+				$onlyWireTrabsfer = 1;
+			}
+		} else {
+			$NetTotal = $this->GetNetTotal();
+			if($NetTotal > 0  && $NetTotal <= 5000){
+				$onlyAmazonPaypal = 1;
+				$onlyWireTrabsfer = 1;
+			}else if($NetTotal > 5000){
+				$onlyAmazonPaypal=0;
+				$onlyWireTrabsfer = 1;
+			}
+		}
+		if(Session::has('ShoppingCart.GiftCoupon'))
+		{
+			$GiftCouponInfo = Session::get('ShoppingCart.GiftCoupon');
+			if($GiftCouponInfo['Code'] !='' && $GiftCouponInfo['Code'] != null)
+			{
+				$new_total = NumberFormat($this->GetNetTotal() + $GiftCouponInfo['Value']);
+				if($new_total <= $GiftCouponInfo["Applicable_Value"])
+					Session::put('ShoppingCart.GiftCoupon.Value',$new_total);
+				else
+					Session::put('ShoppingCart.GiftCoupon.Value',$GiftCouponInfo['Applicable_Value']);
+			}
+		}
+
+		$IsPaypalExpressCheckout ='No';
+		$IsGoogleCheckout ='No';
+		## Amazon Checkout Display Setting
+		Session::forget('Afterpay');
+		$Amazon_pay_Checkout ='No';
+		$Afterpay_Checkout ='No';
+
+		if($cartpopup=='')
+		{
+			$PaymentMethods = Cache::rememberForever('afterpay_payment_method_ca', function () {
+			 return PaymentMethod::select(
+						'pm_group_name',
+						'pm_gateway_name',
+						'pm_details'
+					)
+					->where('pm_status', 'Active')
+					->get();
+			});
+
+			if($PaymentMethods->isNotEmpty() && !Auth::guard('store')->check())
+			{
+			foreach($PaymentMethods as $PayeMethod)
+			{
+				if($PayeMethod->pm_group_name =='PAYMENT_AMAZONC')
+				{
+					$pm_details = unserialize($PayeMethod->pm_details);
+					$payment_methods_settings = [];
+					foreach ( $pm_details as $pm_var_name => $pm_var_value )
+					{
+						$payment_methods_settings[$pm_var_name] = $pm_var_value;
+					}
+				}
+				if($PayeMethod->pm_group_name == 'PAYMENT_PAYWITHAMAZON')
+				{
+					$pm_details = unserialize($PayeMethod->pm_details);
+					foreach ( $pm_details as $pm_var_name => $pm_var_value )
+					{
+						$payment_methods_settings[$pm_var_name] = $pm_var_value;
+					}
+					if(count($payment_methods_settings) > 0 && $payment_methods_settings['paywithamazon_Access_Key_Id'] !='' && $payment_methods_settings['paywithamazon_Secret_Key_ID'] !='' && $payment_methods_settings['paywithamazon_Merchant_Id'] != '')
+					{
+						$Amazon_pay_Checkout ='Yes';
+					}
+					config(['CLIENT_ID' => $this->decrypt($pm_details['paywithamazon_Client_ID'])]);
+					config(['MERCHANT_ID' => $this->decrypt($pm_details['paywithamazon_Merchant_Id'])]);
+					//config(['CALLBACK_URL' => url('/billing-amazon-checkout')]);
+					config(['CALLBACK_URL' => url('/setupamazon')]);
+					config(['CALLBACK_CHECKOUT_URL' => url('amazon/checkoutlogin')]);
+
+					if(strtoupper(trim($payment_methods_settings['paywithamazon_Transaction_Mode'])) == 'SANDBOX'){
+						config(['JS_SERVER_URL' => 'https://static-na.payments-amazon.com/OffAmazonPayments/us/sandbox/js/Widgets.js?sellerId='.config('MERCHANT_ID')]);
+					}else{
+						config(['JS_SERVER_URL' => 'https://static-na.payments-amazon.com/OffAmazonPayments/us/js/Widgets.js?sellerId='.config('MERCHANT_ID')]);
+					}
+				}
+
+				if($PayeMethod->pm_group_name == 'PAYMENT_PAYPALEC')
+				{
+					$arrPEVar	= unserialize($PayeMethod->pm_details);
+					$Mode 		= trim(strtolower($arrPEVar['paypalec_Transaction_Mode'] ?? ''));
+					$client_id 	= $this->decrypt($arrPEVar['paypalec_Username']);
+					//$Mode  		= "sandbox";
+					if(isset($Mode)&& $Mode == 'live')
+					{
+						$Attrs['PaypalClientID'] = $client_id;
+					}
+					else
+					{
+						$client_id 	= 'AQymJLkSRgzhHf0AjiYOGL_OHQZ60bCggeySkd8F31n_2ery6HK7HXYQGeeBCfszGgAin8XfJbvZuByn';
+						$Attrs['PaypalClientID'] = $client_id;
+					}
+					if($this->Is_WholeSaler_Allow() == false)
+						$IsPaypalExpressCheckout ='No';
+					else
+						$IsPaypalExpressCheckout ='Yes';
+				}
+				if($PayeMethod->pm_group_name == 'PAYMENT_PAYWITHAFTERPAY')
+				{
+					$normaluser = Auth::user();
+					if (Auth::guard('store')->check()) {
+						$normaluser = Auth::guard('web')->user();
+					}
+					$Afterpay_Checkout ='Yes';
+					//if(Auth::user() && Auth::user()->eusertype == 'Wholesaler')
+					if($normaluser && $normaluser->eusertype == 'Wholesaler')
+						$Afterpay_Checkout ='No';
+				}
+			}
+		}
+
+		$show_AP = 'Yes';
+		if($Afterpay_Checkout == "Yes" && $show_AP == "Yes"){
+			if(!Session::has('isPhoneOrder')){//15022024
+				$this->AfterpayMinMax();
+			}
+		}
+		}
+		$CouponCode = $this->GetAllCoupons('CouponCode');
+		$CouponCodeSecond = $this->GetAllCoupons('CouponCodeSecond');
+		$YotpoCouponCode ='';
+		if(Session::has('ShoppingCart.YotpoRewardCode') && Session::get('ShoppingCart.YotpoRewardCode') != '')
+		{
+			$YotpoCouponCode = Session::get('ShoppingCart.YotpoRewardCode');
+		}
+		if($cartpopup=='')
+		{
+			$normaluser = Auth::user();
+			if (Auth::guard('store')->check()) {
+				$normaluser = Auth::guard('web')->user();
+			}
+			//$CustomerID = (Auth::user() ? Session::get('sess_icustomerid'):null);
+			$CustomerID = ($normaluser ? Session::get('sess_icustomerid'):null);
+			if($CouponCode != ''){
+				$this->ApplyCouponDiscount($CouponCode,$CustomerID);
+			}
+			if($CouponCodeSecond != '')
+				$this->ApplyCouponDiscountSecond($CouponCodeSecond,$CustomerID);
+
+			$this->ApplyItemWiseCoupon($CouponCode);
+
+		}
+
+		if($cartpopup=='')
+		{
+			$normaluser = Auth::user();
+			if (Auth::guard('store')->check()) {
+				$normaluser = Auth::guard('web')->user();
+			}
+			//$CustomerID = (Auth::user() ? Session::get('sess_icustomerid'):null);
+			$CustomerID = ($normaluser ? Session::get('sess_icustomerid'):null);
+			if($YotpoCouponCode != ''){
+				$this->ApplyCouponDiscount($YotpoCouponCode,$CustomerID);
+			}
+		}
+
+		//15022024 to check phone order auto discount start
+		if(Session::has('isPhoneOrder')){
+			$this->ApplyAutoDiscount();
+		}
+		//15022024 to check phone order auto discount end
+
+		$this->Is_WholeSaler_Allow(true);
+
+		$DiscountInfo = $this->GetAllDiscounts();
+
+		$SubTotal = Session::get('ShoppingCart.SubTotal');
+		$TotalValue = ($SubTotal - $DiscountInfo['TotalDiscount']);
+		$Attrs['TotalValue'] = $TotalValue;
+
+		if(config('Settings.CHECKOUT_SHOIPPINGCART') == "No" && !Auth::guard('store')->check())
 		{
 			$this->RemoveFreeGiftCache();
 		}
@@ -6652,6 +8542,7 @@ trait CartTrait
 			for ($c=0; $c<count($Cart); $c++)
 			{
 				Session::put('ShoppingCart.Cart.' . $c . '.BogoDiscountMessage',"");
+				Session::put("ShoppingCart.Cart." . $c . ".BogoDiscountID",0);
 			}
 			$DogoRS = BogoDiscount::where('start_date','<=',DB::raw('curdate()'))
 						->where('end_date','>=',DB::raw('curdate()'))
@@ -6859,6 +8750,7 @@ trait CartTrait
 											$BogoDiscountMessage = $this->SetBogoMessage($DogoRS[$i]->type,1,$DogoRS[$i]['percentage'],$DogoRS[$i]['quantity']);
 										}
 										Session::put('ShoppingCart.Cart.' . $d . '.BogoDiscountMessage', $BogoDiscountMessage);
+										Session::put('ShoppingCart.Cart.' . $d . '.BogoDiscountID', $DogoRS[$i]->bogo_discount_id);
 										//Display Bogo Discount Message
 									} else if(in_array($CurrentSKU, $SKUs)) {
 										//Display Bogo Discount Message
@@ -7116,6 +9008,7 @@ trait CartTrait
 											$BogoDiscountMessage = $this->SetBogoMessage($DogoRS[$i]->type,1,$DogoRS[$i]['percentage'],$DogoRS[$i]['quantity']);
 										}
 										Session::put('ShoppingCart.Cart.' . $d . '.BogoDiscountMessage', $BogoDiscountMessage);
+										Session::put('ShoppingCart.Cart.' . $d . '.BogoDiscountID', $DogoRS[$i]->bogo_discount_id);
 										//Display Bogo Discount Message
 									} else if(in_array($CurrentSKU, $SKUs)) {
 										//Display Bogo Discount Message
@@ -7373,6 +9266,7 @@ trait CartTrait
 											$BogoDiscountMessage = $this->SetBogoMessage($DogoRS[$i]->type,1,$DogoRS[$i]['percentage'],$DogoRS[$i]['quantity']);
 										}
 										Session::put('ShoppingCart.Cart.' . $d . '.BogoDiscountMessage', $BogoDiscountMessage);
+										Session::put('ShoppingCart.Cart.' . $d . '.BogoDiscountID', $DogoRS[$i]->bogo_discount_id);
 										//Display Bogo Discount Message
 									} else if(in_array($CurrentSKU, $SKUs)) {
 										//Display Bogo Discount Message
@@ -8247,7 +10141,6 @@ trait CartTrait
 					$temp_ary['CategoryID']   		= $CategoryID;
 					$temp_ary['SKU']         		= "SAMPLE-".$free_sample_res->sku;
 					$temp_ary['ORGSAMPLESKU']       = $free_sample_res->sku;
-					$temp_ary['OrderType']       	= "Website";
 					$temp_ary['ProductName'] 		= stripslashes(str_ireplace(array("\r","\n",'\r','\n'),'',$free_sample_res->product_name));
 					$temp_ary['short_description'] 	= strip_tags(stripslashes(str_ireplace(array("\r","\n",'\r','\n'),'',$free_sample_res->short_description)));
 					$temp_ary['Billing_Image'] 		= $free_sample_res->billing_image;
@@ -8257,6 +10150,7 @@ trait CartTrait
 					$temp_ary['Image']       		= $free_sample_res->prod_image;
 					$temp_ary['Prod_URL']       	= "";
 					$temp_ary['Is_Free_Sample']       = "Yes";
+					$temp_ary['Is_Free_Sample_RuleId'] = Session::get('ShoppingCart.FreeSampleRuleId') ?? '';
 					$temp_ary['image_forpopup']		= $free_sample_res->image_forpopup;
 					//$temp_ary['freeproductsid']		= $freeproductsid;
 					$temp_ary['freesampleproductsid']	= $free_sample_res->products_id;
@@ -8523,7 +10417,449 @@ trait CartTrait
 		}
 	}
 
-   public function CheckFreeGiftInCart($TotalValue, $TotalFreeGiftItems = 0, $FreeGiftProductId = 0)
+/**
+ * Get the actually applicable Free Gift rule.
+ *
+ * Rule calculation:
+ *
+ * 1. Price               => complete eligible cart subtotal
+ * 2. Brand               => subtotal of matching brand products
+ * 3. Category            => subtotal of matching category products
+ * 4. Brand + Category    => subtotal of products matching BOTH
+ *
+ * Free gift products are NEVER included in calculation.
+ */
+private function GetApplicableFreeGiftRule($cartitem, $TotalValue = 0, $FreeGiftProductId = 0, $TotalFreeGiftItems = 0)
+{
+    $today = date('Y-m-d');
+
+    /*
+     * ============================================================
+     * 1. BUILD NORMAL CART
+     *
+     * Free gift / free sample NEVER participate in rule calculation.
+     * ============================================================
+     */
+    $normalCartItems = [];
+
+    foreach ($cartitem as $item) {
+
+        if (
+            isset($item['Is_Free_Sample']) &&
+            $item['Is_Free_Sample'] == 'Yes'
+        ) {
+            continue;
+        }
+
+        if (
+            isset($item['IS_Free_Gift']) &&
+            $item['IS_Free_Gift'] == 'Yes'
+        ) {
+            continue;
+        }
+
+        $normalCartItems[] = $item;
+    }
+
+    if (count($normalCartItems) == 0) {
+        return null;
+    }
+
+    /*
+     * ============================================================
+     * 2. TOTAL NORMAL CART VALUE
+     * ============================================================
+     */
+    $normalCartTotal = 0;
+
+    foreach ($normalCartItems as $item) {
+        $normalCartTotal += NumberFormat(
+            isset($item['TotPrice'])
+                ? $item['TotPrice']
+                : 0
+        );
+    }
+
+    $normalCartTotal = NumberFormat($normalCartTotal);
+
+    /*
+     * ============================================================
+     * 3. LOAD ALL ACTIVE RULES
+     * ============================================================
+     */
+    $rules = DB::table('pu_free_gift_product')
+        ->where('status', '1')
+        ->whereDate('start_date', '<=', $today)
+        ->whereDate('end_date', '>=', $today)
+        ->get();
+
+    if (!$rules || count($rules) == 0) {
+        return null;
+    }
+
+    /*
+     * ============================================================
+     * 4. RANGE CHECK
+     *
+     * VERY IMPORTANT:
+     *
+     * 501 - 600
+     *
+     * $480  => NO
+     * $550  => YES
+     * $600  => YES
+     * $601  => NO
+     * $960  => NO
+     *
+     * We DO NOT use:
+     *
+     * price_end_range <= value
+     *
+     * ============================================================
+     */
+    $isInRange = function ($value, $start, $end) {
+
+        $value = (float)$value;
+        $start = (float)$start;
+        $end   = (float)$end;
+
+        return (
+            $value >= $start &&
+            $value <= $end
+        );
+    };
+
+    /*
+     * ============================================================
+     * 5. CACHE RULE BRAND/CATEGORY IDs
+     * ============================================================
+     */
+    $brandRuleIds = [];
+    $categoryRuleIds = [];
+
+    /*
+     * ============================================================
+     * 6. CHECK EACH RULE
+     * ============================================================
+     */
+    $validRules = [];
+
+    foreach ($rules as $rule) {
+
+        $flagRange = trim((string)$rule->flag_range);
+
+        /*
+         * Unknown rule type => ignore
+         */
+        if (
+            $flagRange !== '' &&
+            $flagRange !== 'Brand' &&
+            $flagRange !== 'Category' &&
+            $flagRange !== 'Brand,Category'
+        ) {
+            continue;
+        }
+
+        /*
+         * If specific gift product requested,
+         * only check that rule.
+         */
+        if ($FreeGiftProductId > 0) {
+
+            if ((int)$rule->products_id !== (int)$FreeGiftProductId) {
+                continue;
+            }
+
+            if (
+                !empty($rule->freegift_add_count) &&
+                $TotalFreeGiftItems >= $rule->freegift_add_count
+            ) {
+                continue;
+            }
+        }
+
+        /*
+         * ========================================================
+         * PRICE RULE
+         *
+         * Whole normal cart total.
+         * ========================================================
+         */
+        if ($flagRange === '') {
+
+            $ruleValue = $normalCartTotal;
+
+            if (
+                !$isInRange(
+                    $ruleValue,
+                    $rule->price_start_range,
+                    $rule->price_end_range
+                )
+            ) {
+                continue;
+            }
+
+            $rule->_matched_value = $ruleValue;
+            $rule->_priority = 4;
+
+            $validRules[] = $rule;
+
+            continue;
+        }
+
+        /*
+         * ========================================================
+         * GET BRAND IDS FOR THIS RULE
+         * ========================================================
+         */
+        $ruleBrandIds = [];
+
+        if (
+            $flagRange === 'Brand' ||
+            $flagRange === 'Brand,Category'
+        ) {
+
+            $ruleBrandIds = DB::table('pu_freegift_brand')
+                ->where(
+                    'products_id',
+                    $rule->products_id
+                )
+                ->pluck('imanufactureid')
+                ->map(function ($id) {
+                    return (string)$id;
+                })
+                ->toArray();
+        }
+
+        /*
+         * IMPORTANT:
+         *
+         * If Brand rule has no brand mapping,
+         * it is NOT a valid brand rule.
+         */
+        if (
+            ($flagRange === 'Brand' ||
+             $flagRange === 'Brand,Category') &&
+            count($ruleBrandIds) == 0
+        ) {
+            continue;
+        }
+
+        /*
+         * ========================================================
+         * GET CATEGORY IDS FOR THIS RULE
+         * ========================================================
+         */
+        $ruleCategoryIds = [];
+
+        if (
+            $flagRange === 'Category' ||
+            $flagRange === 'Brand,Category'
+        ) {
+
+            $ruleCategoryIds = DB::table('pu_freegift_category')
+                ->where(
+                    'products_id',
+                    $rule->products_id
+                )
+                ->pluck('categoryid')
+                ->map(function ($id) {
+                    return (string)$id;
+                })
+                ->toArray();
+        }
+
+        /*
+         * IMPORTANT:
+         *
+         * If Category rule has no category mapping,
+         * it is NOT a valid category rule.
+         */
+        if (
+            ($flagRange === 'Category' ||
+             $flagRange === 'Brand,Category') &&
+            count($ruleCategoryIds) == 0
+        ) {
+            continue;
+        }
+
+        /*
+         * ========================================================
+         * CALCULATE ONLY ELIGIBLE SUBTOTAL
+         * ========================================================
+         */
+        $ruleValue = 0;
+
+        foreach ($normalCartItems as $item) {
+
+            $itemBrandId = isset($item['ImanufactureID'])
+                ? (string)$item['ImanufactureID']
+                : '';
+
+            $itemCategoryId = isset($item['CategoryID'])
+                ? (string)$item['CategoryID']
+                : '';
+
+            /*
+             * BRAND
+             */
+            $brandMatch = true;
+
+            if (
+                $flagRange === 'Brand' ||
+                $flagRange === 'Brand,Category'
+            ) {
+
+                $brandMatch = in_array(
+                    $itemBrandId,
+                    $ruleBrandIds,
+                    true
+                );
+            }
+
+            /*
+             * CATEGORY
+             */
+            $categoryMatch = true;
+
+            if (
+                $flagRange === 'Category' ||
+                $flagRange === 'Brand,Category'
+            ) {
+
+                $categoryMatch = in_array(
+                    $itemCategoryId,
+                    $ruleCategoryIds,
+                    true
+                );
+            }
+
+            /*
+             * BRAND + CATEGORY
+             *
+             * BOTH must match.
+             */
+            if (
+                $brandMatch &&
+                $categoryMatch
+            ) {
+
+                $ruleValue += NumberFormat(
+                    isset($item['TotPrice'])
+                        ? $item['TotPrice']
+                        : 0
+                );
+            }
+        }
+
+        $ruleValue = NumberFormat($ruleValue);
+
+        /*
+         * No eligible product for this rule.
+         */
+        if ($ruleValue <= 0) {
+            continue;
+        }
+
+        /*
+         * ========================================================
+         * RANGE CHECK
+         * ========================================================
+         */
+        if (
+            !$isInRange(
+                $ruleValue,
+                $rule->price_start_range,
+                $rule->price_end_range
+            )
+        ) {
+            continue;
+        }
+
+        /*
+         * ========================================================
+         * PRIORITY
+         *
+         * Brand + Category = highest
+         * Brand             = second
+         * Category          = third
+         * Price             = last
+         * ========================================================
+         */
+        if ($flagRange === 'Brand,Category') {
+            $rule->_priority = 1;
+        }
+        elseif ($flagRange === 'Brand') {
+            $rule->_priority = 2;
+        }
+        elseif ($flagRange === 'Category') {
+            $rule->_priority = 3;
+        }
+        else {
+            $rule->_priority = 4;
+        }
+
+        $rule->_matched_value = $ruleValue;
+
+        $validRules[] = $rule;
+    }
+
+    /*
+     * ============================================================
+     * NO RULE
+     * ============================================================
+     */
+    if (count($validRules) == 0) {
+        return null;
+    }
+
+    /*
+     * ============================================================
+     * SELECT BEST RULE
+     *
+     * Priority first.
+     *
+     * Same priority:
+     * smaller applicable range wins.
+     *
+     * Example:
+     *
+     * Aaron subtotal = 480
+     *
+     * 401-500 => valid
+     * 501-600 => invalid
+     *
+     * Therefore 401-500 ONLY.
+     * ============================================================
+     */
+    usort($validRules, function ($a, $b) {
+
+        if ($a->_priority != $b->_priority) {
+            return $a->_priority <=> $b->_priority;
+        }
+
+        if (
+            (float)$a->price_end_range !=
+            (float)$b->price_end_range
+        ) {
+            return
+                (float)$a->price_end_range <=>
+                (float)$b->price_end_range;
+        }
+
+        return
+            (float)$a->price_start_range <=>
+            (float)$b->price_start_range;
+    });
+
+    /*
+     * ============================================================
+     * RETURN ONE AND ONLY ONE RULE
+     * ============================================================
+     */
+    return $validRules[0];
+}
+public function CheckFreeGiftInCart($TotalValue, $TotalFreeGiftItems = 0, $FreeGiftProductId = 0)
 {
     $onlyGCPurchased = $this->GetCartAttribute('onlyGCPurchased');
 
@@ -8564,7 +10900,7 @@ trait CartTrait
      * Free gifts / free samples are NOT used for rule matching.
      * ============================================================
      */
-   $purchaseItems = [];
+    $purchaseItems = [];
 
     foreach ($cartitem as $item) {
 
@@ -8952,36 +11288,36 @@ trait CartTrait
         }
     }
 
-		if ($hasFreeGift) {
+    if ($hasFreeGift) {
 
-			for ($i = count($cartitem) - 1; $i >= 0; $i--) {
+        for ($i = count($cartitem) - 1; $i >= 0; $i--) {
 
-				if (
-					isset($cartitem[$i]["IS_Free_Gift"]) &&
-					$cartitem[$i]["IS_Free_Gift"] == "Yes"
-				) {
-					unset($cartitem[$i]);
-				}
-			}
+            if (
+                isset($cartitem[$i]["IS_Free_Gift"]) &&
+                $cartitem[$i]["IS_Free_Gift"] == "Yes"
+            ) {
+                unset($cartitem[$i]);
+            }
+        }
 
-			$cartitem = array_values($cartitem);
+        $cartitem = array_values($cartitem);
 
-			if (
-				count($cartitem) == 1 &&
-				isset($cartitem[0]['IsYotpoFreeProduct']) &&
-				$cartitem[0]['IsYotpoFreeProduct'] == 'Yes'
-			) {
-				$cartitem = [];
-			}
+        if (
+            count($cartitem) == 1 &&
+            isset($cartitem[0]['IsYotpoFreeProduct']) &&
+            $cartitem[0]['IsYotpoFreeProduct'] == 'Yes'
+        ) {
+            $cartitem = [];
+        }
 
-			Session::put(
-				'ShoppingCart.Cart',
-				$cartitem
-			);
-		}
+        Session::put(
+            'ShoppingCart.Cart',
+            $cartitem
+        );
+    }
 
-		return "No";
-	}
+    return "No";
+}
 
     /*
      * ============================================================
@@ -9107,7 +11443,6 @@ trait CartTrait
             }
         }
     }
-
     /*
      * ============================================================
      * NO STOCK
@@ -9129,6 +11464,7 @@ trait CartTrait
                 isset($item["IS_Free_Gift"]) &&
                 $item["IS_Free_Gift"] == "Yes"
             ) {
+
                 return "Yes";
             }
         }
@@ -9175,7 +11511,6 @@ trait CartTrait
         (int)$free_gift_res->products_id ==
         (int)$FreeGiftProductId
     ) {
-
         $sameRule = true;
     }
 
@@ -9280,11 +11615,6 @@ trait CartTrait
 
             } else {
 
-			/*
-                 * Required number already added.
-                 *
-                 * Popup should NOT open again.
-                 */
                 return "Yes";
             }
         }
@@ -9333,6 +11663,626 @@ trait CartTrait
      */
     return "No";
 }
+public function CheckFreeGiftInCart_bk122($TotalValue, $TotalFreeGiftItems = 0, $FreeGiftProductId = 0)
+{
+    $onlyGCPurchased = $this->GetCartAttribute('onlyGCPurchased');
+
+    if ($onlyGCPurchased == 1) {
+        return null;
+    }
+
+    if (
+        config('Settings.FREEGIFTFLAG') == "No" ||
+        (Session::has('eusertype') && Session::get('eusertype') == "Wholesaler")
+    ) {
+        return null;
+    }
+
+    $GiftCertiTotal = 0;
+
+    if (Session::has('ShoppingCart.GiftCertiTotal')) {
+        $GiftCertiTotal = NumberFormat(
+            Session::get('ShoppingCart.GiftCertiTotal')
+        );
+    }
+
+    $TotalValue = NumberFormat($TotalValue - $GiftCertiTotal);
+
+    if (
+        !Session::has('ShoppingCart.Cart') ||
+        count(Session::get('ShoppingCart.Cart')) == 0
+    ) {
+        return "No";
+    }
+
+    $cartitem = Session::get('ShoppingCart.Cart');
+
+    /*
+     * ============================================================
+     * BUILD REAL PURCHASE CART
+     *
+     * Free gifts / free samples are NEVER used for rule matching.
+     * ============================================================
+     */
+    $purchaseItems = [];
+
+    foreach ($cartitem as $item) {
+
+        if (
+            isset($item["Is_Free_Sample"]) &&
+            $item["Is_Free_Sample"] == "Yes"
+        ) {
+            continue;
+        }
+
+        if (
+            isset($item["FreeGiftCoupon"]) &&
+            $item["FreeGiftCoupon"] == "Yes"
+        ) {
+            return "Yes";
+        }
+
+        if (
+            isset($item["IS_Free_Gift"]) &&
+            $item["IS_Free_Gift"] == "Yes"
+        ) {
+            continue;
+        }
+
+        $purchaseItems[] = $item;
+    }
+
+    if (count($purchaseItems) == 0) {
+        return "No";
+    }
+
+    $today = date("Y-m-d");
+
+    /*
+     * ============================================================
+     * GET ALL ACTIVE RULES
+     *
+     * We intentionally DO NOT decide the rule in SQL using
+     * $TotalValue.
+     *
+     * Rule amount is calculated separately below:
+     *
+     * Price              = whole cart
+     * Brand              = matching brand subtotal
+     * Category           = matching category subtotal
+     * Brand + Category   = matching brand/category subtotal
+     * ============================================================
+     */
+    $rules = DB::table('pu_free_gift_product')
+        ->select('*')
+        ->where('status', '1')
+        ->whereDate('start_date', '<=', $today)
+        ->whereDate('end_date', '>=', $today)
+        ->get();
+
+    if ($rules->count() == 0) {
+        return "No";
+    }
+
+    /*
+     * ============================================================
+     * FIND VALID RULES
+     * ============================================================
+     */
+    $validRules = [];
+
+    foreach ($rules as $rule) {
+
+        $flag = trim((string)$rule->flag_range);
+
+        /*
+         * --------------------------------------------------------
+         * Get rule brand IDs
+         * --------------------------------------------------------
+         */
+        $ruleBrandIds = [];
+
+        if ($flag == "Brand" || $flag == "Brand,Category") {
+
+            $ruleBrandIds = DB::table('pu_freegift_brand')
+                ->where('products_id', $rule->products_id)
+                ->pluck('imanufactureid')
+                ->map(function ($id) {
+                    return (int)$id;
+                })
+                ->toArray();
+
+            if (count($ruleBrandIds) == 0) {
+                continue;
+            }
+        }
+
+        /*
+         * --------------------------------------------------------
+         * Get rule category IDs
+         * --------------------------------------------------------
+         */
+        $ruleCategoryIds = [];
+
+        if ($flag == "Category" || $flag == "Brand,Category") {
+
+            $ruleCategoryIds = DB::table('pu_freegift_category')
+                ->where('products_id', $rule->products_id)
+                ->pluck('categoryid')
+                ->map(function ($id) {
+                    return (int)$id;
+                })
+                ->toArray();
+
+            if (count($ruleCategoryIds) == 0) {
+                continue;
+            }
+        }
+
+        /*
+         * --------------------------------------------------------
+         * Calculate amount for THIS rule
+         * --------------------------------------------------------
+         */
+        $ruleTotal = 0;
+
+        if ($flag == "") {
+
+            /*
+             * PRICE RANGE RULE
+             *
+             * Whole purchase cart.
+             */
+            foreach ($purchaseItems as $item) {
+                $ruleTotal += NumberFormat(
+                    isset($item["TotPrice"])
+                        ? $item["TotPrice"]
+                        : 0
+                );
+            }
+        }
+
+        elseif ($flag == "Brand") {
+
+            /*
+             * BRAND RULE
+             *
+             * Only products belonging to this rule's brands.
+             */
+            foreach ($purchaseItems as $item) {
+
+                $itemBrandId = isset($item["ImanufactureID"])
+                    ? (int)$item["ImanufactureID"]
+                    : 0;
+
+                if (
+                    $itemBrandId > 0 &&
+                    in_array($itemBrandId, $ruleBrandIds)
+                ) {
+                    $ruleTotal += NumberFormat(
+                        isset($item["TotPrice"])
+                            ? $item["TotPrice"]
+                            : 0
+                    );
+                }
+            }
+        }
+
+        elseif ($flag == "Category") {
+
+            /*
+             * CATEGORY RULE
+             *
+             * Only products belonging to this rule's categories.
+             */
+            foreach ($purchaseItems as $item) {
+
+                $itemCategoryId = isset($item["CategoryID"])
+                    ? (int)$item["CategoryID"]
+                    : 0;
+
+                if (
+                    $itemCategoryId > 0 &&
+                    in_array($itemCategoryId, $ruleCategoryIds)
+                ) {
+                    $ruleTotal += NumberFormat(
+                        isset($item["TotPrice"])
+                            ? $item["TotPrice"]
+                            : 0
+                    );
+                }
+            }
+        }
+
+        elseif ($flag == "Brand,Category") {
+
+            /*
+             * BRAND + CATEGORY RULE
+             *
+             * Product must satisfy BOTH.
+             */
+            foreach ($purchaseItems as $item) {
+
+                $itemBrandId = isset($item["ImanufactureID"])
+                    ? (int)$item["ImanufactureID"]
+                    : 0;
+
+                $itemCategoryId = isset($item["CategoryID"])
+                    ? (int)$item["CategoryID"]
+                    : 0;
+
+                if (
+                    $itemBrandId > 0 &&
+                    $itemCategoryId > 0 &&
+                    in_array($itemBrandId, $ruleBrandIds) &&
+                    in_array($itemCategoryId, $ruleCategoryIds)
+                ) {
+                    $ruleTotal += NumberFormat(
+                        isset($item["TotPrice"])
+                            ? $item["TotPrice"]
+                            : 0
+                    );
+                }
+            }
+        }
+
+        else {
+            continue;
+        }
+
+        $ruleTotal = NumberFormat($ruleTotal);
+
+        /*
+         * --------------------------------------------------------
+         * EXCLUDE SKU
+         * --------------------------------------------------------
+         */
+        if (
+            isset($rule->exclude_sku) &&
+            trim($rule->exclude_sku) != ''
+        ) {
+
+            $excludeSkus = array_unique(
+                array_filter(
+                    array_map(
+                        'trim',
+                        explode('#', $rule->exclude_sku)
+                    ),
+                    'strlen'
+                )
+            );
+
+            foreach ($purchaseItems as $item) {
+
+                if (
+                    isset($item["SKU"]) &&
+                    in_array($item["SKU"], $excludeSkus)
+                ) {
+                    $ruleTotal -= NumberFormat(
+                        isset($item["TotPrice"])
+                            ? $item["TotPrice"]
+                            : 0
+                    );
+                }
+            }
+        }
+
+        /*
+         * --------------------------------------------------------
+         * EXCLUDE POCKET PERFUME
+         * --------------------------------------------------------
+         */
+        if (
+            isset($rule->exclude_pocketperfume) &&
+            $rule->exclude_pocketperfume == "Yes"
+        ) {
+
+            $pocketPerfumeCategory = $this->getPocketPerfumeCategory();
+
+            foreach ($purchaseItems as $item) {
+
+                $itemCategoryId = isset($item["CategoryID"])
+                    ? (int)$item["CategoryID"]
+                    : 0;
+
+                if (
+                    $itemCategoryId > 0 &&
+                    in_array(
+                        $itemCategoryId,
+                        $pocketPerfumeCategory
+                    )
+                ) {
+                    $ruleTotal -= NumberFormat(
+                        isset($item["TotPrice"])
+                            ? $item["TotPrice"]
+                            : 0
+                    );
+                }
+            }
+        }
+
+        $ruleTotal = NumberFormat($ruleTotal);
+
+        /*
+         * --------------------------------------------------------
+         * RANGE CHECK
+         *
+         * Example:
+         * 401 - 500
+         *
+         * 480 => valid
+         * 501 => next applicable rule
+         *
+         * Also supports your existing behaviour where a value
+         * above the final range can use the highest applicable
+         * range.
+         * --------------------------------------------------------
+         */
+        $start = NumberFormat($rule->price_start_range);
+        $end   = NumberFormat($rule->price_end_range);
+
+        if ($ruleTotal < $start) {
+            continue;
+        }
+
+        /*
+         * Valid range:
+         *
+         * start <= amount <= end
+         *
+         * OR amount is above the range.
+         *
+         * We store it as a candidate and select the BEST
+         * applicable rule below.
+         */
+        $validRules[] = [
+            'rule'       => $rule,
+            'rule_total' => $ruleTotal,
+            'start'      => $start,
+            'end'        => $end,
+            'flag'       => $flag
+        ];
+    }
+
+    /*
+     * ============================================================
+     * NO VALID RULE
+     *
+     * VERY IMPORTANT:
+     *
+     * Existing free gift MUST stay.
+     * ============================================================
+     */
+    if (count($validRules) == 0) {
+
+        foreach ($cartitem as $item) {
+
+            if (
+                isset($item["IS_Free_Gift"]) &&
+                $item["IS_Free_Gift"] == "Yes"
+            ) {
+                return "Yes";
+            }
+        }
+
+        return "No";
+    }
+
+    /*
+     * ============================================================
+     * SELECT BEST RULE
+     *
+     * The most important part.
+     *
+     * We NEVER compare the rule using the overall cart total for
+     * Brand / Category rules.
+     *
+     * We select based on that rule's OWN qualifying subtotal.
+     *
+     * Highest start range wins.
+     * ============================================================
+     */
+    usort($validRules, function ($a, $b) {
+
+        /*
+         * First: highest starting range.
+         */
+        if ($a['start'] != $b['start']) {
+            return ($a['start'] < $b['start']) ? 1 : -1;
+        }
+
+        /*
+         * If same range, more specific rule wins:
+         *
+         * Brand + Category
+         * Brand / Category
+         * Price
+         */
+        $priority = [
+            'Brand,Category' => 4,
+            'Brand'          => 3,
+            'Category'       => 2,
+            ''               => 1
+        ];
+
+        $pa = isset($priority[$a['flag']])
+            ? $priority[$a['flag']]
+            : 0;
+
+        $pb = isset($priority[$b['flag']])
+            ? $priority[$b['flag']]
+            : 0;
+
+        return $pb <=> $pa;
+    });
+
+    $free_gift_res = $validRules[0]['rule'];
+
+    /*
+     * ============================================================
+     * GET FREE GIFT PRODUCTS
+     * ============================================================
+     */
+    $FreeGiftValue = [];
+
+    if (
+        isset($free_gift_res->sku) &&
+        trim($free_gift_res->sku) != ''
+    ) {
+        $FreeGiftValue = array_filter(
+            array_map(
+                'trim',
+                explode('#', $free_gift_res->sku)
+            ),
+            'strlen'
+        );
+    }
+
+    if (count($FreeGiftValue) == 0) {
+        return "No";
+    }
+
+    $product_res = Products::whereIn('sku', $FreeGiftValue)
+        ->where('is_free_gift_products', 'Yes')
+        ->where('status', '1')
+        ->get();
+
+    $TotalProducts = count($product_res);
+    $isProducts = "No";
+
+    if ($TotalProducts > 0) {
+
+        for ($i = 0; $i < $TotalProducts; $i++) {
+
+            $product_res[$i] =
+                $this->SetProduct($product_res[$i]);
+
+            if (
+                $product_res[$i]["current_stock"] > 0 ||
+                (
+                    $product_res[$i]["cosmo_current_stock"] > 0 &&
+                    $product_res[$i]["cosmo_sku"] != ''
+                ) ||
+                (
+                    $product_res[$i]["nandansons_current_stock"] > 0 &&
+                    $product_res[$i]["nandansons_sku"] != ''
+                ) ||
+                (
+                    $product_res[$i]["pca_current_stock"] > 0 &&
+                    $product_res[$i]["pca_sku"] != ''
+                ) ||
+                (
+                    $product_res[$i]["perfumeworldwide_currentstock"] > 0 &&
+                    $product_res[$i]["perfumeworldwide_sku"] != ''
+                ) ||
+                (
+                    $product_res[$i]["nd_current_stock"] > 0 &&
+                    $product_res[$i]["nd_sku"] != ''
+                )
+            ) {
+                $isProducts = "Yes";
+                break;
+            }
+        }
+    }
+
+    /*
+     * ============================================================
+     * NO STOCK
+     * ============================================================
+     */
+    if ($isProducts != "Yes") {
+
+        if ($TotalProducts == 1) {
+            return "one";
+        }
+
+        /*
+         * Existing gift stays because there is no usable NEW rule.
+         */
+        foreach ($cartitem as $item) {
+
+            if (
+                isset($item["IS_Free_Gift"]) &&
+                $item["IS_Free_Gift"] == "Yes"
+            ) {
+                return "Yes";
+            }
+        }
+
+        return "No";
+    }
+
+    /*
+     * ============================================================
+     * VALID NEW RULE FOUND
+     *
+     * NOW AND ONLY NOW we remove a different existing gift.
+     * ============================================================
+     */
+    for ($i = 0; $i < count($cartitem); $i++) {
+
+        if (
+            isset($cartitem[$i]["IS_Free_Gift"]) &&
+            $cartitem[$i]["IS_Free_Gift"] == "Yes"
+        ) {
+
+            /*
+             * Do not remove the same selected gift rule.
+             */
+            if (
+                !empty($free_gift_res->products_id) &&
+                !empty($FreeGiftProductId) &&
+                $free_gift_res->products_id == $FreeGiftProductId
+            ) {
+                $freeGiftItem = "Yes";
+                return $freeGiftItem;
+            }
+
+            /*
+             * A VALID DIFFERENT RULE exists.
+             *
+             * Remove old gift.
+             */
+            if (
+                !empty($free_gift_res->products_id) &&
+                !empty($FreeGiftProductId) &&
+                $free_gift_res->products_id != $FreeGiftProductId
+            ) {
+
+                unset($cartitem[$i]);
+                $cartitem = array_values($cartitem);
+
+                if (
+                    count($cartitem) == 1 &&
+                    isset($cartitem[0]['IsYotpoFreeProduct']) &&
+                    $cartitem[0]['IsYotpoFreeProduct'] == 'Yes'
+                ) {
+                    $cartitem = [];
+                }
+
+                Session::put(
+                    'ShoppingCart.Cart',
+                    $cartitem
+                );
+
+                return "No";
+            }
+
+            /*
+             * Existing valid gift.
+             */
+            return "Yes";
+        }
+    }
+
+    /*
+     * No existing gift.
+     *
+     * Popup/add flow can now use this valid rule.
+     */
+    return "No";
+}
 
   	public function SetFreegift($Gift_Free_In_Cart)
 	{
@@ -9340,6 +12290,7 @@ trait CartTrait
 		{
 			return null;
 		}
+
 		if($Gift_Free_In_Cart == 'No')
 		{
 			$AllDiscounts = $this->GetAllDiscounts();
@@ -9702,7 +12653,7 @@ trait CartTrait
 		return NumberFormat($rem_amt)."###".$this->GetNetTotal();
 	}
 
-	public function ApplyGiftCoupons($coupon)
+		public function ApplyGiftCoupons($coupon)
 	{
 		$log['coupon'] = json_encode($coupon);
 		addLog("ApplyGiftCouponsStart",$log);
@@ -9953,6 +12904,7 @@ trait CartTrait
 			$cartitem = Session::get('ShoppingCart.Cart');
 			$today = Carbon::today()->toDateString();
 			$ProductArr = array();
+			//Log::info('TotalValue '.json_encode($TotalValue));
 			$matchingSamples = FreeVialSampleProduct::where('status', '1')
 				->where('price_start_range', '<=', $TotalValue)
 				->where('price_end_range', '>=', $TotalValue)
@@ -9965,6 +12917,16 @@ trait CartTrait
 					//$ProductArr['customer_choice'] = $matchingSamples->customer_choice;
 					$sampleProducts = explode("#",$matchingSamples->sku);
 					$totalConfiguredFreeSamples = $matchingSamples->total_samples;
+					Session::put('ShoppingCart.FreeSampleRuleId',$matchingSamples->vial_id);
+					//Log::info('sampleProductsRule 12900');
+					if($this->GetFreeSampleItemInCartRuleId() != null && $this->GetFreeSampleItemInCartRuleId() != $matchingSamples->vial_id){
+						//Log::info('sampleProductsRule 12902');
+						$this->removeSampleItemsFromCart();
+					}
+
+					// Log::info('sampleProductsRule '.json_encode($matchingSamples->vial_id));
+					// Log::info('sampleProducts '.json_encode($sampleProducts));
+					// Log::info('totalConfiguredFreeSamples '.json_encode($totalConfiguredFreeSamples));
 
 					$n_sampleProducts = Products::from('pu_products as po')
 								->join('pu_products_category as pc', 'po.products_id', '=', 'pc.products_id')
@@ -9990,36 +12952,21 @@ trait CartTrait
 						$SKUIDsVal = array_column(Session::get('ShoppingCart.Cart'), 'ORGSAMPLESKU');
 					}
 
+					// Log::info('totalConfiguredFreeSamples '.json_encode($totalConfiguredFreeSamples));
+					// Log::info('n_sampleProducts '.json_encode($n_sampleProducts));
+
 					// if($totalConfiguredFreeSamples > count($sampleProducts)){
 					// 	$newlim = $totalConfiguredFreeSamples - count($sampleProducts);
 					if($totalConfiguredFreeSamples > $n_sampleProducts){
 						$newlim = $totalConfiguredFreeSamples - $n_sampleProducts;
+
+						//Log::info('newlim '.json_encode($newlim));
 
 						/*$ChildCats = GetMainCatsTree([252]);
 						if(count($ChildCats['CatList']) > 0)
 							$ChildCatArr = array_column($ChildCats['CatList'],'category_id');*/
 
 						$ChildCatArr = array(252,253,254,255); // added static to reduce query load in cart pages.
-
-						// $randomProducts = DB::table('pu_products as po')
-						// 			->join('pu_products_category as pc', 'po.products_id', '=', 'pc.products_id')
-						// 			->join('pu_category as c', 'pc.category_id', '=', 'c.category_id')
-						// 			->join('pu_brand as b', 'b.brand_id', '=', 'po.brand_id')
-						// 			->join('pu_manufacture as m', function($join) {
-						// 				$join->on('po.imanufactureid', '=', 'm.imanufactureid')
-						// 					->on('b.imanufactureid', '=', 'm.imanufactureid');
-						// 			})
-						// 			->where('po.status', '1')
-						// 			->where('c.status', '1')
-						// 			// ->where('po.current_stock', '>', 0)
-						// 			// ->where('po.is_atomizer', 'Yes')
-						// 			->whereIn('po.product_type', ['both', 'retailer'])
-						// 			->whereIn('pc.category_id', $ChildCatArr)
-						// 			->whereNotIn('po.sku', $sampleProducts)
-						// 			->select('po.products_id', 'po.sku')
-						// 			->inRandomOrder()
-						// 			->limit($newlim)
-						// 			->get();
 
 						$products = DB::table('pu_products as po')
 									->join('pu_products_category as pc', 'po.products_id', '=', 'pc.products_id')
@@ -10036,19 +12983,24 @@ trait CartTrait
 									->whereIn('po.product_type', ['both', 'retailer'])
 									->whereIn('pc.category_id', $ChildCatArr)
 									->whereNotIn('po.sku', $sampleProducts)
-									->select('po.products_id', 'po.sku')
+									//->select('po.products_id', 'po.sku')
 									->inRandomOrder()
 									//->limit($newlim)
 									->get();
 
 						$includeCartSKU = $products->whereIn('sku', $SKUIDsVal);
+						//Log::info('includeCartSKU '.json_encode($includeCartSKU));
 						$others = $products->whereNotIn('sku', $includeCartSKU)->shuffle();
+						////Log::info('others '.json_encode($others));
 						$randomProducts = $includeCartSKU->merge($others)->take($newlim);
-
+						//Log::info('randomProducts '.json_encode($randomProducts));
+						//Log::info('newlim '.$newlim);
 						foreach ($randomProducts as $prod) {
 							array_push($sampleProducts, $prod->sku);
 						}
 					}
+
+					//Log::info('sampleProducts '.json_encode($sampleProducts));
 
 					//$product_res = Products::whereIn('sku',$sampleProducts)->where('status','=','1')->get();
 					$product_res = Products::from('pu_products as po')
@@ -10071,16 +13023,70 @@ trait CartTrait
 								->get();
 					$TotalProducts = $product_res->count();
 
-					$SKUIDsVal = [];
-					if(Session::has('ShoppingCart.Cart'))
-					{
-						$SKUIDsVal = array_column(Session::get('ShoppingCart.Cart'), 'ORGSAMPLESKU');
-					}
+					// $SKUIDsVal = [];
+					// if(Session::has('ShoppingCart.Cart'))
+					// {
+					// 	$SKUIDsVal = array_column(Session::get('ShoppingCart.Cart'), 'ORGSAMPLESKU');
+					// }
+
+					// $ProductArr = [];
+					// $RequiredProducts = (int) $matchingSamples->total_samples;
+
+					// $allProducts = array_merge($product_res->toArray(), $others->toArray());
+
+					// $usedSkus = [];
+
+					// foreach ($allProducts as $product) {
+
+					// 	if (count($ProductArr) >= $RequiredProducts) {
+					// 		break;
+					// 	}
+					// 	$product = (object) $product;
+					// 	$product = $this->SetProduct($product);
+					// 	Log::info('product '.json_encode($product));
+					// 	if (isset($product->stock) && $product->stock == 'Out') {
+					// 		Log::info('stockOut ' . json_encode($product->sku));
+					// 		continue;
+					// 	}
+
+					// 	$products_id = $product->products_id;
+					// 	$product_name = $product->product_name;
+					// 	$sku = $product->sku;
+
+					// 	// avoid duplicate SKU
+					// 	if (in_array($sku, $usedSkus)) {
+					// 		continue;
+					// 	}
+
+					// 	$usedSkus[] = $sku;
+
+					// 	$short_description = strip_tags($product->short_description);
+
+					// 	if (file_exists(config('global.PRD_THUMB_IMG_PATH') . $product->image) && !empty($product->image)) {
+					// 		$thumb_image = config('global.PRD_THUMB_IMG_URL') . $product->image;
+					// 	} else {
+					// 		$thumb_image = config('global.NO_IMAGE_THUMB');
+					// 	}
+
+					// 	$FoundSku = in_array($sku, $SKUIDsVal) ? "Yes" : "No";
+
+					// 	$ProductArr[] = array(
+					// 		"products_id"        => $products_id,
+					// 		"product_name"       => $product_name,
+					// 		"sku"                => $sku,
+					// 		"thumb_image"        => $thumb_image,
+					// 		"short_description"  => $short_description,
+					// 		"customer_choice"    => $matchingSamples->customer_choice,
+					// 		"total_samples"      => $matchingSamples->total_samples,
+					// 		"FoundSku"           => $FoundSku
+					// 	);
+					// }
 
 					for($i=0;$i<$TotalProducts;$i++)
 					{
 						$product_res[$i] = $this->SetProduct($product_res[$i]);
 						if(isset($product_res[$i]['stock']) && $product_res[$i]['stock']=='Out'){
+							//Log::info('stockOut '.json_encode($product_res[$i]["sku"]));
 							continue;
 						}
 						$products_id = $product_res[$i]["products_id"];
@@ -10108,7 +13114,8 @@ trait CartTrait
 										"thumb_image" 			=> $thumb_image,
 										"short_description"		=> $short_description,
 										"customer_choice"		=> $matchingSamples->customer_choice,
-										"FoundSku"				=> $FoundSku
+										"FoundSku"				=> $FoundSku,
+										"SKUIDsVal"				=> json_encode($SKUIDsVal)
 									);
 					}
 				}
@@ -10117,7 +13124,7 @@ trait CartTrait
 		return $ProductArr;
 	}
 
-		public function GetFreeCouponPopup($TotalValue, $TotalFreeGiftItems = 0, $FreeGiftProductId = 0)
+	public function GetFreeCouponPopup($TotalValue, $TotalFreeGiftItems = 0, $FreeGiftProductId = 0)
 {
     $onlyGCPurchased = $this->GetCartAttribute('onlyGCPurchased');
 
@@ -10853,7 +13860,8 @@ trait CartTrait
          * IMPORTANT:
          * Existing FreeGiftInsertProductValue is NOT changed.
          */
-        if (
+
+				if (
 			config('Settings.FREEGIFTFLAG') == "Yes" &&
 			(!Session::has('eusertype') ||
 				strtolower(trim(Session::get('eusertype'))) != 'wholesaler') &&
@@ -11104,7 +14112,7 @@ trait CartTrait
 				return 'Pay With Afterpay';
 				break;
 			case 'PAYMENT_FREEITEM':
-				return 'Free Items - POS';
+				return 'Free Items';
 				break;
 			default:
 				return NULL;
@@ -11153,136 +14161,83 @@ trait CartTrait
 		return $gc_id;
 	}
 
-	public function ProductDeductStock($sku, $qty = 1, $IsCosmo = "", $IsNandansons = "", $IsPerfumePW = "", $IsPCA = "", $IsND = "", $VendorSKU = "", $OrderType = "Website",$products_id=0)
-	{
-		$ProdInfo = DB::table('pu_products as p');
+	public function ProductDeductStock($sku,$qty = 1,$IsCosmo = "",$IsNandansons = "", $IsPerfumePW = "",$IsPCA = "",$IsND = "",$VendorSKU = "",$OrderType = "Website")
+    {
+		$log['sku'] = $sku;
+		$log['qty'] = $qty;
+		$log['IsCosmo'] = $IsCosmo;
+
+		$log['IsNandansons'] = $IsNandansons;
+		$log['IsPerfumePW'] = $IsPerfumePW;
+		$log['IsPCA'] = $IsPCA;
+
+		$log['IsND'] = $IsND;
+		$log['VendorSKU'] = $VendorSKU;
+		$log['OrderType'] = $OrderType;
+		
+		addLog('ProductDeductStockStart',$log);
+		$qty = max(0, (int) $qty);
+
+		if ($qty <= 0 || empty($sku)) {
+			return false;
+		}
 
 		$isStore = Auth::guard('store')->check() && $OrderType == "Store";
 
+		
+
 		if ($isStore) {
+			$storeId = Auth::guard('store')->user()->store_id;
 
-		$store = Auth::guard('store')->user();
+			$log['storeId'] = $storeId;
+			addLog('ProductDeductStock_isStore',$log);
 
-		 return DB::table('pu_store_inventory')
-			->where('store_id', $store->store_id)
-			->where('products_id', $products_id)
-			->update([
-				'current_stock' => DB::raw('GREATEST(current_stock - ' . (int)$qty . ', 0)')
-			]);
+			return DB::table('pu_store_inventory as ps')
+				->join('pu_products as p', 'p.products_id', '=', 'ps.products_id')
+				->where('p.sku', $sku)
+				->where('ps.store_id', $storeId)
+				->update([
+					'ps.current_stock' => DB::raw("GREATEST(ps.current_stock - {$qty}, 0)")
+				]) > 0;
+		}
 
+		$stockColumn = 'current_stock';
+
+		if ($IsCosmo == "Yes") {
+			$stockColumn = 'cosmo_current_stock';
+			$vendorColumn = 'cosmo_sku';
+		} elseif ($IsNandansons == "Yes") {
+			$stockColumn = 'nandansons_current_stock';
+			$vendorColumn = 'nandansons_sku';
+		} elseif ($IsPerfumePW == "Yes") {
+			$stockColumn = 'perfumeworldwide_currentstock';
+			$vendorColumn = 'perfumeworldwide_sku';
+		} elseif ($IsPCA == "Yes") {
+			$stockColumn = 'pca_current_stock';
+			$vendorColumn = 'pca_sku';
+		} elseif ($IsND == "Yes") {
+			$stockColumn = 'nd_current_stock';
+			$vendorColumn = 'nd_sku';
 		} else {
-			$ProdInfo = $ProdInfo->select(
-				'p.products_id',
-				'p.current_stock',
-				'p.cosmo_current_stock',
-				'p.cosmo_sku',
-				'p.nandansons_sku',
-				'p.nandansons_current_stock',
-				'p.perfumeworldwide_sku',
-				'p.pca_sku',
-				'p.perfumeworldwide_currentstock',
-				'p.nd_sku',
-				'p.nd_current_stock',
-				'p.pca_current_stock'
-			);
+			$vendorColumn = null;
 		}
 
-		$ProductSt = $ProdInfo
-			->where('p.sku', '=', $sku)
-			->distinct()
-			->get();
+		$log['vendorColumn'] = $vendorColumn;
+		$log['stockColumn'] = $stockColumn;
+		addLog('ProductDeductStock_vendorColumn',$log);
 
-		if ($ProductSt->count() <= 0) {
-			return NULL;
+		$query = DB::table('pu_products')
+			->where('sku', $sku);
+
+		if (!empty($vendorColumn) && !empty($VendorSKU)) {
+			$query->where($vendorColumn, $VendorSKU);
 		}
 
-		$new_stock = 0;
-		if (Auth::guard('store')->check() && isset($OrderType) && $OrderType == "Store") {
-			if ($ProductSt[0]->store_current_stock > $qty) {
-				$new_stock = $ProductSt[0]->store_current_stock - $qty;
-			} else if ($qty > $ProductSt[0]->store_current_stock) {
-				$new_stock = $qty - $ProductSt[0]->store_current_stock;
-			}
-			if ($new_stock <= 0) {
-				$new_stock = 0;
-			}
-			$UpdateStock = array('current_stock' => $new_stock);
-		} else if ($IsCosmo == "Yes" && $VendorSKU == $ProductSt[0]->cosmo_sku) {
-			if ($ProductSt[0]->cosmo_current_stock > $qty) {
-				$new_stock = $ProductSt[0]->cosmo_current_stock - $qty;
-			} else if ($qty > $ProductSt[0]->cosmo_current_stock) {
-				$new_stock = $qty - $ProductSt[0]->cosmo_current_stock;
-			}
-			if ($new_stock <= 0) {
-				$new_stock = 0;
-			}
-			$UpdateStock = array('cosmo_current_stock' => $new_stock);
-		} else if ($IsNandansons == "Yes" && $VendorSKU == $ProductSt[0]->nandansons_sku) {
-			if ($ProductSt[0]->nandansons_current_stock > $qty) {
-				$new_stock = $ProductSt[0]->nandansons_current_stock - $qty;
-			} else if ($qty > $ProductSt[0]->nandansons_current_stock) {
-				$new_stock = $qty - $ProductSt[0]->nandansons_current_stock;
-			}
-			if ($new_stock <= 0) {
-				$new_stock = 0;
-			}
-			$UpdateStock = array('nandansons_current_stock' => $new_stock);
-		} else if ($IsPerfumePW == "Yes" && $VendorSKU == $ProductSt[0]->perfumeworldwide_sku) {
-			if ($ProductSt[0]->perfumeworldwide_currentstock > $qty) {
-				$new_stock = $ProductSt[0]->perfumeworldwide_currentstock - $qty;
-			} else if ($qty > $ProductSt[0]->perfumeworldwide_currentstock) {
-				$new_stock = $qty - $ProductSt[0]->perfumeworldwide_currentstock;
-			}
-			if ($new_stock <= 0) {
-				$new_stock = 0;
-			}
-			$UpdateStock = array('perfumeworldwide_currentstock' => $new_stock);
-		} else if ($IsPCA == "Yes" && $VendorSKU == $ProductSt[0]->pca_sku) {
-			if ($ProductSt[0]->pca_current_stock > $qty) {
-				$new_stock = $ProductSt[0]->pca_current_stock - $qty;
-			} else if ($qty > $ProductSt[0]->pca_current_stock) {
-				$new_stock = $qty - $ProductSt[0]->pca_current_stock;
-			}
-			if ($new_stock <= 0) {
-				$new_stock = 0;
-			}
-			$UpdateStock = array('pca_current_stock' => $new_stock);
-		} else if ($IsND == "Yes" && $VendorSKU == $ProductSt[0]->nd_sku) {
-			if ($ProductSt[0]->nd_current_stock > $qty) {
-				$new_stock = $ProductSt[0]->nd_current_stock - $qty;
-			} else if ($qty > $ProductSt[0]->nd_current_stock) {
-				$new_stock = $qty - $ProductSt[0]->nd_current_stock;
-			}
-			if ($new_stock <= 0) {
-				$new_stock = 0;
-			}
-			$UpdateStock = array('nd_current_stock' => $new_stock);
-		} else {
-			if ($ProductSt[0]->current_stock > $qty) {
-				$new_stock = $ProductSt[0]->current_stock - $qty;
-			} else if ($qty > $ProductSt[0]->current_stock) {
-				$new_stock = $qty - $ProductSt[0]->current_stock;
-			}
-			if ($new_stock <= 0) {
-				$new_stock = 0;
-			}
-			$UpdateStock = array('current_stock' => $new_stock);
-		}
-		//$result = true;
-
-		if (Auth::guard('store')->check() && isset($OrderType) && $OrderType == "Store") {
-
-			$result = StoreInventory::where('products_id', '=', $ProductSt[0]->products_id)
-				->where('store_id', '=', Auth::guard('store')->user()->store_id)
-				->update($UpdateStock);
-		} else {
-			$result = Products::where('sku', '=', $sku)->update($UpdateStock);
-		}
-		if ($result)
-			return true;
-		else
-			return false;
+		return $query->update([
+			$stockColumn => DB::raw("GREATEST({$stockColumn} - {$qty}, 0)")
+		]) > 0;
 	}
+
 	public function RouteShippingInsuranceOrderProcess($order,$order_details)
 	{
 		$route_token = "test-c836e757-a9af-4844-84ac-30777c420121";
@@ -11367,19 +14322,7 @@ trait CartTrait
 
 	public function AfterpayMinMax()
 	{
-		$Afterpay_Checkout = $this->Afterpay_Checkout ?? '';
-		if(isset($Afterpay_Checkout) && $Afterpay_Checkout == "Yes"){
-			$ap_configs = $this->GetAfterpayMinMaxConfig();
-			if(!empty($ap_configs))
-			{
-				// Session::put('Afterpay.Min_AP_AMT',$ap_configs["Min_AP_AMT"]);
-				// Session::put('Afterpay.Max_AP_AMT',$ap_configs["Max_AP_AMT"]);
-
-				Session::put('Afterpay.Min_AP_AMT', $ap_configs['Min_AP_AMT'] ?? '');
-        		Session::put('Afterpay.Max_AP_AMT', $ap_configs['Max_AP_AMT'] ?? '');
-			}
-		}
-		/*$Afterpay_Checkout = $this->Afterpay_Checkout;
+		$Afterpay_Checkout = $this->Afterpay_Checkout;
 		if($Afterpay_Checkout == "Yes"){
 			$ap_configs = $this->GetAfterpayMinMaxConfig();
 			if(!empty($ap_configs))
@@ -11387,7 +14330,7 @@ trait CartTrait
 				Session::put('Afterpay.Min_AP_AMT',$ap_configs["Min_AP_AMT"]);
 				Session::put('Afterpay.Max_AP_AMT',$ap_configs["Max_AP_AMT"]);
 			}
-		}*/
+		}
 
 		/*
 		$db_res = PaymentMethod::select('pm_group_name', 'pm_gateway_name','pm_details')
@@ -11461,12 +14404,29 @@ trait CartTrait
 			//Session::forget('ShoppingCart.ShippingSignature');
 			if($phoneOrder=="No")
 			{
-				//$NetTotal = $this->GetNetTotal();
+				//new added for store order type start
+				$BothNetTotal = 0;
+				if (Session::has('ShoppingCart.OrderType') && Session::get('ShoppingCart.OrderType') === 'Both') {
+					if (Session::has('ShoppingCart.Cart') && Session::get('ShoppingCart.Cart') !== '') {
+						$CartArr  = Session::get('ShoppingCart.Cart');
+						for($c = 0; $c < count($CartArr); $c++){
+							if(isset($CartArr[$c]['OrderType']) && $CartArr[$c]['OrderType'] === 'Store'){
+								$BothNetTotal = $BothNetTotal + $CartArr[$c]['TotPrice'];
+							}
+						}
+					}
+				}
+				//new added for store order type end
 				$taxAmount = 0;
 				If(Session::has('ShoppingCart.Tax') && Session::get('ShoppingCart.Tax') > 0){
 					$taxAmount =  Session::get('ShoppingCart.Tax');
 				}
 				$NetTotal = $this->GetNetTotal();
+				//new added for store order type start
+				if($NetTotal > 0 &&	$BothNetTotal > 0){
+					$NetTotal = $NetTotal - $BothNetTotal;
+				}
+				//new added for store order type end
 				if($taxAmount > 0)
 				{
 					$NetTotal = $NetTotal - $taxAmount;
@@ -11495,6 +14455,7 @@ trait CartTrait
 
 	public function SetAmazonConfig($PageFrom='')
 	{
+
 		$PaymentMethodsAmazon = Cache::rememberForever('afterpay_payment_method_ca', function () {
 		 return PaymentMethod::select(
 					'pm_group_name',
@@ -11782,11 +14743,10 @@ trait CartTrait
 				$GData['LabelVal'] = 'I4tECI6u7WoQkqLpuQM';
 			}
 		}
-
 		//Log::info($DataLayer);
 		$DataLayer = json_encode($DataLayer);
 		$GData['pagetype'] = $Data['pagetype'];
-		$GData['google_remarketing_codes']="<script type='text/javascript'>window.dataLayer = window.dataLayer || []; dataLayer.push(".$DataLayer.");</script>";
+		$GData['google_remarketing_codes']="<script type='text/javascript'>dataLayer.push(".$DataLayer.");</script>";
 		if(Session::has('sess_icustomerid') && Session::get('sess_icustomerid') > 0 && Session::get('sess_useremail') != "" )
 		{
 			$GData['google_remarketing_codes'].= "<script type='text/javascript'>
@@ -12146,11 +15106,23 @@ trait CartTrait
 		return $FbCode;
 	}
 
-	public function GetTotalItemsOfFreeSampleInCart(){
+	public function GetTotalItemsOfFreeSampleInCart()
+	{
 		if(Session::has('ShoppingCart.Cart'))
 		{
 			return count(array_filter(array_column(Session::get('ShoppingCart.Cart'), 'Is_Free_Sample')));
 		}
+	}
+
+	public function GetFreeSampleItemInCartRuleId(){
+		if (Session::has('ShoppingCart.Cart')) {
+			return collect(Session::get('ShoppingCart.Cart'))
+				->pluck('Is_Free_Sample_RuleId')
+				->filter()
+				->first();
+		}
+
+		return null;
 	}
 
 	public function GetTotalItemsOfFreegift()
@@ -12162,6 +15134,7 @@ trait CartTrait
 	}
 	public function GetFreegiftId()
 	{
+
 		if(Session::has('ShoppingCart.Cart'))
 		{
 			$sku_values = array_filter(array_column(Session::get('ShoppingCart.Cart'), 'freeproductsid'));
@@ -12386,5 +15359,75 @@ trait CartTrait
 			$Badge = ['BadgeTitle' => $BadgeTitle, 'BadgeDetails' => $BadgeDetails,'TextColor' => $BadgeTextColor, 'BackColor' => $BadgeBackColor, 'GradientColor' => $BadgeGradientColor];
 		}
 		return $Badge;
+	}
+
+	public function DiscountUsageLog()
+	{
+		$OrderID = Session::get('ShoppingCart.OrderID');
+		if(Session::has('ShoppingCart.OrderID') && !empty(Session::get('ShoppingCart.OrderID')))
+		{
+			if(Session::has('ShoppingCart.Cart') && count(Session::get('ShoppingCart.Cart')) > 0)
+			{
+				$FinalAutoDiscount = Session::get('ShoppingCart.AutoDiscount')??0;
+				$FinalBogoDiscount = Session::get('ShoppingCart.DogoDiscount')??0;
+				$FinalQuantityDiscount = Session::get('ShoppingCart.QuantityDiscount')??0;
+				$FinalCouponDiscount = Session::get('ShoppingCart.PromoCoupon.CouponDiscount')??0;
+				foreach(Session::get('ShoppingCart.Cart') as $Cart)
+				{
+					if($FinalAutoDiscount > 0 && isset($Cart['AutoItemWiseDiscout']) && $Cart['AutoItemWiseDiscout'] > 0)
+					{
+						$DiscountUsage = [
+							'discount_type' => '1',
+							'discount_id' => $Cart['AutoDiscountID']??0,
+							'sku' => $Cart['SKU'],
+							'products_id' => $Cart['ProductID'],
+							'price' => $Cart['Price'],
+							'discount' => $Cart['AutoItemWiseDiscout'],
+							'orders_id' => $OrderID
+						];
+						DiscountUsage::create($DiscountUsage);
+					}
+					if($FinalBogoDiscount > 0 && isset($Cart['BogoItemWiseDiscout']) && $Cart['BogoItemWiseDiscout'] > 0)
+					{
+						$DiscountUsage = [
+							'discount_type' => '2',
+							'discount_id' => $Cart['BogoDiscountID']??0,
+							'sku' => $Cart['SKU'],
+							'products_id' => $Cart['ProductID'],
+							'price' => $Cart['Price'],
+							'discount' => $Cart['BogoItemWiseDiscout'],
+							'orders_id' => $OrderID
+						];
+						DiscountUsage::create($DiscountUsage);
+					}
+					if($FinalQuantityDiscount > 0 && isset($Cart['QuantityItemWiseDiscout']) && $Cart['QuantityItemWiseDiscout'] > 0)
+					{
+						$DiscountUsage = [
+							'discount_type' => '3',
+							'discount_id' => $Cart['QuantityDiscountID']??0,
+							'sku' => $Cart['SKU'],
+							'products_id' => $Cart['ProductID'],
+							'price' => $Cart['Price'],
+							'discount' => $Cart['QuantityItemWiseDiscout'],
+							'orders_id' => $OrderID
+						];
+						DiscountUsage::create($DiscountUsage);
+					}
+					if($FinalCouponDiscount > 0 && isset($Cart['CouponDisItemWiseDiscout']) && $Cart['CouponDisItemWiseDiscout'] > 0)
+					{
+						$DiscountUsage = [
+							'discount_type' => '4',
+							'discount_id' => $Cart['CouponDiscountID']??0,
+							'sku' => $Cart['SKU'],
+							'products_id' => $Cart['ProductID'],
+							'price' => $Cart['Price'],
+							'discount' => $Cart['CouponDisItemWiseDiscout'],
+							'orders_id' => $OrderID
+						];
+						DiscountUsage::create($DiscountUsage);
+					}
+				}
+			}
+		}
 	}
 }

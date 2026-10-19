@@ -65,7 +65,7 @@ trait AfterpayTrait
 			$this->Token_JS_Url = "https://portal.afterpay.com/afterpay.js";
 		}
 		
-	}		
+	}	
 	
 	public function constructfunc11()
     {

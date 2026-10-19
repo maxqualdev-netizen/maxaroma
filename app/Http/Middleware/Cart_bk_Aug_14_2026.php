@@ -1,0 +1,66 @@
+<?php
+
+namespace App\Http\Middleware;
+use App\Http\Controllers\ShoppingcartController;
+use Illuminate\Support\Facades\View;
+use Closure;
+use Session;
+class Cart
+{
+    /**
+     * Handle an incoming request.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \Closure  $next
+     * @return mixed
+     */
+    public function handle($request, Closure $next)
+    {
+        $PaidItemInCart = 0; 
+			
+		if ($request->has('posmsg') && in_array((int)$request->posmsg, [1, 2, 3])) {
+		Session::forget([
+			"BillingSkipEmail",
+			"BillingSkipVariable",
+			"ShoppingCart",
+			"sess_icustomerid",
+			"etype",
+			"eusertype",
+			"sess_useremail"
+		]);
+		
+		}
+        
+        
+        
+        if(Session::has('ShoppingCart.Cart') && count(Session::get('ShoppingCart.Cart')) > 0)
+        {
+            foreach(Session::get('ShoppingCart.Cart') as $ShopCart)
+            {
+                if(isset($ShopCart['ItemPrice']) && $ShopCart['ItemPrice'] > 0)
+                    $PaidItemInCart = 1;
+            } 
+        }
+        if(Session::has('sess_useremail') && Session::get('sess_useremail') == 'gequaldev@gmail.com')
+        {
+            config(['global.YOTPO_PROG' => true ]);
+        }
+        config(['PaidItemInCart' => $PaidItemInCart]);
+        
+		if(Session::get('eusertype')=="Wholesaler")
+		{
+			config(['Settings.FREESHIPPING_VALUE' => '']);
+		}
+		$ObjCart = new ShoppingcartController();
+		if($ObjCart->ShowCart($request) == 0)
+			return redirect(config('app.url').'/cart');
+		View::share('CartDetails', $ObjCart->ShowCart($request));
+		if($request->action != 'update' && $request->action!='remove')
+		{
+			View::share('allSectionRecommendedPrds', $ObjCart->GetRecommendedProducts());
+		}
+		View::share('AllFBView', $ObjCart->GetAllFBView());
+        return $next($request);
+    }
+
+}

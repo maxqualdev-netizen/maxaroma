@@ -1,0 +1,821 @@
+@if($CurrentRoute == 'billing' )
+	<script src="https://js.stripe.com/v3/"></script>	
+	<script>
+		var AppleGPay = '';
+		function GetShippingOptions(state='',zip='',country=''){
+			//alert(state);
+			//alert(zip);
+			//alert(country);
+			var shippingmodes = [];
+			$.ajax({
+				type:'POST',
+				url:site_url+'shipping',
+				headers: {
+					'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+				},
+				async:false,
+				data:{
+					'OnlyHead':'0',
+					'action':'shippinginfo',
+					'subaction' : 'stripecart',
+					'state' : state,
+					'zip' : zip,
+					'country' : country,
+					'Gpay'	  : 'Yes',	
+					'FirstStepGpay' : 'FirstStep'
+				},
+				datatype: 'JSON',
+				success:function(data) {
+					//alert(data);
+					shippingmodes = data;
+					SetStripeShippingMethod(data[0].id,state,zip,country);
+				}
+			});
+		
+			return shippingmodes;
+		}
+		
+		function GetStripeCart()
+		{			
+			$("#page-spinner").show();
+			var items = [];
+			var NetTotal = 0;
+			$("#ShippingSignInsu").modal('hide');
+			$.ajax({
+				type:'POST',
+				url:site_url+'getstripecart',
+				headers: {
+					'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+				},
+				async:false,
+				data:{
+					'action' : 'getcart',
+				},
+				datatype: 'JSON',
+				success:function(data) {
+					
+					if(data=="OutOfStock")
+					{
+						window.location= site_url+'shoppingcart/view';
+						return false;
+					}
+					
+					if(data=="Zero")
+					{
+						window.location= site_url+'shoppingcart/view';
+						return false;
+					}
+					
+					
+					items = data.items;
+					NetTotal = data.NetTotal;
+					$("#page-spinner").hide();
+				}
+			});
+			var CartData = {'items':items,'NetTotal' : NetTotal};
+			return CartData;
+		}
+		
+		function SetStripeShippingMethod(ShipMethodID,state='',zip='',country='')
+		{
+			$.ajax({
+				type:'POST',
+				url:site_url+'setshipmethod',
+				headers: {
+					'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+				},
+				async:false,
+				datatype: 'JSON',
+				data:{
+					action : 'stripecart',	
+					ShipMethodID: ShipMethodID,
+					state:state,
+					zip:zip,
+					country:country
+				},
+				success:function(data) {	
+				},
+			});
+		}
+		function GetClientSecret(AppleGPay,allDetails)
+		{
+			var clientSecret = "";
+			$.ajax({
+				type:'POST',
+				url:site_url+'getclientsecret',
+				headers: {
+					'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+				},
+				async:false,
+				datatype: 'JSON',
+				data:{
+					action : 'clientsecret',
+					AppleGPay : AppleGPay,
+					allDetailsVal : allDetails,
+					stepfrom : 'firststep',
+				},
+				success:function(data) {	
+					if(data=="OutOfStock")
+					{
+						//alert("Sorry some of your cart items are out of stock. Please update your cart and then proceed for payment");
+						return false;
+					}	
+					else if(data=="Close")
+					{
+						//alert("Sorry please try again");
+						return false;	
+					}
+					else if(data=="Guest")
+					{
+						//alert("Error while processing your order, Please try again");
+						return false;
+					}	
+					else if(data=="SHMethod")
+					{
+						//alert("PlaceOrderError: Shipping Method Not Selected");
+						return false;
+					}
+					else if(data=="Zero")
+					{
+						//alert("Please change payment type");
+						return false;
+					}
+					else
+					{
+						clientSecret = data.clientSecret;
+					}
+				},
+			});
+			return clientSecret;
+		}
+		//pk_test_xWTUgWDaaFSIfHkKClwzQrhS00eb9PQSLX
+
+		$(document).ready(function(){
+			var stripe = Stripe('{{env("STRIPE_SECRET")}}', {			
+				apiVersion: "2019-05-16",				
+			});
+			var paymentRequest = stripe.paymentRequest({
+				country: 'US',
+				currency: 'usd',
+				total: {
+					label: 'Order Total',
+					amount: {{round($NetTotal*100)}},
+				},
+				requestShipping: true,
+				requestPayerName: true,
+				requestPayerEmail: true,
+				/*shippingOptions: [
+					// The first shipping option in this list appears as the default
+					// option in the browser payment interface.
+					{
+					  id: 'free-shipping',
+					  label: 'Free shipping',
+					  detail: 'Arrives in 5 to 7 days',
+					  amount: 0,
+					},
+				  ],*/
+			});
+			var elements = stripe.elements();
+			
+			var prButton = elements.create('paymentRequestButton', {
+				paymentRequest: paymentRequest,
+				 style: {
+					paymentRequestButton: {
+					  type: 'default',	// One of 'default', 'book', 'buy', or 'donate'
+					  theme: 'dark',	// One of 'dark', 'light', or 'light-outline'
+					  height: '45px',	// Defaults to '40px'. The width is always '100%'.
+					  //width: '155px'
+					},
+				  },
+			});
+
+			// prButton.on('click',function(ev){
+			// 	var CartData = GetStripeCart();
+                  
+			// 	paymentRequest.update({
+			// 		total: {
+			// 			label: 'Order Total',
+			// 			amount: CartData.NetTotal,
+			// 		},
+			// 		displayItems : CartData.items,
+			// 		// shippingOptions: GetShippingOptions(),
+			// 	});
+			// })
+
+			// Check the availability of the Payment Request API first.
+			paymentRequest.canMakePayment().then(function(result) {
+              if (result) {
+					// $("#GpayBtn").show();	
+					if(result.applePay)
+					{
+						//$("#GpayBtn").show();
+						$("#GpayBtn").html("Apple Pay");
+						//AppleGPay = 'A';
+					}
+					if(result.googlePay)
+					{
+						//$("#GpayBtn").show();
+						$("#GpayBtn").html("Google Pay");
+						//AppleGPay = 'G';
+					}					
+					prButton.mount('#payment-request-button-checkout');
+					
+					prButton.addEventListener('click', (event) => {
+						event.preventDefault();
+						$("#GpayBtnn").click();
+					});
+				} else { 
+					$('#payment-request-button-checkout').closest('li').hide();                 
+					document.getElementById('payment-request-button-checkout').style.display = 'none';
+				}
+			});
+
+		});
+
+		$(document).ready(function(){
+			var stripe = Stripe('{{env("STRIPE_SECRET")}}', {
+			//var stripe = Stripe('pk_test_Ht4UumNApNKNPlO0eZVA4rhM00j4ohrYZO', {
+				apiVersion: "2019-05-16",				
+			});			
+			
+			var paymentRequest = stripe.paymentRequest({
+				country: 'US',
+				currency: 'usd',
+				total: {
+					label: 'Order Total',
+					amount: {{round($NetTotal*100)}},
+				},
+				requestShipping: true,
+				requestPayerName: true,
+				requestPayerEmail: true,
+				/*shippingOptions: [
+					// The first shipping option in this list appears as the default
+					// option in the browser payment interface.
+					{
+					  id: 'free-shipping',
+					  label: 'Free shipping',
+					  detail: 'Arrives in 5 to 7 days',
+					  amount: 0,
+					},
+				  ],*/
+			});
+			
+			
+			var elements = stripe.elements();
+			
+			var prButton = elements.create('paymentRequestButton', {
+				paymentRequest: paymentRequest,
+				 style: {
+					paymentRequestButton: {
+					  type: 'default',	// One of 'default', 'book', 'buy', or 'donate'
+					  theme: 'dark',	// One of 'dark', 'light', or 'light-outline'
+					  height: '45px'	// Defaults to '40px'. The width is always '100%'.
+					},
+				  },
+			});
+
+			prButton.on('click',function(ev){
+				var CartData = GetStripeCart();
+                  
+				paymentRequest.update({
+					total: {
+						label: 'Order Total',
+						amount: CartData.NetTotal,
+					},
+					displayItems : CartData.items,
+					// shippingOptions: GetShippingOptions(),
+				});
+			})
+
+			// Check the availability of the Payment Request API first.
+			paymentRequest.canMakePayment().then(function(result) {
+              if (result) {
+					// $("#GpayBtn").show();	
+					if(result.applePay)
+					{
+						$("#GpayBtn").show();
+						$("#GpayBtn").html("Apple Pay");
+						AppleGPay = 'A';
+					}
+					if(result.googlePay)
+					{
+						$("#GpayBtn").show();
+						$("#GpayBtn").html("Google Pay");
+						AppleGPay = 'G';
+					}					
+					prButton.mount('#payment-request-button');
+				} else {                  
+					document.getElementById('payment-request-button').style.display = 'none';
+				}
+			});
+			
+			paymentRequest.on('shippingoptionchange', function(event) {
+				console.log(event);
+				var updateWith = event.updateWith;
+				var ShipMethodID = event.shippingOption.id;
+				//var state = event.shippingAddress.region;
+			//	var zip = event.shippingAddress.postalCode;
+				//var country = event.shippingAddress.country;
+				SetStripeShippingMethod(ShipMethodID);
+				var CartData = GetStripeCart();
+				updateWith({
+					status: 'success',
+					total: {
+						label: 'Order Total',
+						amount: CartData.NetTotal,
+					},
+					displayItems : CartData.items,
+				});	
+			});
+
+			paymentRequest.on('shippingaddresschange', async (ev) => {
+			  if (ev.shippingAddress.country !== 'US') {
+				ev.updateWith({status: 'invalid_shipping_address'});
+			  } else {
+				var state = ev.shippingAddress.region;
+				var zip = ev.shippingAddress.postalCode;
+				var country = ev.shippingAddress.country;  
+				var datas = GetShippingOptions(state,zip,country);
+				//alert(datas);
+				ev.updateWith({
+				  status: 'success',
+				  shippingOptions: datas,
+				});
+			  }
+			});
+			
+			paymentRequest.on('paymentmethod', function(ev) {
+
+				var clientSecret = GetClientSecret(AppleGPay,JSON.stringify(ev));
+				if(!clientSecret)
+				{
+					window.location= site_url+'shoppingcart/view';
+					return false;
+				}
+				// Confirm the PaymentIntent without handling potential next actions (yet).
+				stripe.confirmCardPayment(
+					clientSecret,
+					{payment_method: ev.paymentMethod.id},
+					{handleActions: false}
+				).then(function(confirmResult) {
+					$("#dd123").val(confirmResult+"\n\n\n"+ev);
+										
+					if (confirmResult.error) {
+					alert('Your payment has failed. Please try again or use different payment option.');
+					console.log('Could not confirm result: ', confirmResult.error);
+					ev.complete('fail');
+					
+					window.location= site_url+'shoppingcart/view';
+					return false;
+					//alert('fail');
+					
+				} else {
+					// Report to the browser that the confirmation was successful, prompting
+					// it to close the browser payment method collection interface.
+					console.log("confirmResult=="+confirmResult);
+					//console.log(ev.paymentMethod.id);
+					
+					ev.complete('success');
+					//alert("success");
+					// Check if the PaymentIntent requires any actions and if so let Stripe.js
+					// handle the flow. If using an API version older than "2019-02-11"
+					// instead check for: `paymentIntent.status === "requires_source_action"`.
+					if (confirmResult.paymentIntent.status === "requires_action") {
+						// Let Stripe.js handle the rest of the payment flow.
+						stripe.confirmCardPayment(clientSecret).then(function(result) {
+						if (result.error) {
+							 alert('Your payment has failed. Please try again or use different payment option.');
+							 ev.complete('fail');
+							 window.location= site_url+'shoppingcart/view';
+							return false;
+						} else {
+
+							 $.ajax({
+						type:'POST',
+						url:site_url+'stripebtnres',
+						headers: {
+							'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+						},
+						datatype: 'JSON',
+						
+						data:{	
+							'methodName':ev.paymentMethod.payment_method_types,	
+							'payerEmail':ev.payerEmail,
+							'payerName':ev.payerName,
+							'paymentMethod':ev.paymentMethod.id,
+							'shippingOption':ev.shippingOption,
+							'shippingAddress':ev.shippingAddress,
+							'stepfrom' : 'firststep',
+								
+						},
+						success:function(data) {
+							
+							if(data.status == 'success')
+							{
+								if($("#shipping_signature").prop('checked'))
+								$("#shipsignatureflag").val('Yes');
+								else
+								$("#shipsignatureflag").val('No');
+                              // alert('success');
+                               $("#is_stripe_wallet").val("google_pay");
+                               $("#is_stripe_applepay").val("apple_pay");
+                               //$("#frmstripe").submit(); //22102024
+							   window.location.href = site_url+'order-receipt';
+							}else{
+								 alert('Your payment has failed. Please try again or use different payment option.');
+								 ev.complete('fail');
+								 window.location= site_url+'shoppingcart/view';
+								 return false;
+							}
+						}
+					}); 
+						}
+					});
+				} else {
+					 $.ajax({
+						type:'POST',
+						url:site_url+'stripebtnres',
+						headers: {
+							'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+						},
+						datatype: 'JSON',
+						
+						data:{	
+							'methodName':ev.paymentMethod.payment_method_types,	
+							'payerEmail':ev.payerEmail,
+							'payerName':ev.payerName,
+							'paymentMethod':ev.paymentMethod.id,
+							'shippingOption':ev.shippingOption,
+							'shippingAddress':ev.shippingAddress,
+							'stepfrom' : 'firststep',
+								
+						},
+						success:function(data) {
+							
+							if(data.status == 'success')
+							{
+								if($("#shipping_signature").prop('checked'))
+								$("#shipsignatureflag").val('Yes');
+								else
+								$("#shipsignatureflag").val('No');
+                              // alert('success');
+                               $("#is_stripe_wallet").val("google_pay");
+                               $("#is_stripe_applepay").val("apple_pay");
+                               //$("#frmstripe").submit(); //22102024
+							   window.location.href = site_url+'order-receipt';
+							}else{
+								 alert('Your payment has failed. Please try again or use different payment option.');
+								 ev.complete('fail');
+								 window.location= site_url+'shoppingcart/view';
+								 return false;
+							}
+						}
+					}); 
+				}
+			}
+		});
+	});	
+});
+				
+	</script>	
+@endif
+@if($CurrentRoute == 'billing-payment')
+	<script src="https://js.stripe.com/v3/"></script>	
+	<script>
+		var AppleGPay = 'G';
+		function SetStripeShippingMethod(ShipMethodID,state='',zip='',country='')
+		{
+			$.ajax({
+				type:'POST',
+				url:site_url+'setshipmethod',
+				headers: {
+					'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+				},
+				async:false,
+				datatype: 'JSON',
+				data:{
+					action : 'stripecart',	
+					ShipMethodID: ShipMethodID,
+					state:state,
+					isLastNew : 'Yes',
+					zip:zip,
+					country:country
+				},
+				success:function(data) {	
+				},
+			});
+		}
+		
+		function GetClientSecret(AppleGPay,allDetailsVal)
+		{
+			var clientSecret = "";
+			$.ajax({
+				type:'POST',
+				url:site_url+'getclientsecret',
+				headers: {
+					'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+				},
+				async:false,
+				datatype: 'JSON',
+				data:{
+					action : 'clientsecret',
+					AppleGPay : AppleGPay,
+					isLastNew : 'Yes',
+					allDetailsVal : allDetailsVal
+				},
+				success:function(data) {
+					if(data=="OutOfStock")
+					{
+						//alert("Sorry some of your cart items are out of stock. Please update your cart and then proceed for payment");
+						return false;
+					}	
+					else if(data=="Close")
+					{
+						//alert("Sorry please try again");
+						return false;	
+					}
+					else if(data=="Guest")
+					{
+						//alert("Error while processing your order, Please try again");
+						return false;
+					}	
+					else if(data=="SHMethod")
+					{
+						//alert("PlaceOrderError: Shipping Method Not Selected");
+						return false;
+					}
+					else if(data=="Zero")
+					{
+						//alert("Please change payment type");
+						return false;
+					}
+					else
+					{
+						clientSecret = data.clientSecret;
+					}
+				},
+			});
+			return clientSecret;
+		}
+		
+		function GetStripeCart()
+		{
+			$("#page-spinner").show();
+			var items = [];
+			var NetTotal = 0;
+			
+			$.ajax({
+				type:'POST',
+				url:site_url+'getstripecart',
+				headers: {
+					'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+				},
+				async:false,
+				data:{
+					'action' : 'getcart',
+					'isLast' : 'Yes',
+				},
+				datatype: 'JSON',
+				success:function(data) {
+					if(data=="OutOfStock")
+					{
+						window.location= site_url+'shoppingcart/view';
+						return false;
+					}
+					if(data=="Zero")
+					{
+						window.location= site_url+'shoppingcart/view';
+						return false;
+					}
+					items = data.items;
+					NetTotal = data.NetTotal;
+					$("#page-spinner").hide();
+				}
+			});
+			var CartData = {'items':items,'NetTotal' : NetTotal};
+			return CartData;
+		}
+		
+		$(document).ready(function(){
+			var stripe = Stripe('{{env("STRIPE_SECRET")}}', {
+			//var stripe = Stripe('pk_test_Ht4UumNApNKNPlO0eZVA4rhM00j4ohrYZO', {
+				apiVersion: "2019-05-16",
+			});
+			
+			
+			var paymentRequest = stripe.paymentRequest({
+				country: 'US',
+				currency: 'usd',
+				total: {
+					label: 'Order Total',
+					amount: {{round($NetTotal*100)}},
+				},
+				//requestShipping: true,
+				requestPayerName: true,
+				requestPayerEmail: true,
+			});
+			
+			
+			var elements = stripe.elements();
+			
+			var prButton = elements.create('paymentRequestButton', {
+				paymentRequest: paymentRequest,
+				 style: {
+					paymentRequestButton: {
+					  type: 'default',	// One of 'default', 'book', 'buy', or 'donate'
+					  theme: 'dark',	// One of 'dark', 'light', or 'light-outline'
+					  height: '45px'	// Defaults to '40px'. The width is always '100%'.
+					},
+				  },
+			});
+
+			prButton.on('click',function(ev){
+				var CartData = GetStripeCart();
+                  
+				paymentRequest.update({
+					total: {
+						label: 'Order Total',
+						amount: CartData.NetTotal,
+					},
+					displayItems : CartData.items,
+					// shippingOptions: GetShippingOptions(),
+				});
+			})
+
+			// Check the availability of the Payment Request API first.
+			paymentRequest.canMakePayment().then(function(result) {
+              if (result) {
+					if(result.applePay)
+					{						
+						AppleGPay = 'A';
+					}
+					if(result.googlePay)
+					{						
+						AppleGPay = 'G';
+					}
+					prButton.mount('#payment-request-button');
+				} else {
+                  
+					document.getElementById('payment-request-button').style.display = 'none';
+				}
+			});
+			
+			paymentRequest.on('shippingoptionchange', function(event) {
+				console.log(event);
+				var updateWith = event.updateWith;
+				var ShipMethodID = event.shippingOption.id;
+				SetStripeShippingMethod(ShipMethodID);
+				var CartData = GetStripeCart();
+				updateWith({
+					status: 'success',
+					total: {
+						label: 'Order Total',
+						amount: CartData.NetTotal,
+					},
+					displayItems : CartData.items,
+				});	
+			});
+			paymentRequest.on('shippingaddresschange', function(ev) {
+				var updateWith = ev.updateWith;
+				
+				if (ev.shippingAddress.country !== 'US') {
+					ev.updateWith({status: 'invalid_shipping_address'});
+				} else {
+					var state = ev.shippingAddress.region;
+					var zip = ev.shippingAddress.postalCode;
+					var country = ev.shippingAddress.country;
+					updateWith({
+						status: 'success',
+						//shippingOptions: GetShippingOptions(state,zip,country),
+					});
+				}
+			});
+
+			paymentRequest.on('paymentmethod', function(ev) {
+
+				var clientSecret =  GetClientSecret(AppleGPay,JSON.stringify(ev));
+				
+				if(!clientSecret)
+				{
+					window.location= site_url+'shoppingcart/view';
+					return false;
+				}
+ 
+				// Confirm the PaymentIntent without handling potential next actions (yet).
+				stripe.confirmCardPayment(
+					clientSecret,
+					{payment_method: ev.paymentMethod.id},
+					{handleActions: false}
+				).then(function(confirmResult) {
+					$("#dd123").val(confirmResult+"\n\n\n"+ev);
+										
+					if (confirmResult.error) {
+					alert('Your payment has failed. Please try again or use different payment option.');
+					console.log('Could not confirm result: ', confirmResult.error);
+					ev.complete('fail');
+					window.location= site_url+'shoppingcart/view';
+					return false;
+					//alert('fail');					
+				} else {
+					// Report to the browser that the confirmation was successful, prompting
+					// it to close the browser payment method collection interface.
+					console.log("confirmResult=="+confirmResult);
+					//console.log(ev.paymentMethod.id);
+					 
+					
+					ev.complete('success');
+					
+					// Check if the PaymentIntent requires any actions and if so let Stripe.js
+					// handle the flow. If using an API version older than "2019-02-11"
+					// instead check for: `paymentIntent.status === "requires_source_action"`.
+					if (confirmResult.paymentIntent.status === "requires_action") {
+						// Let Stripe.js handle the rest of the payment flow.
+						stripe.confirmCardPayment(clientSecret).then(function(result) {
+						if (result.error) {
+							
+							 alert('Your payment has failed. Please try again or use different payment option.');
+							 ev.complete('fail');
+							 window.location= site_url+'shoppingcart/view';
+							 return false;
+						} else {
+
+							$.ajax({
+						type:'POST',
+						url:site_url+'stripebtnres',
+						headers: {
+							'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+						},
+						datatype: 'JSON',
+						
+						data:{	
+							'methodName':ev.paymentMethod.payment_method_types,	
+							'payerEmail':ev.payerEmail,
+							'payerName':ev.payerName,
+							'paymentMethod':ev.paymentMethod.id,
+							'shippingOption':ev.shippingOption,
+							'shippingAddress':ev.shippingAddress,
+							'stepfrom' : 'laststep',
+								
+						},
+						success:function(data) {
+							
+							if(data.status == 'success')
+							{
+                               //alert('success');
+                               $("#is_stripe_wallet").val("google_pay");
+                               $("#is_stripe_applepay").val("apple_pay");
+                               //$("#order_process").submit(); //22102024
+							   window.location.href = site_url+'order-receipt';
+							}else{
+								 alert('Your payment has failed. Please try again or use different payment option.');
+								 window.location= site_url+'shoppingcart/view';
+								 return false;
+							}
+						}
+					}); 
+						}
+					});
+				} else {
+					$.ajax({
+						type:'POST',
+						url:site_url+'stripebtnres',
+						headers: {
+							'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+						},
+						datatype: 'JSON',
+						
+						data:{	
+							'methodName':ev.paymentMethod.payment_method_types,	
+							'payerEmail':ev.payerEmail,
+							'payerName':ev.payerName,
+							'paymentMethod':ev.paymentMethod.id,
+							'shippingOption':ev.shippingOption,
+							'shippingAddress':ev.shippingAddress,
+							'stepfrom' : 'laststep',
+								
+						},
+						success:function(data) {
+							
+							if(data.status == 'success')
+							{
+                               //alert('success');
+                               $("#is_stripe_wallet").val("google_pay");
+                               $("#is_stripe_applepay").val("apple_pay");
+                               //$("#order_process").submit(); //22102024
+							   window.location.href = site_url+'order-receipt';
+							}else{
+								 alert('Your payment has failed. Please try again or use different payment option.');
+								 window.location= site_url+'shoppingcart/view';
+								return false;
+							}
+						}
+					}); 
+				}
+			}
+		});
+	});	
+});
+				
+	</script>	
+@endif
+

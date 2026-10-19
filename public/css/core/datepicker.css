@@ -1,0 +1,8 @@
+.input-date:before {
+    content: attr(data-date);
+    width: 100%;
+}
+
+.input-date::-webkit-datetime-edit, .input-date::-webkit-inner-spin-button, .input-date::-webkit-clear-button {
+    display: none;
+}

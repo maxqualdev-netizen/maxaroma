@@ -137,6 +137,8 @@ class CheckoutCartController extends Controller
             $this->checkoutService
                 ->refresh('cart');
 
+        $this->revalidateCouponFreeGiftAfterCartChange();
+
         $result['freeGift'] =
             $this->resolveFreeGiftAfterCartChange();
 
@@ -170,6 +172,8 @@ class CheckoutCartController extends Controller
             $result['checkout'] =
                 $this->checkoutService
                     ->refresh('cart');
+
+            $this->revalidateCouponFreeGiftAfterCartChange();
 
             $result['freeGift'] =
                 $this->resolveFreeGiftAfterCartChange();
@@ -293,6 +297,8 @@ class CheckoutCartController extends Controller
         $this->checkoutService
             ->refresh('cart');
 
+    $this->revalidateCouponFreeGiftAfterCartChange();
+
     $result['freeGift'] =
         $this->resolveFreeGiftAfterCartChange();
 
@@ -412,6 +418,43 @@ class CheckoutCartController extends Controller
 
         return $freeGift;
     }
+
+/**
+ * Revalidate a coupon Free Gift against the cart after a cart mutation.
+ * CouponService::apply() remains the single source of coupon eligibility.
+ * If invalid, CouponService removes only items marked FreeGiftCoupon=Yes.
+ */
+protected function revalidateCouponFreeGiftAfterCartChange(): void
+{
+    if (
+        Session::get('ShoppingCart.PromoCoupon.HasFreeGift', 'No') !== 'Yes'
+    ) {
+        return;
+    }
+
+    $couponCode = trim((string) Session::get(
+        'ShoppingCart.PromoCoupon.CouponCode',
+        ''
+    ));
+
+    if ($couponCode === '') {
+        // A stale flag must not prevent normal Free Gift / Free Sample rules.
+        $this->couponService->removeCoupon();
+        return;
+    }
+
+    $normalUser = Auth::user();
+
+    if (Auth::guard('store')->check()) {
+        $normalUser = Auth::guard('web')->user();
+    }
+
+    $customerId = $normalUser
+        ? Session::get('sess_icustomerid')
+        : null;
+
+    $this->couponService->apply($couponCode, $customerId);
+}
 
 public function resolveFreeGiftAfterCartChange(): array
 {

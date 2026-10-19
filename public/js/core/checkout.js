@@ -312,6 +312,11 @@
           payload['payment_method'] =  'Pay With Afterpay';
           payload['pschecksum'] = pschecksum;
         }
+        if(PayMethod == 'PAYMENT_PAYWITHAMAZON')
+        {
+          payload['payment_type'] = PayMethod;
+          payload['payment_method'] =  'Pay With Amazon';
+        }
 
         console.log(payload);
         const response = await PlaceOrder(payload);
@@ -496,11 +501,11 @@
       }
     }
     var validationError = 0;
-    if(!$("#frmcheckoutaddress").valid())
+    if($("#frmcheckoutaddress").length > 0 && !$("#frmcheckoutaddress").valid())
     {
       validationError=1;
     }
-    if(!$("#chksamebill").prop('checked') && !$("#frmbillingaddress").valid())
+    if($("#frmbillingaddress").length > 0 && !$("#chksamebill").prop('checked') && !$("#frmbillingaddress").valid())
     {
       validationError=1;
     }
@@ -543,6 +548,27 @@
     }
 
   });
+
+  function GetAfterpayWidget()
+  {
+    $.ajax({
+      type:'POST',
+      url:site_url+'afterpay-widget',
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      success:function(data) {
+        if(data != '')
+        {
+          $("#afterpay-widget").html(data);
+          setTimeout(() => {
+            createAfterpayWidget();
+          }, 500);
+
+        }
+      }
+    });
+  }
 
   function getShippingAddress() {
     return {
@@ -1758,14 +1784,19 @@
     const shippingFlags = getShippingFlags();
 
     const onlyGCPurchased = parseInt(shippingFlags.onlyGCPurchased ?? 0, 10);
-
+    console.log(onlyGCPurchased);
     if (onlyGCPurchased === 1) {
       $("#section-delivery").hide();
       $("#shipping-method-list").empty();
 
       return;
     }
-    const address = getShippingAddress();
+    var address = getShippingAddress();
+
+    if(window.amazon.address !== '')
+    {
+      address = window.amazon.address;
+    }
 
     if (!addressReady(address)) {
       $("#section-delivery fieldset").html(
@@ -1836,6 +1867,7 @@
 
         renderShippingMethods(response);
         updateTotals(response);
+        //GetAfterpayWidget();
       })
       .fail(function (xhr, status, error) {
         console.log("SHIPPING FAILED:", {
@@ -2066,6 +2098,7 @@
         if (response.message) {
           showMessage("#shipping-method-messages", response.message, "success");
         }
+        //GetAfterpayWidget();
         loadDropshipperDetails();
       })
 
@@ -2172,15 +2205,10 @@
      */
     restoreCheckoutAddonState();
 
-	if (
-    window.MaxaromaCheckout &&
-    window.MaxaromaCheckout.checkout &&
-    typeof updateTotals === "function"
-) {
-    updateTotals(
-        window.MaxaromaCheckout.checkout
-    );
-}
+	if ( window.MaxaromaCheckout && window.MaxaromaCheckout.checkout && typeof updateTotals === "function")
+  {
+    updateTotals(window.MaxaromaCheckout.checkout);
+  }
 
     const address = getShippingAddress();
 
@@ -2193,9 +2221,14 @@
 		$("#place-order-btn").hide();
 		$("#review-block").hide();
 	}
+
     loadDropshipperDetails();
     checkFreeGiftOnPageLoad();
     checkFreeSamplePopup();
+
+    $("#chkcreditlimit").click(function(){
+      loadCreditDetails();
+    })
   });
 
   window.MaxaromaOnePageCheckout = {
@@ -2204,6 +2237,7 @@
     getShippingAddress: getShippingAddress,
     setShippingInsurance: setShippingInsurance,
     setShippingSignature: setShippingSignature,
+    setAfterpayWidget:setAfterpayWidget,
   };
 
   /* =========================================================
@@ -3760,8 +3794,8 @@ function updateQty(btn, delta) {
       showLoader(false);
     });
 }
- 
- function handleFreeGiftResponse(response) {
+
+function handleFreeGiftResponse(response) {
   response = response || {};
 
   const freeGift =
@@ -3771,22 +3805,11 @@ function updateQty(btn, delta) {
 
   /*
    * =====================================================
-   * FINAL CART
+   * FINAL BACKEND CART
    * =====================================================
-   *
-   * For Free Gift processing the backend returns:
-   *
-   * response.freeGift.cart
-   *
-   * This is the FINAL cart after:
-   *
-   * 1. Old Free Gift removal
-   * 2. New rule resolution
-   * 3. New Free Gift auto-add
-   *
-   * Backend remains the source of truth.
    */
   let cart = [];
+  let hasFinalCart = false;
 
   if (Array.isArray(response.cart)) {
     cart = response.cart;
@@ -3797,17 +3820,84 @@ function updateQty(btn, delta) {
     cart = response.cart.Cart;
   }
 
-  if (
-    freeGift &&
-    Array.isArray(freeGift.cart)
-  ) {
+  if (freeGift && Array.isArray(freeGift.cart)) {
     cart = freeGift.cart;
+    hasFinalCart = true;
   } else if (
     freeGift &&
     freeGift.cart &&
     Array.isArray(freeGift.cart.Cart)
   ) {
     cart = freeGift.cart.Cart;
+    hasFinalCart = true;
+  }
+
+  /*
+   * =====================================================
+   * BACKEND IS THE SOURCE OF TRUTH
+   * =====================================================
+   *
+   * Compare existing UI Free Gift rows against the
+   * final backend cart.
+   *
+   * This also handles coupon_active status when the
+   * coupon gift has already been removed by the backend.
+   */
+  if (hasFinalCart) {
+    const backendGiftProductIds = new Set();
+
+    cart.forEach(function (item) {
+      if (!item) {
+        return;
+      }
+
+      const isFreeGift =
+        String(
+          item.IS_Free_Gift ||
+          item.Is_Free_Gift ||
+          item.is_free_gift ||
+          ""
+        ).toLowerCase() === "yes";
+
+      if (!isFreeGift) {
+        return;
+      }
+
+      const productId = parseInt(
+        item.ProductID ||
+        item.product_id ||
+        item.products_id ||
+        item.id ||
+        0,
+        10
+      );
+
+      if (productId > 0) {
+        backendGiftProductIds.add(productId);
+      }
+    });
+
+    document
+      .querySelectorAll(
+        '.order-item-row[data-free-gift="1"]'
+      )
+      .forEach(function (row) {
+        const rowProductId = parseInt(
+          row.getAttribute("data-product-id") || "0",
+          10
+        );
+
+        /*
+         * Remove the UI row if the backend final cart
+         * no longer contains that Free Gift product.
+         */
+        if (
+          rowProductId <= 0 ||
+          !backendGiftProductIds.has(rowProductId)
+        ) {
+          row.remove();
+        }
+      });
   }
 
   /*
@@ -3830,163 +3920,89 @@ function updateQty(btn, delta) {
 
   /*
    * =====================================================
-   * REMOVE ALL OLD FREE GIFT UI FIRST
+   * REMOVE OLD FREE GIFT UI FOR REMOVAL STATUSES
    * =====================================================
-   *
-   * This is required when:
-   *
-   * Rule 524
-   *     ↓
-   * Qty changed
-   *     ↓
-   * Rule 524 no longer applies
-   *     ↓
-   * Old Gift removed
-   *     ↓
-   * Rule 523 applies
-   *     ↓
-   * New Gift added
-   *
-   * We remove the old UI BEFORE rendering
-   * the new backend Free Gift.
-   *
-   * IMPORTANT:
-   *
-   * Do NOT remove normal products.
    */
   if (
     removedFreeGiftCount > 0 ||
     [
-        "auto_added",
-        "auto_add",
-        "removed",
-        "no_rule",
-        "none",
-        "qualification_lost"
+      "removed",
+      "no_rule",
+      "none",
+      "qualification_lost"
     ].includes(status)
-) {
+  ) {
     document
-        .querySelectorAll('.order-item-row[data-free-gift="1"]')
-        .forEach(function (row) {
-            row.remove();
-        });
-}
+      .querySelectorAll(
+        '.order-item-row[data-free-gift="1"]'
+      )
+      .forEach(function (row) {
+        row.remove();
+      });
+
+    updateCartItemCountAfterChange(cart);
+    return;
+  }
 
   /*
    * =====================================================
-   * NO FREE GIFT
+   * NO FREE GIFT RESPONSE
    * =====================================================
    */
   if (!freeGift) {
     updateCartItemCountAfterChange(cart);
-
     return;
   }
 
   /*
    * =====================================================
-   * NO RULE / REMOVED / QUALIFICATION LOST
+   * CUSTOMER MUST SELECT A GIFT
    * =====================================================
    */
-  if (
-    status === "removed" ||
-    status === "no_rule" ||
-    status === "none" ||
-    status === "qualification_lost"
-  ) {
-    updateCartItemCountAfterChange(cart);
-
-    return;
-  }
-
-  /*
-   * =====================================================
-   * MULTIPLE ELIGIBLE GIFTS
-   * =====================================================
-   *
-   * Backend wants customer selection.
-   *
-   * Old Free Gift has already been removed above.
-   */
-  if (
-    status === "popup"
-  ) {
+  if (status === "popup") {
     openFreeGiftPopup(freeGift);
-
     updateCartItemCountAfterChange(cart);
-
     return;
   }
 
   /*
    * =====================================================
-   * AUTO ADDED / AUTO ADD
+   * BACKEND ALREADY ADDED THE GIFT
    * =====================================================
-   *
-   * Backend has ALREADY added the Free Gift.
-   *
-   * DO NOT call:
-   *
-   * refreshFreeGiftCartUI()
-   *
-   * DO NOT call:
-   *
-   * addFreeGiftFromCheckout()
-   *
-   * Just render the Free Gift from:
-   *
-   * freeGift.cart
    */
   if (
-  status === "auto_add" ||
-  status === "auto_added"
-) {
+    status === "auto_add" ||
+    status === "auto_added"
+  ) {
+    const freeGifts = cart.filter(function (item) {
+      if (!item) {
+        return false;
+      }
 
-  const freeGifts =
-    Array.isArray(cart)
-      ? cart.filter(function (item) {
+      return (
+        String(
+          item.IS_Free_Gift ||
+          item.Is_Free_Gift ||
+          ""
+        ).toLowerCase() === "yes"
+      );
+    });
 
-          if (!item) {
-            return false;
-          }
+    freeGifts.forEach(function (gift) {
+      appendNewFreeGiftCartItem(gift);
+    });
 
-          return (
-            String(
-              item.IS_Free_Gift ||
-              item.Is_Free_Gift ||
-              ""
-            ).toLowerCase() === "yes"
-          );
-        })
-      : [];
-
-  /*
-   * Backend is the source of truth.
-   *
-   * Render every Free Gift returned in final cart.
-   */
-  freeGifts.forEach(function (gift) {
-
-    appendNewFreeGiftCartItem(
-      gift
-    );
-  });
-
-  updateCartItemCountAfterChange(
-    cart
-  );
-
-  return;
-}
+    updateCartItemCountAfterChange(cart);
+    return;
+  }
 
   /*
    * =====================================================
    * FALLBACK
    * =====================================================
    *
-   * If backend gives a Free Gift cart but status is
-   * not one of the known states, still render the
-   * backend Free Gift.
+   * For statuses such as coupon_active, render only
+   * gifts that are actually present in the final cart.
    */
   const freeGifts = cart.filter(function (item) {
     if (!item) {
@@ -4008,6 +4024,7 @@ function updateQty(btn, delta) {
 
   updateCartItemCountAfterChange(cart);
 }
+
   function addFreeGiftFromCheckout(productId, freeProductId, oneGift) {
     productId = parseInt(productId || 0, 10);
 
@@ -5898,6 +5915,20 @@ if (!cart.length) {
         }
       });
   }
+
+  function setAfterpayWidget()
+  {
+    $.ajax({
+      type: "POST",
+      url: urls.setDropshipper,
+      headers: {
+        "X-CSRF-TOKEN": csrfToken,
+      },
+      dataType: "json",
+    }).done(function (res) {
+
+    });
+  }
   function restoreCheckoutAddonState() {
     window.MaxaromaCheckout = window.MaxaromaCheckout || {};
 
@@ -6938,6 +6969,40 @@ function loadDropshipperDetails()
           //     message,
           //     'error'
           // );
+        })
+        .always(function () {
+          //showLoader(false);
+        });
+  }
+
+  function loadCreditDetails()
+  {
+    var flag = 0;
+    if($("#chkcreditlimit").prop('checked'))
+    {
+      flag = 1;
+    }
+    $.ajax({
+      type: "POST",
+      url: site_url+'apply-credit-discount',
+      headers: {
+        "X-CSRF-TOKEN": csrfToken,
+      },
+      dataType: "json",
+      data : {
+        creditLimitFlag: flag
+      }
+    })
+      .done(function (res) {
+
+        if(res.status === true)
+        {
+          window.location.reload();
+        }
+      }).fail(function (xhr, status, error) {
+          if (status === "abort") {
+            return;
+          }
         })
         .always(function () {
           //showLoader(false);

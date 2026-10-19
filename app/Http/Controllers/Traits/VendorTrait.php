@@ -14,7 +14,7 @@ trait VendorTrait
 			return ($Product->store_currentStock ?? 0) > 0 ? "In" : "Out";
 		}
 		$websiteStockAvailable = $Product->current_stock > $Product->minimum_stock;
-		
+
 		$vendors = [
 						['stock' => $Product->cosmo_current_stock ?? 0, 'sku' => $Product->cosmo_sku ?? ''],
 						['stock' => $Product->nandansons_current_stock ?? 0, 'sku' => $Product->nandansons_sku ?? ''],
@@ -23,8 +23,6 @@ trait VendorTrait
 						['stock' => $Product->nd_current_stock ?? 0, 'sku' => $Product->nd_sku ?? ''],
 					];
 
-		
-		
 		$vendorHasStock = false;
 		foreach ($vendors as $vendor) {
 			if ($vendor['stock'] > 0 && $vendor['sku'] !== '') {
@@ -36,11 +34,11 @@ trait VendorTrait
 			return "In";
 		}
 		return "Out";
-	}       
+	}
 
 	public function SetProduct($Product,$OrderType="Website")
 	{
-		
+
 		if(isset($OrderType) && $OrderType=="Store")
 		{
 			$Product->stock = $this->getSystemStockAvalilable($Product,$OrderType);
@@ -54,11 +52,11 @@ trait VendorTrait
 		}
 		else
 		{
-			$Product->stock = $this->getSystemStockAvalilable($Product);  
+			$Product->stock = $this->getSystemStockAvalilable($Product);
 			$Prices = explode("##", $this->getSystemStockProductPrice($Product));
 			$Product->WebsiteStock = $this->getSystemWebsiteCurrentStock($Product);
 			$Product->product_price = $Prices[0];
-			
+
 			if($Product->product_price > $Product->retail_price)
 			{
 				$Product->retail_price = $Product->product_price;
@@ -67,7 +65,7 @@ trait VendorTrait
 		$Product->retail_price = isset($Prices[1]) ? $Prices[1] : 0;
 		$Product->current_stock = isset($Prices[2]) ? $Prices[2] : 0;
 		return $Product;
-	} 
+	}
 	public function getReferencedProducts_Counter_ListingDev($products_id, $variation_id, $category_id = '', $CatArrVal = array(), $ReffProds)
 	{
 		$cnt_referance_prod = [];
@@ -158,7 +156,7 @@ trait VendorTrait
 	public function GetMinMaxPrice($variation_id, $Products)
 	{
 		$Price = [];
-		$YouSave = [];	
+		$YouSave = [];
 		foreach ($Products as $ObjProduct) {
 			if (isset($ObjProduct->variation_id) && isset($variation_id) && $ObjProduct->variation_id != $variation_id)
 				continue;
@@ -178,10 +176,9 @@ trait VendorTrait
 		return $PriceArray;
 	}
 
-	
     public function getSystemStockProductPrice($Product,$OrderType="Website")
 	{
-		
+
 	   if(isset($OrderType) && $OrderType=="Store")
 		{
 			if($Product->sale_price > 0 &&  $Product->sale_price < $Product->our_price) {
@@ -190,10 +187,10 @@ trait VendorTrait
 					if ($Product->our_price > 0)
 						return $Product->our_price . "##" . $Product->retail_price . "##" . $Product->current_stock;
 				}
-		}	
-		
+		}
+
 	  $isWholesaler = Session::get('eusertype') && strtolower(Session::get('eusertype')) === 'wholesaler';
-	
+
 	  if ($Product->current_stock > $Product->minimum_stock) {
         if ($isWholesaler) {
             if ($Product->wholesale_price > 0) {
@@ -212,7 +209,6 @@ trait VendorTrait
         }
     }
 
-	
 	$vendors = [
 				'cosmo' => [
 					'sku' => $Product->cosmo_sku ?? '',
@@ -245,7 +241,6 @@ trait VendorTrait
 					'retail_price' => $Product->perfumeworldwide_retail_price ?? 0,
 				],
 			];
-	
 
 		$availableVendors = array_filter($vendors, function($v) {
 			return $v['sku'] !== '' && $v['stock'] > 0 && $v['price'] > 0;
@@ -275,9 +270,7 @@ trait VendorTrait
 			}
 		}
 	}
-	
-	
-	
+
 	public function getSystemWebsiteCurrentStock($Product)
 	{
 		$currentStock = $Product->current_stock ?? 0;
@@ -419,6 +412,6 @@ trait VendorTrait
 			}
 		}
 		$new_arr = array_values($uniqueKeys);
-		return $new_arr;      
+		return $new_arr;
 	}
 }

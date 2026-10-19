@@ -1,0 +1,249 @@
+.viewall {
+	font-size: 12px;
+	line-height: 30px;
+	text-decoration: underline;
+	text-transform: uppercase;
+}
+.viewall:hover{text-decoration: none;}
+
+.mai_sli {
+	position:relative;
+}
+.mai_sli a.btn_link {
+	position:absolute;
+	right:0px;
+	top:4px;
+	font-size: 12px;
+	line-height: 30px;
+	text-decoration: underline;
+	text-transform: uppercase;
+}
+.mainsdttl {
+	position:relative;
+	text-transform:uppercase;
+	font-family:'montserrat';
+}
+.mainsdttl span {
+	padding:0 10px;
+	background:#FFFFFF;
+	font-size:24px;
+	z-index:1;
+	position:relative;
+}
+.mainsdttl:before {
+	content:"";
+	background:#a7a7a7;
+	position:absolute;
+	height:1px;
+	left:0px;
+	top:50%;
+	transform:translate(0px, -50%);
+	width:100%;
+}
+.cat_banner {
+}
+.cat_banner .cat-banner-inner {
+	position: relative;
+}
+.cat_banner .catban-links {
+	position: absolute;
+	bottom: 5%;
+	right: 22%;
+}
+.cat_banner .catban-links ul li {
+	position: relative;
+	display: inline-block;
+	padding: 0 20px;
+	margin: 0 0 0 -5px;
+}
+.cat_banner .catban-links ul li:after {
+	position: absolute;
+	content: '|';
+	right: 0;
+	top: 50%;
+	transform: translate(0, -50%);
+}
+ .cat_banner .catban-links ul li:last-child::after {
+display: none;
+}
+.cat_banner .catban-links ul li a {
+	font-weight: 500;
+	text-transform: uppercase;
+}
+.catf_box {/*display:table; width:100%;*/
+	margin:20px 0 0 0;
+}
+.catf_box a {
+	display:table-cell;
+	text-align:center; /*padding:0 4px;*/
+	text-transform:uppercase;
+	font-size:14px;
+	line-height:20px;
+}
+.way_shop .slick-slide {
+	padding:0 4px;
+}
+.catf_box a:last-child {
+	padding-right:0px;
+}
+.catf_box a:first-child {
+	padding-left:0px;
+}
+.catf_box a span {
+	background:#eeeeee;
+	border:2px solid #eeeeee;
+	padding:10px 5px;
+	display:block;
+	line-height:17px;
+}
+.catf_box a:hover span, .catf_box a.active span {
+	border-color:#222222;
+	background-color:transparent;
+}
+.tp_cat {
+	background:#f6f6f6;
+	padding:68px 0;
+	margin-bottom:48px;
+}
+.tp_cat .thumb img {
+	border:1px solid #e7e7e7;
+}
+.tp_cat h4 {
+	text-transform:uppercase;
+	font-size:15px;
+	font-weight:700;
+	margin-top:10px;
+}
+.filtoolbar .sbHolder {
+	border: none;
+	min-width: auto;
+}
+.filtoolbar .sbHolder .sbOptions {
+	width: 150px;
+	left: auto;
+	right: 0;
+}
+.view-more {
+	display:inline-block;
+	width: 100%;
+	background: #f4f4f4;
+	padding: 20px 15px;
+	text-align: center;
+	color: #000;
+	font-size: 16px;
+	font-weight: 500;
+	text-transform: uppercase;
+	margin: 15px 0;
+	cursor: pointer;
+}
+.view-more:hover {
+	background: #000;
+	color: #fff;
+}
+.fragr-extra p {
+	line-height: 28px;
+}
+.niche-frag-page {
+}
+.niche-frag-slider {
+}
+.niche-frag-slider .frag-hd {
+	margin-bottom: 30px;
+}
+.niche-frag-slider .frag-hd h3 {
+	margin-bottom: 15px;
+}
+.niche-frag-slider .frag-hd p {
+	line-height: 1.4;
+	margin-bottom: 0;
+	padding: 0 60px;
+}
+.niche-frag-slider .viewall {
+	display: inline-block;
+	width: 100%;
+	text-align: right;
+}
+.niche-frag-slider .frag-slide-main {
+	padding: 40px 0 0;
+	border-top: 1px solid #e2e2e2;
+}
+.niche-frag-slider .frag-slide-main .way_shop{
+	padding-bottom: 0px!important;
+}
+
+ @media (min-width:1025px) and (max-width:1300px) {
+ .cat_banner .catban-links {
+right: 20%;
+}
+}
+ @media (min-width:890px) and (max-width:1024px) {
+ .cat_banner .catban-links {
+right: 18%;
+}
+}
+ @media (min-width:768px) and (max-width:889px) {
+ .cat_banner .catban-links {
+right: 13%;
+}
+}
+ @media (min-width:768px) {
+ .cat_banner .cat_banner_overlay {
+top:50%;
+transform:translate(0px, -50%);
+position:absolute;
+}
+ .cat_banner {
+text-align:right;
+}
+}
+ @media (max-width:767px) {
+ .mai_sli a.btn_link {
+position:inherit;
+}
+ .cat_banner {
+text-align:center;
+}
+ .cat_banner .cat_banner_overlay {
+margin:15px 0;
+}
+ .cat_banner .cat_banner_overlay h1 {
+width:100%;
+}
+ .tp_cat {
+padding:20px 0;
+}
+ .tp_cat h4 {
+margin-bottom:20px;
+}
+ .tp_cat .last-nospacing h4 {
+margin-bottom:0px;
+}
+ .fragr-extra p {
+font-size: 14px;
+line-height: 24px;
+}
+ .cat_banner .catban-links {
+right: 0;
+width: 100%;
+}
+ .cat_banner .catban-links ul li {
+padding: 0 15px;
+}
+ .cat_banner .catban-links ul li a {
+font-size: 14px;
+}
+ .cat_banner .catban-links ul li:after {
+font-size: 14px;
+}
+ .niche-frag-slider .frag-hd p {
+font-size: 14px;
+padding: 0;
+}
+ .niche-frag-slider .viewall {
+margin-bottom: 20px;
+}
+ .niche-frag-slider .frag-slide-main {
+padding: 25px 0 0;
+margin-top: 20px;
+}
+}

@@ -45,7 +45,7 @@ class AmazonpayController extends Controller
 			$this->CURRENCY_CODE	= $amazon_payment_info['paywithamazon_Currency_Code'];
 		}
 			
-		
+		$this->TRANSACTION_MODE =  'SANDBOX';
 		if(strtoupper(trim($this->TRANSACTION_MODE)) == 'SANDBOX')	{
 			$this->JS_SERVER_URL		= 'https://static-na.payments-amazon.com/OffAmazonPayments/us/sandbox/js/Widgets.js?sellerId='.$this->MERCHANT_ID;
 			$this->API_URL			= 'https://api.sandbox.amazon.com/auth/o2/tokeninfo?access_token=';

@@ -290,4 +290,13 @@ class CheckoutAfterpayController extends Controller
         Session::flash('CartError', $gatewayResponse->message ?? 'Error in Processing Request, Please try again.');
         return redirect('shoppingcart');
     }
+
+	public function GetAfterpayWidget(Request $request)
+	{
+		$NetTotal = NumberFormat($this->afterpay->GetNetTotal());
+		$token_js_url = $this->afterpay->tokenJsUrl;
+		$this->PageData['NetTotal'] = $NetTotal;
+		$this->PageData['token_js_url'] = $token_js_url;
+		return view('newcheckout.afterpay-widget')->with($this->PageData)->render();
+	}
 }

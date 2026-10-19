@@ -1,4 +1,4 @@
-<?php
+<?php 
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
@@ -77,7 +77,7 @@ class CustomerController extends Controller
 	public function __construct()
     {
 		$PageType = 'NR';
-		$MetaInfo = MetaInfo::where('type','=',$PageType)->get();
+		$MetaInfo = MetaInfo::where('type','=',$PageType)->get(); 
 		if($MetaInfo->count() > 0 )
 		{
 			$this->PageData['meta_description'] = $MetaInfo[0]->meta_description;
@@ -138,7 +138,7 @@ class CustomerController extends Controller
 						->withInput()
 						->withErrors([
 							'existing_email' => config('message.Register.Blocked'),
-						]);
+						]);					
 				}
 				return redirect()->back()
 				->withInput()
@@ -191,12 +191,12 @@ class CustomerController extends Controller
 				'merge_log' => 'Auto updated from guest to member on registration page',
 				'birthday' => ($request['birthday'] != null) ? $request['birthday'] : null,
 			);
-
+            
             if(config('global.YOTPO_PROG') == false)
             {
                 $UserData['iRewardpoint'] = '150';
             }
-
+			
 			$User = Customer::create($UserData);
 			if($User)
 			{
@@ -217,7 +217,7 @@ class CustomerController extends Controller
 				$AddressBook['phone'] = $User->phone;
 				$AddressBook['status'] = '1';
 				$UserAddress = AddressBook::create($AddressBook);
-
+				
                 if(config('global.YOTPO_PROG') == false)
                 {
                     $RewardPoints = array();
@@ -226,7 +226,7 @@ class CustomerController extends Controller
                     $RewardPoints["iRewardpoint"] = 150;
                     $UserRewardPoints = RewardPoint::create($RewardPoints);
                 }
-
+                
 				$request->session()->regenerate();
 				Session::put('sess_useremail',$User->email);
 				Session::put('sess_username',$User->first_name);
@@ -237,14 +237,8 @@ class CustomerController extends Controller
 				Session::put('eusertype','Retailer');
 				Session::put('payment_amount',$User->payment_amount);
 				Session::put('resale_certificate',$User->upload_sales_tax);
-				
-				if($User->resale_certificate_status == ''){
-					$User->resale_certificate_status = 'Pending';
-				}else{
-					$User->resale_certificate_status = $User->resale_certificate_status;
-				}
 				Session::put('resale_certificate_status',$User->resale_certificate_status);
-
+				
 				$custFname = '';
 				if(isset($User->first_name) &&  $User->first_name!='' )
 				{
@@ -254,37 +248,38 @@ class CustomerController extends Controller
 				if(isset($User->last_name) && $User->last_name!='')
 				{
 					$custlname = $User->last_name;
-				}
+				}		
 				Session::put('sess_custname',$custFname."|".$custlname);
 				$CityVal = '';
 				if(isset($User->city) &&  $User->city!='')
-				{
+				{	
 					$CityVal = $User->city;
 				}
 				$StateVal = '';
 				if(isset($User->state) &&  $User->state!='')
-				{
+				{	
 					$StateVal = $User->state;
 				}
 				$CountryVal = '';
 				if(isset($User->country) &&  $User->country!='')
-				{
+				{	
 					$CountryVal = $User->country;
 				}
 				$ZipVal = '';
 				if(isset($User->zip) &&  $User->zip!='')
-				{
+				{	
 					$ZipVal = $User->zip;
 				}
 				$PhoneVal = '';
 				if(isset($User->phone) &&  $User->phone!='')
-				{
+				{	
 					$PhoneVal = $User->phone;
 				}
-				Session::put('sess_useraddress',$CityVal."|".$StateVal."|".$CountryVal."|".$ZipVal."|".$PhoneVal);
-
+				Session::put('sess_useraddress',$CityVal."|".$StateVal."|".$CountryVal."|".$ZipVal."|".$PhoneVal);	
+				
 				Session::flash('success', config('message.Register.Success'));
-
+				
+				
 				$Template = GetMailTemplate("CUSTOMER_REGISTER");
                 $EmailBody = $Template[0]->mail_body;
 				$EmailBody = str_replace('{$vFirstName}',$User->first_name,$EmailBody);
@@ -319,8 +314,8 @@ class CustomerController extends Controller
 						'Site_URL' => config('global.SITE_URL'),
 						'freeshippinginfo' => $FreeShipping
 					]
-				];
-
+				]; 
+                
                 /** YOTPO **/
 				YotpoRequest('create_customer',$User);
 				/** YOTPO **/
@@ -329,7 +324,7 @@ class CustomerController extends Controller
 					echo "<pre>";
 					print_r($EventData);
 					exit;
-				}*/
+				}*/				
 
 				/*
                 $YotpoInfo = YotpoRequest('customer_detail',['email' => $User->email]);
@@ -343,7 +338,7 @@ class CustomerController extends Controller
 				{
 				   SendMail($Subject,$EmailBody,$To,$From);
 				}
-				else
+				else 
 				{
 					OmanisendRequest('create_customer',$User);
 					OmanisendRequest('61e55276af90600022058216',$EventData);
@@ -353,8 +348,9 @@ class CustomerController extends Controller
 				$this->GenerateShopCartFromCookieAfterLogin();
 				$this->StoreShopCartInCookie();
 
+				
 				Session::put('GARegister',"Yes");
-				return redirect('/myaccount.html');
+				return redirect('/myaccount.html');	
 			} else {
 				Session::flash('failed', config('message.Register.Failed'));
 				return redirect()->back();
@@ -362,13 +358,13 @@ class CustomerController extends Controller
 		}
 		$GTMDATA = ['page' => 'register', 'pagetype' => 'other'];
 		$this->PageData['GTMDATA'] = $this->GoogleTagManager($GTMDATA);
-
+		
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Registration';
 		$this->PageData['JSFILES'] = ['register.js','moment.min.js'];
-		$this->PageData['CSSFILES'] = ['myaccount.css','register.css'];
+		$this->PageData['CSSFILES'] = ['myaccount.css','register.css'];	
 		return view('customer.register')->with($this->PageData);
 	}
-
+	
 	public function Login(Request $request)
 	{
 		if((isset($request->automated_login) && $request->automated_login == 'yes') || (isset($request->action) && $request->action == 'signin'))
@@ -386,7 +382,7 @@ class CustomerController extends Controller
 			}
 			if($request->automated_login == 'yes')
 			{
-
+				
 				if(Session::has('sess_icustomerid') && Session::get('sess_icustomerid') > 0)
 				{
 					Auth::logout();
@@ -404,7 +400,7 @@ class CustomerController extends Controller
 
 				}
 			} else {
-
+				
 				$CustomerQry = Customer::where('email', $request->email)
 				->where('password',$request->password)
 				->where('status','1')
@@ -440,21 +436,16 @@ class CustomerController extends Controller
 				Session::put('SpecialCustomerFlag',$Customer->DownloadSpecialPricelist);
 				Session::put('etype','M');
 				Session::put('payment_amount',$Customer->payment_amount);
-				
-				if($Customer->resale_certificate_status == ''){
-					$Customer->resale_certificate_status = 'Pending';
-				}else{
-					$Customer->resale_certificate_status = $Customer->resale_certificate_status;
-				}
 				Session::put('resale_certificate',$Customer->upload_sales_tax);
 				Session::put('resale_certificate_status',$Customer->resale_certificate_status);
-				
 				Session::put('sales_tax_exemption',$Customer->sales_tax_exemption);
 				SetCustomerLoyaltyTier($Customer->email);
-
+				
+				
 				/*Status - 'Pending','Completed','Canceled','Declined','Back Ordered','Closed','Refund','Sent To Stripe','Return Requested','Return Approved','Return Rejected','Item Received','Request Cancellation','Cancellation Approved','Pending By Amazon','Pending - PhoneOrder','Sent To AfterPay','Resolved','Claim Approved','Claim Rejected','Claim In Review','Claim Requested','Claim In Review - Police Report Required','Claim In Review - Pictures / Videos Required','Refund Initiated','Refund Declined','Refund Partially'
 				Payment Status - 'Paid','Unpaid','Inprocess'*/
-
+				
+				
 				//$InProgressStatusArray = ['Pending','Sent To Stripe','Pending By Amazon','Pending - PhoneOrder','Sent To AfterPay'];
 				$InProgressStatusArray = ['Pending','Pending - PhoneOrder','Pending By Amazon'];
 				$OrdInProgressResultQuery = Order::select('orders_id', 'status', DB::raw('DATE_FORMAT(order_datetime, "%m/%d/%Y") as datetime,DATEDIFF(now(), order_datetime) as days'))
@@ -464,9 +455,9 @@ class CustomerController extends Controller
 									->having('days', '<=', 60)
 									->get();
 									//->toSql();
-
+									
 				Session::put('InProgressOrders',count($OrdInProgressResultQuery));
-
+				
 				$rewrd_cust = Customer::select('iRewardpoint')
 								->where('customer_id', '=', Auth::user()->customer_id)
 								->get();
@@ -530,26 +521,52 @@ class CustomerController extends Controller
 				$this->GenerateShopCartFromCookieAfterLogin();
 				$this->StoreShopCartInCookie();
 
-				//$this->PageData['GA4'] = $GA4;
+				$redirectUrl = '/myaccount.html';
 
-				//echo $this->PageData['GA4']; exit;
-				if(isset($request->fromcheckout) && $request->fromcheckout=='checkout')
-				{
-					return redirect('/checkout');
-				}
-				else if(isset($request->page) && $request->page == 'billing')
-				{
-					return redirect('/billing');
-				}
-				else if(isset($request->page) && $request->page == 'paypal')
-				{
-					return redirect('/billing/paypal');
-				}
-				else
-				{
-					Session::put('MyAccountGA4',"Yes");
-					return redirect('/myaccount.html');
-				}
+			if (
+				isset($request->fromcheckout) &&
+				$request->fromcheckout == 'checkout'
+			) {
+				$redirectUrl = '/checkout';
+			}
+			elseif (
+				isset($request->fromcheckout) &&
+				$request->fromcheckout == 'secure-checkout1'
+			) {
+				$redirectUrl = '/secure-checkout1';
+			}
+			elseif (
+				isset($request->page) &&
+				$request->page == 'billing'
+			) {
+				$redirectUrl = '/billing';
+			}
+			elseif (
+				isset($request->page) &&
+				$request->page == 'paypal'
+			) {
+				$redirectUrl = '/billing/paypal';
+			}
+			else {
+				Session::put('MyAccountGA4', 'Yes');
+			}
+
+			/*
+			* Checkout AJAX login
+			*/
+			if ($request->ajax()) {
+				return response()->json([
+					'status'   => 'success',
+					'error'    => 0,
+					'message'  => 'Login successful.',
+					'redirect' => $redirectUrl,
+				]);
+			}
+
+			/*
+			* Existing normal login
+			*/
+			return redirect($redirectUrl);
 			} else {
 				return redirect()->back()
 				->withInput()
@@ -566,7 +583,7 @@ class CustomerController extends Controller
 		{
 			$this->PageData['FromCheckout'] = $request->id;
 		}
-
+		
 		return view('customer.login')->with($this->PageData);
 	}
 
@@ -589,7 +606,7 @@ class CustomerController extends Controller
 		$request->session()->forget('resale_certificate');
 		$request->session()->forget('resale_certificate_status');
 		$request->session()->forget('sales_tax_exemption');
-
+		
 		$this->ReformatCartPrice();
 		return redirect(config('global.SITE_URL'));
 	}
@@ -619,57 +636,58 @@ class CustomerController extends Controller
 
 		$account_image_path = config('global.SITE_URL').'images/';
 		$account_image = generalsetting('ACCOUNT_IMAGE',1);
-		$account_image_path_Val = config('global.PHYSICAL_PATH').'images/';
+		$account_image_path_Val = config('global.PHYSICAL_PATH').'images/'; 
 		$newimageVal = $account_image_path_Val.$account_image;
-
+		
 		$verP = ""; //filemtime($newimageVal);
 		//$verP = "";
 		$account_image = $account_image_path.$account_image.'?ver='.$verP;
-
+		
 		$this->PageData['account_image'] = $account_image;
-
+		
 		$rewrd_cust = Customer::select('iRewardpoint')
 								->where('customer_id', '=', Auth::user()->customer_id)
 								->get();
 		$this->PageData['reward_point'] = $rewrd_cust[0]['iRewardpoint'];
-
+		
 		$OrdResultQuery = Order::select('orders_id', 'orders_no', 'sub_total', 'ship_status','order_total', 'refund_amount', 'pay_status', 	'status', 'payment_type', 'use_credit_limit', 'payment_method', 'phoneorder_payby', 'route_shipping_insurance_charge','bill_first_name', 'bill_last_name','bill_email', DB::raw("DATE_FORMAT(order_datetime, '%m/%d/%Y %H:%i') AS datetime,DATEDIFF(now(), order_datetime) as days"))
 							->where('customer_id', '=', Auth::user()->customer_id)
 							->orderBy('orders_id', 'DESC')->limit(5)->get();
-
+		
 		$this->PageData['OrdResult'] = $OrdResultQuery;
 		//dd(Session::get('LoyaltyTier'));
-
+		
 		$ExclusiveCustomers = Order::select('orders_id', 'orders_no', 'sub_total', 'ship_status','order_total', 'refund_amount', 'pay_status', 'status', 'payment_type', 'use_credit_limit', 'payment_method', 'phoneorder_payby', 'route_shipping_insurance_charge','bill_first_name', 'bill_last_name','bill_email', DB::raw("DATE_FORMAT(order_datetime, '%m/%d/%Y %H:%i') AS datetime,DATEDIFF(now(), order_datetime) as days"))
 							->where('customer_id', '=', Session::get('sess_icustomerid'))
 							->where('status', '!=', 'Declined')
 							->where('order_total', '>', 200)
 							->having('days', '<=', 60)
 							->get();
-
+		
 		if(Session::has('sess_icustomerid') && Session::get('sess_icustomerid') > 0 && count($ExclusiveCustomers) > 0){
 			$this->PageData['IsExclusiveCustomers'] = 'Yes';
 		}else{
 			$this->PageData['IsExclusiveCustomers'] = 'No';
 		}
-
-		//require_once app_path('Libraries/phpqrcode/qrlib.php');
+		
+		require_once app_path('Libraries/phpqrcode/qrlib.php'); 
 
 		$normaluser = Auth::user();
 		if (Auth::guard('store')->check()) {
 			$normaluser = Auth::guard('web')->user();
 		}
+		
 
-		// $this->PageData['qr_image'] = "";
-		// if(isset($normaluser->customer_id) && $normaluser->customer_id > 0){
-		// 	$url = config('global.SITE_URL')."store/customer-login.html?k=".base64_encode($normaluser->customer_id);
-		// 	ob_start();
-		// 	\QRcode::png($url, null, QR_ECLEVEL_M, 6, 2);
-		// 	$image = ob_get_clean();
-		// 	$qrBase64 = 'data:image/png;base64,' . base64_encode($image);
-		// 	$this->PageData['qr_image'] = $qrBase64;
-		// }
-
+		$this->PageData['qr_image'] = "";
+		if(isset($normaluser->customer_id) && $normaluser->customer_id > 0){
+			$url = config('global.SITE_URL')."store/customer-login.html?k=".base64_encode($normaluser->customer_id);
+			ob_start();
+			\QRcode::png($url, null, QR_ECLEVEL_M, 6, 2);
+			$image = ob_get_clean();
+			$qrBase64 = 'data:image/png;base64,' . base64_encode($image);
+			$this->PageData['qr_image'] = $qrBase64;
+		}
+		
 		return view('myaccount.dashboard')->with($this->PageData);
 	}
 
@@ -697,7 +715,7 @@ class CustomerController extends Controller
 					]);
 				} else {
 					$FreeShipping = "";
-					if(config('Settings.FREESHIPPING_VALUE'))
+					if(config('Settings.FREESHIPPING_VALUE'))	
 						$FreeShipping = '<span style="font-size:16px; font-family:Arial;"><strong>FREE</strong> Shipping On $'.config('Settings.FREESHIPPING_VALUE').' or more Orders</span>';
 					$Template = GetMailTemplate("FORGOT_PASSWORD");
 					$EmailBody = $Template[0]->mail_body;
@@ -708,20 +726,20 @@ class CustomerController extends Controller
 					$EmailBody = str_replace('{$password}',$ChkEmail[0]->password,$EmailBody);
 					$EmailBody = str_replace('{$TOLL_FREE_NO}',config('Settings.TOLL_FREE_NO'),$EmailBody);
 					$EmailBody = str_replace('{$CONTACT_MAIL}',config('Settings.CONTACT_MAIL'),$EmailBody);
-
+					
 					$To = $ChkEmail[0]->email;
 					$Subject = str_replace('{$SITE_NAME}',config('Settings.SITE_TITLE'),$Template[0]->subject);
 					$From = config('Settings.CONTACT_MAIL');
-
+					
                     if(config('global.OMNISEND_PROG') == false)
                     {
                        SendMail($Subject,$EmailBody,$To,$From);
                     } else {
                         /** OMANISEND **/
                         OmanisendRequest('61e048930e8680001cd923aa',$ChkEmail[0]);
-                        /** OMANISEND **/
+                        /** OMANISEND **/   
                     }
-
+					
 					Session::flash('success', config('message.Forgot.Success'));
 					return redirect()->back();
 				}
@@ -729,7 +747,7 @@ class CustomerController extends Controller
 		}
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Forgot Password';
 		$this->PageData['JSFILES'] = ['forgotpassword.js'];
-		$this->PageData['CSSFILES'] = ['myaccount.css'];
+		$this->PageData['CSSFILES'] = ['myaccount.css'];	
 		return view('customer.forgotpassword')->with($this->PageData);
 	}
 
@@ -744,7 +762,7 @@ class CustomerController extends Controller
 	}
 
 	public function EditProfile(Request $request)
-	{
+	{	
 		$this->PageData['Countries'] = GetCountries();
 		$this->PageData['States'] = GetStates();
 		$this->PageData['SelCountry'] = 'US';
@@ -810,12 +828,12 @@ class CustomerController extends Controller
 			if(Session::get("eusertype")=="Wholesaler" && $UserDataArray['state'] == 'NY' && $UserDataArray['country'] == 'US' )
 		    {
 			 	// $UserDataArray['salestax_id'] = $UserDataArray["salestax_id"];
-			 	$UserDataArray['einnumber'] = $request['einnumber'];
+			 	$UserDataArray['einnumber'] = $request['einnumber'];				
 			}
 
 			$User = Customer::find(Auth::user()->customer_id);
-
-			$User->update($UserDataArray);
+			
+			$User->update($UserDataArray); 
 			if($User)
 			{
 				if(Session::get("eusertype")=="Wholesaler" && $request->hasFile('upload_sales_tax')){
@@ -823,36 +841,36 @@ class CustomerController extends Controller
 					$image_name = $image->getClientOriginalName();
 					$destinationPath = base_path('images/homeimg/');
 					$upload = $image->move($destinationPath, $image_name);
-
+					
 					$uploadArr = array(
 						'upload_sales_tax'				=> $image_name,
 						'resale_certificate_status'	=> 'Pending',
 					);
-
+					
 					$User->update($uploadArr);
-
+					
 					Session::put('resale_certificate',$User->upload_sales_tax);
 					Session::put('resale_certificate_status',$User->resale_certificate_status);
 				}
-
+				
 				Session::flash('success', config('message.EditProfile.Success'));
 				return redirect()->back();
 			}
 		}
 		if($Userdata[0]->birthday != null) {
-			$this->PageData['CSSFILES'] = ['myaccount.css'];
+			$this->PageData['CSSFILES'] = ['myaccount.css'];	
 		} else {
-			$this->PageData['CSSFILES'] = ['myaccount.css', 'datepicker.css'];
+			$this->PageData['CSSFILES'] = ['myaccount.css', 'datepicker.css'];	
 		}
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Edit Profile';
-		$this->PageData['JSFILES'] = ['moment.min.js', 'editprofile.js'];
-		$this->PageData['CSSFILES'] = ['myaccount.css'];
-		$this->PageData['Userdata'] = $Userdata;
+		$this->PageData['JSFILES'] = ['moment.min.js', 'editprofile.js'];	
+		$this->PageData['CSSFILES'] = ['myaccount.css'];	
+		$this->PageData['Userdata'] = $Userdata;	
 		return view('myaccount.editprofile')->with($this->PageData);
 	}
 
 	public function ChangePassword(Request $request)
-	{
+	{	
 		if(isset($request['old_password']))
 		{
 	        $validatedData = $request->validate([
@@ -877,7 +895,7 @@ class CustomerController extends Controller
 				]);
 			}
 			$checkOldPassword = Customer::where('customer_id','=',Auth::user()->customer_id)->where('password','=',$request['old_password'])->get();
-
+			
 			if($checkOldPassword->count() <= 0)
 			{
 				return redirect()->back()
@@ -892,14 +910,14 @@ class CustomerController extends Controller
 					'password' => $request['new_password'],
 				);
 				$User = Customer::find(Auth::user()->customer_id);
-				$User->update($UserData);
+				$User->update($UserData); 
 				if($User)
 				{
 					Session::flash('success', config('message.ChangePassword.Success'));
 					return redirect()->back();
 				}
 			}
-		}
+		}	
 
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Change Password';
 		$this->PageData['JSFILES'] = ['changepassword.js'];
@@ -924,8 +942,8 @@ class CustomerController extends Controller
 		}
 		$this->PageData['reward_point'] = $reward_point;
 
-		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Referral Customer List';
-		$this->PageData['CSSFILES'] = ['myaccount.css', 'pagination.css'];
+		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Referral Customer List';	
+		$this->PageData['CSSFILES'] = ['myaccount.css', 'pagination.css'];	
 		return view('myaccount.referralcustomer')->with($this->PageData);
 	}
 
@@ -997,9 +1015,9 @@ class CustomerController extends Controller
 				Session::flash('success', config('message.Addressbook.AddSuccess'));
 				return redirect(config('global.SITE_URL').'addressbook.html');
 			}
-
+			
 		}
-
+		
 		$this->PageData['SelCountry'] = 'US';
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Address Book';
 		$this->PageData['JSFILES'] = ['addressbook.js'];
@@ -1008,7 +1026,7 @@ class CustomerController extends Controller
 	}
 
 	public function EditAddressbook(Request $request)
-	{
+	{	
 		$this->PageData['Countries'] = GetCountries();
 		$this->PageData['States'] = GetStates();
 		$this->PageData['SelCountry'] = 'US';
@@ -1069,7 +1087,7 @@ class CustomerController extends Controller
 
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Address Book';
 		$this->PageData['JSFILES'] = ['addressbook.js'];
-		$this->PageData['CSSFILES'] = ['myaccount.css'];
+		$this->PageData['CSSFILES'] = ['myaccount.css'];	
 		return view('myaccount.editaddressbook')->with($this->PageData);
 	}
 
@@ -1114,8 +1132,8 @@ class CustomerController extends Controller
 								->where('erewardrule', '=', 'max')
 								->get();
 			$this->PageData['maximum_reward_point'] = (int)$max_reward[0]['fcharge'];
-			$this->PageData['CSSFILES'] = ['myaccount.css'];
-
+			$this->PageData['CSSFILES'] = ['myaccount.css'];	
+			
 			$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: My Reward Points';
 			return view('myaccount.myrewardpoint')->with($this->PageData);
 		} else {
@@ -1127,7 +1145,7 @@ class CustomerController extends Controller
 	{
 		$IsGiftCertificateItem = '';
 		$GC_IMAGE_URL = '';
-
+		
 		/*$status_array = ['Pending','Canceled','Request Cancellation','Cancellation Approved','Sent To Stripe'];
 		$prodCntRes = Order::select('orders_id', DB::raw('DATE_FORMAT(order_datetime, "%m/%d/%Y %H:%i") as datetime, DATEDIFF(now(), order_datetime) as days'))
 							->where('customer_id', '=', Auth::user()->customer_id)
@@ -1157,9 +1175,9 @@ class CustomerController extends Controller
 
 				if(count($OrdDetailResult) > 0) {
 					foreach ($OrdDetailResult as $order_details_key => $order_details_value) {
-
+						
 						$IsGiftCertificateItem = $this->checkGiftCertificateItem('IsGiftCertificateItem',$order_details_value,'No');
-
+						
 						/*if($order_details_value["sku"]==config('global.GIFT_CERTIFICATE_SKU'))
 						{
 							$this->GetGiftCertificateData($OrdDetailResult, $order_details_key, $order_details_value['orders_detail_id'], config('global.GC_IMAGE_URL'));
@@ -1172,11 +1190,11 @@ class CustomerController extends Controller
 						{
 							$this->GetGiftCertificateData($OrdDetailResult, $order_details_key, $order_details_value['orders_detail_id'], config('global.GC_IMAGE_URL2'));
 						}*/
-
+						
 						if($IsGiftCertificateItem == 'Yes'){
-
+							
 							$GC_IMAGE_URL = $this->checkGiftCertificateItem('SetGiftCertificateImageURL',$order_details_value,'No');
-
+							
 							$this->GetGiftCertificateData($OrdDetailResult, $order_details_key, $order_details_value['orders_detail_id'], $GC_IMAGE_URL);
 						}
 						else
@@ -1234,8 +1252,8 @@ class CustomerController extends Controller
 									->get();
 		$this->PageData['prodCntRes'] = $prodCntRes;
 		$total_count = count($prodCntRes);*/
-
-		$OrdResultQuery = Order::select('orders_id', 'orders_no', 'sub_total', 'ship_status','order_total', 'refund_amount', 'pay_status', 'status', 'payment_type', 'order_type', 'use_credit_limit', 'payment_method', 'phoneorder_payby', 'route_shipping_insurance_charge','bill_first_name', 'bill_last_name','bill_email','tracking_no','ship_method', DB::raw("DATE_FORMAT(order_datetime, '%m/%d/%Y %H:%i') AS datetime,DATE_FORMAT(EstimatedDeliveryDate, '%m/%d/%Y %H:%i:%s') AS EstimatedDeliveryDate,DATEDIFF(now(), order_datetime) as days"))
+		
+		$OrdResultQuery = Order::select('orders_id', 'orders_no', 'sub_total', 'ship_status','order_total', 'refund_amount', 'pay_status', 'status', 'payment_type', 'use_credit_limit', 'payment_method', 'phoneorder_payby', 'route_shipping_insurance_charge','bill_first_name', 'bill_last_name','bill_email','tracking_no','ship_method', DB::raw("DATE_FORMAT(order_datetime, '%m/%d/%Y %H:%i') AS datetime,DATE_FORMAT(EstimatedDeliveryDate, '%m/%d/%Y %H:%i:%s') AS EstimatedDeliveryDate,DATEDIFF(now(), order_datetime) as days"))
 							->where('customer_id', '=', Auth::user()->customer_id)
 							->where('status', '!=', 'Declined');
 		$status_array = ['Pending','Completed','Refund'];
@@ -1265,20 +1283,20 @@ class CustomerController extends Controller
 									->paginate(50);
 		if(count($OrdResult) > 0) {
 			foreach ($OrdResult as $order_result_key => $order_result_value) {
-
+				
 				$todayDateTime = $EstimatedDeliveryDate = $show_ship_status = '';
-
+				
 				$todayDateTime = Carbon::now();
 				$EstimatedDeliveryDate = $order_result_value->EstimatedDeliveryDate;
 				$EstimatedDeliveryDate = Carbon::parse($EstimatedDeliveryDate);
-
+				
 				if($order_result_value->ship_status == 'Shipped' && $todayDateTime->isAfter($EstimatedDeliveryDate)){
 					$order_result_value->show_ship_status = 'Delivered';
 				}
 				else{
 					$order_result_value->show_ship_status = '';
 				}
-
+				
 				$claimPoliceReport = Claim::select('police_report_document','pictures_videos')
 								->where('orders_id', '=', $order_result_value['orders_id'])
 								->first();
@@ -1602,11 +1620,11 @@ class CustomerController extends Controller
 	{
 		$IsGiftCertificateItem = '';
 		$GC_IMAGE_URL = '';
-
+		
 		/*if(Session::get('sess_icustomerid') == '' || Session::get('sess_icustomerid') <= 0){
 			return redirect('/login.html');
 		}*/
-
+		
 		$orders_id = (int)$request['id'];
 
 		if(!Auth::user()){
@@ -1623,20 +1641,20 @@ class CustomerController extends Controller
 		if($OrderRs && $OrderRs->count() <= 0) {
 			return redirect('/myaccount.html');
 		} else {
-
+			
 			$todayDateTime = $EstimatedDeliveryDate = $show_ship_status = '';
-
+				
 			$todayDateTime = Carbon::now();
 			$EstimatedDeliveryDate = $OrderRs->EstimatedDeliveryDate;
 			$EstimatedDeliveryDate = Carbon::parse($EstimatedDeliveryDate);
-
+			
 			if($OrderRs->ship_status == 'Shipped' && $todayDateTime->isAfter($EstimatedDeliveryDate)){
 				$OrderRs->show_ship_status = 'Delivered';
 			}
 			else{
 				$OrderRs->show_ship_status = $OrderRs->ship_status;
 			}
-
+			
 			$this->PageData['OrderRs'] = $OrderRs;
 			$track_flag=1;
 			$OrderDetailRs = OrderDetail::select('*')
@@ -1646,7 +1664,7 @@ class CustomerController extends Controller
 			if(count($OrderDetailRs) > 0) {
 
 				foreach ($OrderDetailRs as $order_details_key => $order_details_value) {
-
+					
 					$IsGiftCertificateItem = $this->checkGiftCertificateItem('IsGiftCertificateItem',$order_details_value,'No');
 					$order_details_value["IsGiftCertificateItem"] = $IsGiftCertificateItem;
 					/*if($order_details_value["sku"]==config('global.GIFT_CERTIFICATE_SKU'))
@@ -1661,10 +1679,10 @@ class CustomerController extends Controller
 					{
 						$this->GetGiftCertificateData($OrderDetailRs, $order_details_key, $order_details_value['orders_detail_id'], config('global.GC_IMAGE_URL2'));
 					}*/
-
+					
 					if($IsGiftCertificateItem == 'Yes'){
 						$GC_IMAGE_URL = $this->checkGiftCertificateItem('SetGiftCertificateImageURL',$order_details_value,'No');
-
+						
 						$this->GetGiftCertificateData($OrderDetailRs, $order_details_key, $order_details_value['orders_detail_id'], $GC_IMAGE_URL);
 					}
 					else
@@ -1690,7 +1708,7 @@ class CustomerController extends Controller
 									$thumb_image = config('global.PRD_LARGE_IMG_URL').$prod_res->image."?ver=".$imgver;
 								} else {
 									$thumb_image = config('global.NO_IMAGE_LARGE');
-								}
+								}	
 							} else {
 								$thumb_image = config('global.NO_IMAGE_LARGE');
 							}
@@ -1711,15 +1729,15 @@ class CustomerController extends Controller
 		// 	if(isset($address_part[0]) && $address_part[0] == 'Yes' ){
 		// 		$is_skip_address = 'Y';
 		// 	}
-		// }
-
+		// }		
+		
 		$this->PageData['is_skip_address'] = $is_skip_address;
 
 		$this->PageData['GC_Only'] = $GC_Only;
 		$this->PageData['OrderDetailRs'] = $OrderDetailRs;
 
-		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Order Detail';
-		$this->PageData['JSFILES'] = ['printpage.js'];
+		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Order Detail';	
+		$this->PageData['JSFILES'] = ['printpage.js'];	
 		$this->PageData['CSSFILES'] = ['custom.css','common.css','header-footer.css','myaccount.css'];
 
 		return view('myaccount.orderdetailprint')->with($this->PageData);
@@ -1744,13 +1762,13 @@ class CustomerController extends Controller
 		if($OrderRs == null || $OrderRs && $OrderRs->count() <= 0) {
 			return redirect('/order-history.html');
 		} else {
-
+		
 		$todayDateTime = $EstimatedDeliveryDate = $show_ship_status = '';
-
+				
 		$todayDateTime = Carbon::now();
 		$EstimatedDeliveryDate = $OrderRs->EstimatedDeliveryDate;
 		$EstimatedDeliveryDate = Carbon::parse($EstimatedDeliveryDate);
-
+		
 		if($OrderRs->ship_status == 'Shipped' && $todayDateTime->isAfter($EstimatedDeliveryDate)){
 			$OrderRs->show_ship_status = 'Delivered';
 		}
@@ -1782,7 +1800,7 @@ class CustomerController extends Controller
 			}
 
 			$this->PageData['OrderRs'] = $OrderRs;
-
+			
 			$OrderDetailRs = OrderDetail::select('*')
 								->where('orders_id', '=', $OrderRs->orders_id)
 								->orderBy('orders_detail_id', 'DESC')
@@ -1909,7 +1927,7 @@ class CustomerController extends Controller
 		// 		$is_skip_address = 'Y';
 		// 	}
 		// }
-
+		
 		$this->PageData['view_fileType'] = $view_fileType;
 		$this->PageData['is_skip_address'] = $is_skip_address;
 
@@ -1949,11 +1967,11 @@ class CustomerController extends Controller
 	}
 
 	public function WishCategoryEdit(Request $request)
-	{
+	{	
 		$category_id = $request['category_id'];
 
-		if($request['action'] == 'EditCat')
-		{
+		if($request['action'] == 'EditCat')	
+		{ 	
 	        $validatedData = $request->validate([
 								'name' => 'required',
 								'description'	=> 'required'
@@ -1971,7 +1989,7 @@ class CustomerController extends Controller
 				return redirect()->back();
 			}
 
-			$WishCatInsertAry =	array(
+			$WishCatInsertAry =	array( 	
 										'name'			=> $request['name'],
 										'description'	=> $request['description']
 									);
@@ -1979,16 +1997,16 @@ class CustomerController extends Controller
 			$updateQry = WishlistCategory::where('wishlist_category_id', '=', $category_id)
 										->where('customer_id', '=', Auth::user()->customer_id)
 			              				->update($WishCatInsertAry);
-
+		  
 			Session::flash('success', config('message.WishCategory.UpdateSuccess'));
-			return redirect('wish-category.html');
+			return redirect('wish-category.html');			
 		}
 
 		$WishCat = WishlistCategory::select('wishlist_category_id', 'name', 'description')
 									->where('customer_id', '=', Auth::user()->customer_id)
 									->where('wishlist_category_id', '=', $category_id)
 									->first();
-
+		
 		$this->PageData['WishCat'] =  $WishCat;
 
 		$this->PageData['CSSFILES'] = ['myaccount.css'];
@@ -1998,7 +2016,7 @@ class CustomerController extends Controller
 	}
 
 	public function WishProduct(Request $request)
-	{
+	{	
 		$category_id = $request['category_id'];
 
 		######### Set Wish category id ############
@@ -2013,7 +2031,7 @@ class CustomerController extends Controller
 		######### Set Wish category id ############
 
 		######### Delete Wish Product ############
-		if($request['action'] == 'DeleteWishProd')
+		if($request['action'] == 'DeleteWishProd')	
 		{
 			$checked = count($request['ch']);
 			$ch = $request['ch'];
@@ -2079,7 +2097,8 @@ class CustomerController extends Controller
 					$products_sku 	  = $arr_product->sku;
 					$product_name 	  = remove_html_entities($arr_product->product_name);
 					$short_description  = remove_html_entities($arr_product->short_description);
-
+					
+					
 					$our_price 		  = $arr_product->product_price;
 					$description	= remove_html_entities($wish_res_prod_value['description']);
 
@@ -2112,7 +2131,7 @@ class CustomerController extends Controller
 	{
 		$IsGiftCertificateItem = '';
 		$GC_IMAGE_URL = '';
-
+		
 		if($request['action'] == 'return') {
 			$ord_data = Order::select('customer_id')
 								->where('orders_id', '=', $request['orderno'])
@@ -2124,7 +2143,7 @@ class CustomerController extends Controller
 					'something_went_wrong' => config('message.General.SomethingWentWrong')
 				]);
 			}
-
+			
 			$selected_arr = $request["chk"];
 			$reason_return = "";
 			$order_detail_id_return = "";
@@ -2142,16 +2161,16 @@ class CustomerController extends Controller
 						$request['customerReturnReason'.$no] = $request['otherreason'.$no];
 					}
 					$quantity = $request['quantity'.$no];
-
+					
 					$reason_return .= trim($request['customerReturnReason'.$no])."##";
 					$order_detail_id_return .= $no."##";
 					$quantity_return .= $quantity."##";
-
+					
 					$return_details .= "<tr>
 											<td>".$request['sku'.$no]."</td>
 											<td>".trim($request['customerReturnReason'.$no])."</td>
 										</tr>";
-					$order_detail_ids .= "'".$no."',";
+					$order_detail_ids .= "'".$no."',";	
 					$order_detail_ids_array[] = $no;
 				}
 				/*$insertArr = array(
@@ -2180,12 +2199,12 @@ class CustomerController extends Controller
 				// if($updateQry)
 				// {
 					$return_info = "&nbsp;(<a href='".config('global.SITE_ADMIN_URL')."index.php?f=viewreturnorder&return_id=".$returnOrderData->return_id."' target='_blank'>Return Info</a>)";
-
-					$order_detail_ids = substr($order_detail_ids,0,-1);
+					
+					$order_detail_ids = substr($order_detail_ids,0,-1);	
 					$updateQry = OrderDetail::whereIn('orders_detail_id', $order_detail_ids_array)
 				              			->update(['ostatus' => 'Return Requested']);
 				// }
-
+				
 				Session::flash('success', config('message.Order.ReturnRequestSubmit'));
 
 				$orderRes = Order::where('orders_id', (int)$request["orderno"])
@@ -2255,9 +2274,9 @@ class CustomerController extends Controller
 
 				if(count($OrdDetailResult) > 0) {
 					foreach ($OrdDetailResult as $order_details_key => $order_details_value) {
-
+						
 						$IsGiftCertificateItem = $this->checkGiftCertificateItem('IsGiftCertificateItem',$order_details_value,'No');
-
+						
 						/*if($order_details_value["sku"]==config('global.GIFT_CERTIFICATE_SKU'))
 						{
 							$this->GetGiftCertificateData($OrdDetailResult, $order_details_key, $order_details_value['orders_detail_id'], config('global.GC_IMAGE_URL'));
@@ -2270,10 +2289,11 @@ class CustomerController extends Controller
 						{
 							$this->GetGiftCertificateData($OrdDetailResult, $order_details_key, $order_details_value['orders_detail_id'], config('global.GC_IMAGE_URL2'));
 						}*/
-
+						
 						if($IsGiftCertificateItem == 'Yes'){
 							$GC_IMAGE_URL = $this->checkGiftCertificateItem('SetGiftCertificateImageURL',$order_details_value,'No');
 
+							
 							$this->GetGiftCertificateData($OrdDetailResult, $order_details_key, $order_details_value['orders_detail_id'], $GC_IMAGE_URL);
 						}
 						else
@@ -2303,11 +2323,11 @@ class CustomerController extends Controller
 								foreach($order_detail_arr as $key_ids => $detail_ids){
 									$Return_data[$detail_ids]['reason'] = $reason_arr[$key_ids];
 									$Return_data[$detail_ids]['qty'] = $qty_arr[$key_ids];
-
+									
 									$Return_data[$detail_ids]['base_orderdetailid'] = $order_detail_arr[0];
 									$Return_data[$detail_ids]['returnlabel'] = $return_res[$d]["return_shipping_label"];
 								}
-							}
+							}	
 						}
 						$OrdDetailResult[$order_details_key]["Reason"]  = '';
 						$OrdDetailResult[$order_details_key]["Qty"]  = 0;
@@ -2321,7 +2341,7 @@ class CustomerController extends Controller
 							$OrdDetailResult[$order_details_key]["COrderNo"] = "Return-Authorization-Order-".$order_result_value["orders_no"]."-".$Return_data[$order_details_value["orders_detail_id"]]['base_orderdetailid'].".pdf";
 
 							$ShippingLabel = '';
-
+							
 							$returnlabel = $Return_data[$order_details_value["orders_detail_id"]]['returnlabel'];
 							if($returnlabel != "" && file_exists(config('global.RETURN_PDF_PATH').$returnlabel))
 							{
@@ -2363,13 +2383,13 @@ class CustomerController extends Controller
 	}
 
 	public function WholeSaleRegister(Request $request)
-	{
+	{	
 		$this->PageData['Countries'] = GetCountries();
 		$this->PageData['States'] = GetStates();
 		$this->PageData['SelCountry'] = 'US';
-
+		
 		$uploadArr = array();
-
+		
 		if(isset($request['action']) && $request['action'] == 'signup')
 		{
 			$this->PageData['SelCountry'] = $request['country'];
@@ -2429,7 +2449,7 @@ class CustomerController extends Controller
 						->withInput()
 						->withErrors([
 							'existing_email' => config('message.Register.Blocked'),
-						]);
+						]);					
 				}
 				return redirect()->back()
 				->withInput()
@@ -2472,9 +2492,9 @@ class CustomerController extends Controller
 				'iRewardpoint' => '0',
 				'upd_datetime' => date('Y-m-d H:i:s'),
 				'merge_log' => 'Auto updated from guest to member on registration page',
-
+				
 			);
-
+			
 			$UserData['hear_text']  = ($request["hear_about"] == 'Other') ? $request["other"] : '';
 			$UserData['einnumber']  = ($request["state"] == 'NY') ? $request["einnumber"] : '';
 			$UserData['youtube_text']  = ($request["hear_about"] == 'Youtube') ? $request["youtube"] : '';
@@ -2508,19 +2528,19 @@ class CustomerController extends Controller
 				$AddressBook['phone'] = $User->phone;
 				$AddressBook['status'] = '1';
 				$UserAddress = AddressBook::create($AddressBook);
-
+				
 				if($request->hasFile('upload_sales_tax')){
 					// $path_large = config('global.HOME_IMAGE_PATH');
 			        $image = $request->file('upload_sales_tax');
 			        $image_name = $image->getClientOriginalName();
 			        $destinationPath = base_path('images/homeimg/');
 			        $upload = $image->move($destinationPath, $image_name);
-
+					
 					$uploadArr = array(
 						'upload_sales_tax'				=> $image_name,
 						'resale_certificate_status'	=> 'Pending',
 					);
-
+					
 					$result = Customer::where('customer_id', $iCustomerId)->update($uploadArr);
 				}
 				// $request->session()->regenerate();
@@ -2533,7 +2553,7 @@ class CustomerController extends Controller
 				Session::put('eusertype','Retailer');
 				Session::put('resale_certificate',$User->upload_sales_tax);
 				Session::put('resale_certificate_status',$User->resale_certificate_status);
-
+				
 				$custFname = '';
 				if(isset($User->first_name) &&  $User->first_name!='' )
 				{
@@ -2543,36 +2563,39 @@ class CustomerController extends Controller
 				if(isset($User->last_name) && $User->last_name!='')
 				{
 					$custlname = $User->last_name;
-				}
+				}		
 				Session::put('sess_custname',$custFname."|".$custlname);
 				$CityVal = '';
 				if(isset($User->city) &&  $User->city!='')
-				{
+				{	
 					$CityVal = $User->city;
 				}
 				$StateVal = '';
 				if(isset($User->state) &&  $User->state!='')
-				{
+				{	
 					$StateVal = $User->state;
 				}
 				$CountryVal = '';
 				if(isset($User->country) &&  $User->country!='')
-				{
+				{	
 					$CountryVal = $User->country;
 				}
 				$ZipVal = '';
 				if(isset($User->zip) &&  $User->zip!='')
-				{
+				{	
 					$ZipVal = $User->zip;
 				}
 				$PhoneVal = '';
 				if(isset($User->phone) &&  $User->phone!='')
-				{
+				{	
 					$PhoneVal = $User->phone;
 				}
-				Session::put('sess_useraddress',$CityVal."|".$StateVal."|".$CountryVal."|".$ZipVal."|".$PhoneVal);
+				Session::put('sess_useraddress',$CityVal."|".$StateVal."|".$CountryVal."|".$ZipVal."|".$PhoneVal);	
 
+				
+				
 				Session::flash('success', config('message.Register.Success'));
+				
 
 				$mail = GetMailTemplate("WHOLESALER");
 				$EmailBody = str_replace('{$customer_id}',$iCustomerId,$mail[0]->mail_body);
@@ -2597,23 +2620,23 @@ class CustomerController extends Controller
 							'first_name' => $request->first_name,
 							'last_name' => $request->last_name,
 							'password' => $request->password,
-							'SITE_NAME' => config('Settings.SITE_TITLE'),
+							'SITE_NAME' => config('Settings.SITE_TITLE'),						
 							'CONTACT_MAIL' => config('Settings.CONTACT_MAIL'),
-							'Site_URL' => config('global.SITE_URL')
+							'Site_URL' => config('global.SITE_URL')							
 						]
-					];
+					]; 					
 					OmanisendRequest('61e6a448c01934001be85479',$EventData);
-
+					
 					/*$EventData = ['email' => 'qualdev.devs@gmail.com', //
 						'fields' => [
 							'first_name' => $request->first_name,
 							'last_name' => $request->last_name,
 							'password' => $request->password,
-							'SITE_NAME' => config('Settings.SITE_TITLE'),
+							'SITE_NAME' => config('Settings.SITE_TITLE'),						
 							'CONTACT_MAIL' => config('Settings.CONTACT_MAIL'),
-							'Site_URL' => config('global.SITE_URL')
+							'Site_URL' => config('global.SITE_URL')							
 						]
-					];
+					]; 					
 					OmanisendRequest('61e6a448c01934001be85479',$EventData);*/
 				} else {
 					/* First Mail */
@@ -2639,13 +2662,15 @@ class CustomerController extends Controller
 						'first_name' => $request->first_name,
 						'last_name' => $request->last_name,
 						'password' => $request->password,
-						'SITE_NAME' => config('Settings.SITE_TITLE'),
+						'SITE_NAME' => config('Settings.SITE_TITLE'),						
 						'CONTACT_MAIL' => config('Settings.CONTACT_MAIL'),
-						'Site_URL' => config('global.SITE_URL')
+						'Site_URL' => config('global.SITE_URL')						
 					]
 				]; */
-
+				
+				
 				//OmanisendRequest('61e6a448c01934001be85479',$EventData);
+
 
 				/* Second Mail */
 				$To2 = config('Settings.ADMIN_MAIL');
@@ -2672,7 +2697,7 @@ class CustomerController extends Controller
 					$dropShipMailBody = str_replace('{$freeshippinginfo}',$freeshippinginfo,$dropShipMailBody);
 
 					$Subject = (isset($dropshopmail[0]->subject) && $dropshopmail[0]->subject!='') ? $dropshopmail[0]->subject : '';
-
+					
 					$To3 = config('Settings.ADMIN_MAIL');
 					$From3 = config('Settings.CONTACT_MAIL');
 					//SendMail($Subject,$dropShipMailBody,$To3,$From3);
@@ -2686,23 +2711,23 @@ class CustomerController extends Controller
 		}
 		$GTMDATA = ['page' => 'wholesaleregister', 'pagetype' => 'other'];
 		$this->PageData['GTMDATA'] = $this->GoogleTagManager($GTMDATA);
-
+		
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Registration';
-		$this->PageData['JSFILES'] = ['register.js', 'wholesaleregister.js'];
-		$this->PageData['CSSFILES'] = ['myaccount.css','register.css'];
-
+		$this->PageData['JSFILES'] = ['register.js', 'wholesaleregister.js'];	
+		$this->PageData['CSSFILES'] = ['myaccount.css','register.css'];	
+		
 		$GARegister1 = "";
-
+		
 		if(Session::has('GARegister') && Session::get('GARegister')!='')
 		{
 		$GARegister1= googleAnalyticsGA4("RegisterPage");
-		Session::forget("GARegister");
+		Session::forget("GARegister"); 
 		}
 		$this->PageData['GARegister1'] = $GARegister1;
-
+		
 		return view('customer.wholesaleregister')->with($this->PageData);
 	}
-
+	
 	public function CreditSummary(Request $request)
 	{
 		$result1 = Order::select(DB::raw("CONCAT('Used in Order# ',`orders_no`) as orders_no, apply_credit, remaining_credit, DATE_FORMAT(order_datetime,'%Y-%m-%d %h:%i:%s') AS date_time, '' as oldnew, '' as oldnew1, '--' as note"), 'cust_current_credit_limit as cust_current_credit_limit')
@@ -2722,9 +2747,9 @@ class CustomerController extends Controller
 			$credit_limit['credit_limit'] = 0;
 		}
 		$this->PageData['credit_limit'] = $credit_limit['credit_limit'];
-
-		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: New Added Credit Limit Report';
-		$this->PageData['CSSFILES'] = ['myaccount.css', 'pagination.css'];
+		
+		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: New Added Credit Limit Report';	
+		$this->PageData['CSSFILES'] = ['myaccount.css', 'pagination.css'];	
 		return view('myaccount.creditsummary')->with($this->PageData);
 	}
 
@@ -2769,7 +2794,8 @@ class CustomerController extends Controller
 			for($i=0;$i<$total_records;$i++) {
 				if($DropShipper_Customer[$i]['added_fund'] != '') {
 					$oldamt = $newamt = $totamt = 0;
-
+					
+					
 					if(isset($DropShipper_Customer[$i]['oldnew']) &&$DropShipper_Customer[$i]['oldnew']!='--' && $DropShipper_Customer[$i]['oldnew']!='order') {
 						if($i==0)
 						{
@@ -2811,7 +2837,7 @@ class CustomerController extends Controller
 						$a1 = explode("|", $DropShipper_Customer[$i]['oldnew']);
 						$newamt11 = $a1[1];
 						$valueToAssign1 = $newamt11;
-
+								
 						$DropShipper_Customer[$i]['oldnew1'] = $valueToAssign1;
 					}
 				}
@@ -2841,21 +2867,21 @@ class CustomerController extends Controller
 		$this->PageData['export_file_url'] = $export_file_url;
 		$this->PageData['export_file_path'] = $request->isExport;*/
 		// dd($DropShipper_Customer);
-		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Dropshipper Fund Report';
-		$this->PageData['CSSFILES'] = ['myaccount.css', 'pagination.css'];
+		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Dropshipper Fund Report';	
+		$this->PageData['CSSFILES'] = ['myaccount.css', 'pagination.css'];	
 		return view('myaccount.dropshipperfundsummary')->with($this->PageData);
 	}
 
 	public function HelpVideos(Request $request){
 		if(Session::get('eusertype') != 'Wholesaler' || Session::get('is_dropshipper') != 'Yes' || config('Settings.DROPSHIPPER_SYSTEM_FLAG') != 'Yes')
 			return redirect('/login.html');
-
+		
 		if(trim(generalsetting("DROPSHIPPER_VIDEO1")) == '' && trim(generalsetting("DROPSHIPPER_VIDEO2"))  == '' && trim(generalsetting("DROPSHIPPER_VIDEO3")) == '' && trim(generalsetting("DROPSHIPPER_VIDEO4")) == ''){
 			return redirect('/myaccount.html');
 		}
-		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Help Videos';
-		$this->PageData['CSSFILES'] = ['myaccount.css'];
-		return view('myaccount.helpvideos')->with($this->PageData);
+		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Help Videos';		
+		$this->PageData['CSSFILES'] = ['myaccount.css'];	
+		return view('myaccount.helpvideos')->with($this->PageData);	
 	}
 
 	public function ProductFtp(Request $request)
@@ -2870,7 +2896,7 @@ class CustomerController extends Controller
 					->where('is_dropshipper', '=', Session::get('is_dropshipper'))
 					->where('status', '=', '1')
 					->first();
-
+		
 		$this->PageData['aCustomer'] = $aCustomer;
 		$this->PageData['eusertype'] = Session::get('eusertype');
 		if($request['action'] == 'update') {
@@ -2917,7 +2943,7 @@ class CustomerController extends Controller
 
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Product FTP Details';
 		$this->PageData['JSFILES'] = ['productftp.js'];
-		$this->PageData['CSSFILES'] = ['myaccount.css'];
+		$this->PageData['CSSFILES'] = ['myaccount.css'];	
 		return view('myaccount.productftp')->with($this->PageData);
 	}
 
@@ -2936,6 +2962,7 @@ class CustomerController extends Controller
 
 		$this->PageData['aCustomer'] = $aCustomer;
 		$this->PageData['eusertype'] = Session::get('eusertype');
+
 
 		if($request['action'] == 'update') {
 
@@ -2980,7 +3007,7 @@ class CustomerController extends Controller
 
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: FTP Details';
 		$this->PageData['JSFILES'] = ['editftp.js'];
-		$this->PageData['CSSFILES'] = ['myaccount.css'];
+		$this->PageData['CSSFILES'] = ['myaccount.css'];	
 		return view('myaccount.editftp')->with($this->PageData);
 	}
 
@@ -3011,13 +3038,13 @@ class CustomerController extends Controller
 				Session::forget('HalfaOutOfStockItems');
 			}
 
-		}
+		} 
 		$this->PageData['OutOfStockMsg'] = $OutOfStockMsg;
 		$this->PageData['HalfOutOfStockMsg'] = $HalfOutOfStockMsg;
 		$this->PageData['under_maintanance'] = '0';
-		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Import Order';
+		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Import Order';	
 		$this->PageData['CSSFILES'] = ['myaccount.css'];
-		$this->PageData['JSFILES'] = ['additional-methods.min.js', 'importorder.js'];
+		$this->PageData['JSFILES'] = ['additional-methods.min.js', 'importorder.js'];	
 		return view('myaccount.importorder')->with($this->PageData);
 	}
 
@@ -3087,7 +3114,7 @@ class CustomerController extends Controller
 		$this->PageData['OrderProcessMsg'] = $OrderProcessMsg;
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Imported Dropship Order List';
 		$this->PageData['JSFILES'] = ['importedorderlist.js'];
-		$this->PageData['CSSFILES'] = ['myaccount.css'];
+		$this->PageData['CSSFILES'] = ['myaccount.css'];	
 		return view('myaccount.importedorderlist')->with($this->PageData);
 	}
 
@@ -3106,7 +3133,7 @@ class CustomerController extends Controller
 										);
 
 					$updateDropshipperOrder = DropshipperOrder::find($orders_id);
-					$updateDropshipperOrder->update($updateAdmin);
+					$updateDropshipperOrder->update($updateAdmin); 
 			        $response['status'] = 200;
 			        $response['message'] = "Success";
 			        return response()->json($response, 200);
@@ -3122,7 +3149,7 @@ class CustomerController extends Controller
 	        return response()->json($response, 400);
 		}
 	}
-
+	
 	public function SetDropshiperOrder(Request $request)
 	{
 		$chkfield 				= trim($request["chkfield"]);
@@ -3133,7 +3160,7 @@ class CustomerController extends Controller
 		$chk		  			= $request["chk"];
 		$order_amount			= trim($request["order_amount"]);
 		$totalorders			= trim($request["totalorders"]);
-
+	
 		if($chkfield!='')
 		{
 			$chkfieldArr = explode(",",$chkfield);
@@ -3168,7 +3195,7 @@ class CustomerController extends Controller
 				}
 			}
 		}
-
+		
 		if( $order_amount <= 0 )
 		{
 			$err_msg = 'Order amount is not selecetd';
@@ -3183,7 +3210,7 @@ class CustomerController extends Controller
 			Session::flash('DropshipOrderError',$err_msg);
 			return redirect()->back();
 		}
-
+		
 		$Customer_Res = Customer::where('customer_id','=',$customer_id)->get();
 		if(trim($Customer_Res[0]['first_name'])== '' || trim($Customer_Res[0]['last_name'])== '' || trim($Customer_Res[0]['address1'])== '' || trim($Customer_Res[0]['city'])== '' ||  trim($Customer_Res[0]['zip'])== '' || trim($Customer_Res[0]['state'])== '' || trim($Customer_Res[0]['country'])== '' || trim($Customer_Res[0]['phone'])== '' || trim($Customer_Res[0]['email'])== '')
 		{
@@ -3199,13 +3226,13 @@ class CustomerController extends Controller
 		$OrderNoArr = [];
 		$OrderNotProcess = [];
 		//$totalorders = count($chk);
-
+		
 		for($i=1;$i<=$totalorders;$i++)
 		{
 			$TotalOrder = 0;
 			/*$dropshipper_order_res = DropshipperOrder::where('orders_id','=',$chk[$i])
 											->where('is_order_deleted','=','No')->get();
-			*/
+			*/									
 			if($dataselected=='No' && $request["disabledfield".$i]=='No')
 			{
 				$dropshipper_order_res = DropshipperOrder::where('orders_id','=',$request["ordersnew_id".$i])
@@ -3221,11 +3248,11 @@ class CustomerController extends Controller
 				   continue;
 			   }
 			}
-
+			
 			if($TotalOrder > 0){
 				$dropshipperOrderDetails = DropshipperOrderDetail::where('orders_id','=',$dropshipper_order_res[0]['orders_id'])->get();
 				$totalOrdersDetails = $dropshipperOrderDetails->count();
-
+				
 				for($j=0;$j<$totalOrdersDetails;$j++)
 				{
 					$Prods = DB::table('pu_products as po')
@@ -3240,7 +3267,7 @@ class CustomerController extends Controller
 									'po.fragrance_seasons','po.fragrance_occasion','po.fragrance_personality','po.image','po.current_stock','po.retail_price','po.cosmo_retail_price','po.pca_retail_price','po.minimum_stock','po.gender','po.new_arrival','po.featured','po.clearance','po.top_seller',
 									'po.product_type','po.cosmo_sku','po.cosmo_current_stock','po.cosmo_wholesale_price','po.cosmo_our_price','po.pca_sku','po.pca_current_stock','po.pca_wholesale_price','po.pca_our_price',
 									'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price',
-									'po.vtype','po.variation_id','po.refine_feature','m.vmanufacture','po.product_type','b.brand_name','m.is_popular','pc.category_id','c.parent_id')
+									'po.vtype','po.variation_id','po.refine_feature','m.vmanufacture','po.product_type','b.brand_name','m.is_popular','pc.category_id','c.parent_id')			
 						->where('po.status','=','1')
 						->where('c.status','=','1')
 						->where('po.current_stock','>','0')
@@ -3263,13 +3290,13 @@ class CustomerController extends Controller
 							$order_amount = $order_amount - $dropshipper_order_res[0]["order_total"];
 							$order_amount = number_format($order_amount,2,'.','');
 						}
-					}
+					}	
 				}
 			}
-
+			
 			if(!in_array($dropshipper_order_res[0]["orders_no"],$OrderNoArr))
 			{
-
+				
 				$ShippingMethodRS = ShippingMode::where('shipping_mode_id','=',$dropshipper_order_res[0]["shippingModeId"])->where('status','=','1')->get();
 				if($ShippingMethodRS && $ShippingMethodRS->count() <=0)
 				{
@@ -3278,7 +3305,8 @@ class CustomerController extends Controller
 					$order_amount = number_format($order_amount,2,'.','');
 					continue;
 				}
-
+				
+				
 				if(isset($request->order_action) && $request->order_action =='Fund')
 				{
 					$fullShippingname = '';
@@ -3298,7 +3326,7 @@ class CustomerController extends Controller
 					{
 						$checkout_type = 'M';
 					}
-
+					
 					$OrderInsert = array (
 							'customer_id'				=> Session::get('sess_icustomerid'),
 							'dropshipper_order_no'	 	=> $dropshipper_order_res[0]["orders_no"],
@@ -3374,7 +3402,7 @@ class CustomerController extends Controller
 							'fullshipping_info'			=> 	$fullShippingname
 
 						);
-
+					
 					$NewOrder= Order::create($OrderInsert) ;
 					//$NewOrder =1;
 					if($NewOrder)
@@ -3414,10 +3442,10 @@ class CustomerController extends Controller
 
 								$ProductSt = Products::select('current_stock','cosmo_current_stock','cosmo_sku','nandansons_sku','nandansons_current_stock','perfumeworldwide_sku','perfumeworldwide_currentstock')
 												->where('status','=','1')->where('sku','=',$dropshipperOrderDetails[$j]['sku'])->get();
-
+								
 								$TotalProductCnt = $ProductSt->count();
 								$new_stock = 0;
-
+								
 								if($TotalProductCnt > 0)
 								{
 									if($ProductSt[0]["current_stock"]>$dropshipperOrderDetails[$j]['quantity'])
@@ -3441,7 +3469,7 @@ class CustomerController extends Controller
 						DropshipperOrderDetail::where('orders_id','=',$dropshipper_order_res[0]['orders_id'])->delete();
 						DropshipperOrder::where('orders_id','=',$dropshipper_order_res[0]['orders_id'])->where('customer_id','=',Session::get('sess_icustomerid'))->delete();
 					}
-				} else {
+				} else {	
 					$UpdateOrderNoArr[] = $dropshipper_order_res[0]['orders_id'];
 					$UpdateOrderNumber[] = $dropshipper_order_res[0]['orders_no'];
 				}
@@ -3469,14 +3497,14 @@ class CustomerController extends Controller
 					}
 				}
 				return redirect('/order-history.html');
-				exit;
+				exit; 
 			}
 			else
 			{
 				return redirect('/imported-order-list.html');
 				exit;
 			}
-		} else {
+		} else {	
 			if(count($SKULISTARR)>0)
 			{
 				Session::put('SKULISTARR',$SKULISTARR);
@@ -3485,18 +3513,18 @@ class CustomerController extends Controller
 			{
 				Session::put('OrderNotProcess',$OrderNotProcess);
 			}
-
+			
 			if(count($UpdateOrderNoArr) > 0)
 			{
 				Session::put("UpdateOrderNoArr",$UpdateOrderNoArr);
 				Session::put("UpdateOrderNumber",$UpdateOrderNumber);
-			}
+			} 
 			Session::put('DropShipperOrderAmount',$order_amount);
 			Session::put('DropShipperOrder','Yes');
 			return redirect('/paypal/placeorder/dropship');
 		}
 	}
-
+	
 	public function GetDropshipperAccountDetails($OrderTotal)
 	{
 		$DropshipperAccountDetails = array();
@@ -3529,7 +3557,7 @@ class CustomerController extends Controller
 		}
 		return $DropshipperAccountDetails;
 	}
-
+	
 	public function ImportedOrderDetail(Request $request)
 	{
 		if(Session::get('sess_useremail') == 'wgequaldev@gmail.com')
@@ -3578,7 +3606,7 @@ class CustomerController extends Controller
 			);
 
 			$updateShippingAddress = DropshipperOrder::findOrFail($request['orders_id']);
-			$updateShippingAddress->update($UserDataArray);
+			$updateShippingAddress->update($UserDataArray); 
 
 			if($updateShippingAddress)
 			{
@@ -3586,8 +3614,8 @@ class CustomerController extends Controller
 				return redirect()->back();
 			}
 		}
-
-		if($request->has('pageAction') && $request->pageAction == 'UpdateSKUOrder')
+		
+		if($request->has('pageAction') && $request->pageAction == 'UpdateSKUOrder') 
 		{
 			$totalItemsQty = 0;
 			$skuarr = array();
@@ -3633,7 +3661,8 @@ class CustomerController extends Controller
 					$skuarr[] = $vtmpsku.",";
 					continue;
 				}
-
+				
+			
 				if($prdRes && $quantity > $prdRes->current_stock)
 				{
 					$quantity = $prdRes->current_stock;
@@ -3651,11 +3680,11 @@ class CustomerController extends Controller
 						$val = $perval[1];
 					}
 				}
-
+					
 				$prdRes->product_price = number_format((float) $prdRes->product_price,2,'.','');
 				$prdRes->sale_price = $prdRes->product_price;
 				// dd($prdRes);
-				########################### Code For Change Price of Weekly Deal Product Start ###########################//
+				########################### Code For Change Price of Weekly Deal Product Start ###########################// 
 
 				$dealofdayRS = Dealofweek::select('pu_dealofweek.product_sku', 'pu_dealofweek.deal_price', 'pu_dealofweek.description', 'pu_dealofweek.discount_coupon_flag')
 										->join('pu_dealofweektitle', 'pu_dealofweektitle.did', '=', 'pu_dealofweek.did')
@@ -3677,15 +3706,15 @@ class CustomerController extends Controller
 							if($dealofdayRS->description!='') {
 								$prdRes->short_description =  $dealofdayRS->description;
 							}
-						}
-					 $prdRes->DealDiscountFlag = $dealofdayRS->discount_coupon_flag;
-					 $prdRes->IsDealProducts = 'Yes';
+						}	
+					 $prdRes->DealDiscountFlag = $dealofdayRS->discount_coupon_flag;	
+					 $prdRes->IsDealProducts = 'Yes';	
 					}
 				}
 
-				########################### Code For Change Price of Weekly Deal Product End ###########################//
+				########################### Code For Change Price of Weekly Deal Product End ###########################// 
 
-				########################### Code For Change Price of Daily Deal Product Start Here###########################//
+				########################### Code For Change Price of Daily Deal Product Start Here###########################// 
 				$date = date('Y-m-d');
 				$dealofdayRS = Dealofweek::select('pu_dealofweek.product_sku', 'pu_dealofweek.deal_price', 'pu_dealofweek.description', 'pu_dealofweek.discount_coupon_flag')
 										->join('pu_dealofweektitle', 'pu_dealofweektitle.did', '=', 'pu_dealofweek.did')
@@ -3705,13 +3734,13 @@ class CustomerController extends Controller
 							if($dealofdayRS->description!='') {
 								$prdRes->short_description =  $dealofdayRS->description;
 							}
-						}
-					 $prdRes->DealDiscountFlag = $dealofdayRS->discount_coupon_flag;
-					 $prdRes->IsDealProducts = 'Yes';
+						}	
+					 $prdRes->DealDiscountFlag = $dealofdayRS->discount_coupon_flag;	
+					 $prdRes->IsDealProducts = 'Yes';	
 					}
 				}
 
-				########################### Code For Change Price of Daily Deal Product End Here###########################//
+				########################### Code For Change Price of Daily Deal Product End Here###########################// 
 				$SpecialPriceDetails = '';
 				$ItemPrice = $prdRes->product_price;
 
@@ -3747,7 +3776,7 @@ class CustomerController extends Controller
 											);
 
 				$UpdateOrder = DropshipperOrderDetail::findOrFail($orders_detail_id);
-				$UpdateOrder->update($UpdateOrderDetail);
+				$UpdateOrder->update($UpdateOrderDetail); 
 			}
 			Session::put('SKULISTARR', $skuarr);
 			$shipping_signature	  = $request["shipping_signature"];
@@ -3761,7 +3790,7 @@ class CustomerController extends Controller
 			else
 			{
 				$order_res = DropshipperOrder::where('orders_id', '=', $orders_id)->first();
-
+				
 				if($order_res && $order_res->count() > 0) {
 					$shipping_mode_id     = $order_res->shippingModeId;
 					$ship_first_name	  = trim($order_res->ship_first_name);
@@ -3799,7 +3828,7 @@ class CustomerController extends Controller
 											);
 
 					$UpdateStock = DropshipperOrder::findOrFail($orders_id);
-					$UpdateStock->update($updateStockInfo);
+					$UpdateStock->update($updateStockInfo); 
 
 					Session::flash('success', 'SKU(s) Updated Successfully.');
 			        return redirect()->back();
@@ -3810,6 +3839,7 @@ class CustomerController extends Controller
 			}
 		}
 
+		
 		if($request->has('pageAction') && ($request->pageAction) == 'UpdateOrder') {
 			$totalItemsQty = 0;
 			$skuarr = array();
@@ -3847,7 +3877,7 @@ class CustomerController extends Controller
 							->whereIn('pu_products.product_type', ['wholesaler','both'])
 							->having('pu_products.wholesale_price', '>', 0)
 							->first();
-
+				
 				if($prdRes != null && $prdRes->count() <= 0) {
 					DropshipperOrderDetail::where('orders_detail_id', '=', $orders_detail_id)->delete();
 					$skuarr[] = $vtmpsku.",";
@@ -3878,7 +3908,7 @@ class CustomerController extends Controller
 												  'Original_product_stock'	=> $OriginalQuantity
 												);
 					$UpdateOrder = DropshipperOrderDetail::findOrFail($orders_detail_id);
-					$UpdateOrder->update($UpdateOrderDetail);
+					$UpdateOrder->update($UpdateOrderDetail); 
 				} else {
 					$OriginalQuantity = 0;
 					$TotalQuantity = $TotalQuantity + $quantity;
@@ -3895,7 +3925,7 @@ class CustomerController extends Controller
 												  'total' 					=> $TotalUnitPrice,
 												);
 					$UpdateOrder = DropshipperOrderDetail::findOrFail($orders_detail_id);
-					$UpdateOrder->update($UpdateOrderDetail);
+					$UpdateOrder->update($UpdateOrderDetail); 
 				}
 
 			}
@@ -4054,7 +4084,7 @@ class CustomerController extends Controller
 											);
 
 					$UpdateStock = DropshipperOrder::findOrFail($orders_id);
-					$UpdateStock->update($updateStockInfo);
+					$UpdateStock->update($updateStockInfo); 
 
 					Session::flash('success', 'Order details updated successfully.');
 			        return redirect()->back();
@@ -4071,13 +4101,13 @@ class CustomerController extends Controller
 			$SKUUPDATESUCCESS = Session::get('SKUUPDATESUCCESS');
 			Session::forget('SKUUPDATESUCCESS');
 		}
-
+		
 		if(Session::get('eusertype')=="Wholesaler" && Session::get('is_dropshipper')=="Yes" && config('Settings.DROPSHIPPER_SYSTEM_FLAG') == 'Yes') {
 			$OrderRs = DropshipperOrder::select('*', DB::raw("DATE_FORMAT(order_datetime, '%m/%d/%Y %H:%i') AS datetime"))
 								->where('customer_id', '=', Auth::user()->customer_id)
 								->where('orders_id', '=', $orders_id)
 								->first();
-
+			
 			if($OrderRs && $OrderRs->count() <= 0) {
 				Session::flash('error', 'Wrong order selected, please choose a order from list to view detail.');
 				return redirect()->back();
@@ -4092,7 +4122,7 @@ class CustomerController extends Controller
 									->where('orders_id', '=', $OrderRs->orders_id)
 									->orderBy('orders_detail_id', 'ASC')
 									->get();
-
+				
 				$TotalQuantity = 0;
 				$Subtotal = 0;
 				if(count($OrderDetailRs) > 0) {
@@ -4102,7 +4132,7 @@ class CustomerController extends Controller
 									->whereIn('product_type', ['wholesaler','both'])
 									->where('wholesale_price', '>', '0')
 									->first();
-
+						
 						$errmsgOutOfStock = '';
 						if($prod_res && $prod_res->count() <= 0)
 						{
@@ -4152,29 +4182,29 @@ class CustomerController extends Controller
 												   );
 
 						$updateDropshipperOrderDetail = DropshipperOrderDetail::find($order_details_value["orders_detail_id"]);
-
-						$updateDropshipperOrderDetail->update($UpdateOrderDetail);
-
+						
+						$updateDropshipperOrderDetail->update($UpdateOrderDetail); 
+						
 					}
 
 					$shippingModeId = $OrderRs->shippingModeId;
 					$shippingCharge = 0;
 					$shipping_mode_id = 0;
 					$shipping_days = 0;
-
+					
 					if($shippingModeId > 0)
 					{
 						$shipping_mode_id = $this->CheckAvailableShippingMethod($shippingModeId , $OrderRs->ship_country,$OrderRs->ship_state,$OrderRs->ship_zip,$Subtotal,$TotalQuantity);
 					}
-
+					
 					if(isset($shipping_mode_id) && $shipping_mode_id > 0 && $shipping_mode_id!='')
 					{
-
+						
 						if(is_int($shipping_mode_id) == true && $shipping_mode_id > 0)
 						{
-
+							
 							$tempChargeStr  = $this->CalculateAvailableShippingCharge($OrderRs->ship_zip,$OrderRs->ship_state,$OrderRs->ship_country,$shipping_mode_id,$Subtotal,$TotalQuantity);
-
+							
 							$tempChargeArr  = explode("###",$tempChargeStr);
 							$tempCharge 	= $tempChargeArr[0];
 							$shipping_days  = $tempChargeArr[1];
@@ -4182,21 +4212,22 @@ class CustomerController extends Controller
 							$shippingCharge = $tempCharge;
 						}
 					} else {
-
+						
 						$ShippingModeRS = ShippingMode::where('status', '=', '1')->where('eusertype', '=', 'Dropshipper')->orderBy('display_position', 'ASC')->get();
-
+						
 						if($ShippingModeRS && $ShippingModeRS->count() > 0) {
-
+							
 							foreach($ShippingModeRS as $key_shipping_mode => $value_shipping_mode) {
 								$shipping_mode_id = $this->CheckAvailableShippingMethod($value_shipping_mode['shipping_mode_id'], $OrderRs->ship_country,$OrderRs->ship_state,$OrderRs->ship_zip,$Subtotal,$TotalQuantity);
-
+								
 								if(is_int($shipping_mode_id) == true && $shipping_mode_id > 0)
 								{
-
+									
 									$tempChargeStr  = $this->CalculateAvailableShippingCharge($OrderRs->ship_zip,$OrderRs->ship_state,$OrderRs->ship_country,$shipping_mode_id,$Subtotal,$TotalQuantity);
-
+									
 									$tempChargeArr  = explode("###",$tempChargeStr);
 									$tempCharge 	= $tempChargeArr[0];
+
 
 									if($tempCharge > 0)
 									{
@@ -4216,6 +4247,7 @@ class CustomerController extends Controller
 						}
 					}
 
+					 
 					$shipping_signature = 0;
 					if($OrderRs->shipping_signature > 0)
 					{
@@ -4240,7 +4272,7 @@ class CustomerController extends Controller
 												'shipping_days'		 => $shipping_days
 											);
 					$updateDropshipperOrder = DropshipperOrder::find($OrderRs->orders_id);
-					$updateDropshipperOrder->update($updateStockInfo);
+					$updateDropshipperOrder->update($updateStockInfo); 
 					$OrderRs->sub_total		= $Subtotal;
 					$OrderRs->shipping_amt		= $shippingCharge;
 					$OrderRs->order_total		= $orderTotal;
@@ -4257,7 +4289,7 @@ class CustomerController extends Controller
 	            		<div class="row row5">
 		                    <div class="col-lg-4 col-md-5 col-sm-6 text-center text-sm-left" id="vprod_image'.$j.'">Coming Soon</div>
 		                    <div class="col-lg-8 col-md-7 col-sm-6 text-center text-sm-left pt-2 pt-sm-0">
-								Item SKU :
+								Item SKU : 
 								<input name="form_productid'.$j.'" id="form_productid'.$j.'" value="" type="text" onkeyup=get_Sku_List(this.value+"'.$str.'"+'.$j.') class="input form-control" />
 								<a href="javascript:void(0);" onclick="javascript:RemoveLineItem('.$j.');" title="Remove Item" class="pt-3">Remove Items</a>
 		                    </div>
@@ -4267,7 +4299,7 @@ class CustomerController extends Controller
 	              <td data-title="Quantity"><input type="text" name="qty'.$j.'" id="qty'.$j.'" value="1" onkeyup="prdtotal('.$j.');" class="input form-control" placeholder="Quantity" style="width:50%;text-align:center;" ></td>
 	              <td data-title="Total Price" class="text-md-right text-left"><input type="text" name="txtprdtotal'.$j.'" id="txtprdtotal'.$j.'" class="input form-control" readonly></td>
 	           </tr>';
-			}
+			} 
 			$this->PageData['htmlstr'] = $htmlstr;
 			$this->PageData['OrderRs'] = $OrderRs;
 			$this->PageData['OrderDetailRs'] = $OrderDetailRs;
@@ -4285,7 +4317,7 @@ class CustomerController extends Controller
 			return redirect(config('global.SITE_URL'));
 		}
 	}
-
+	
 	public function DropshipShippingMethods(Request $request)
 	{
 		if($request->ajax()){
@@ -4361,7 +4393,7 @@ class CustomerController extends Controller
 								      <span class="float-left w-75">
 								         <div>
 								            <strong>'.$estimateShipDate.' - <strong>'.$charge_str.'</strong></strong>
-								            <span class="cart-tooltip max_qttable">
+								            <span class="cart-tooltip max_qttable">	
 								            <a href="javascript:void(0);">
 								            <u>i</u>
 								            </a>
@@ -4383,7 +4415,7 @@ class CustomerController extends Controller
 								      <span class="float-left w-75">
 								         <div>
 								            <strong>'.$estimateShipDate.' - <strong>Free</strong></strong>
-								            <span class="cart-tooltip max_qttable">
+								            <span class="cart-tooltip max_qttable">	
 								            <a href="javascript:void(0);">
 								            <u>i</u>
 								            </a>
@@ -4489,7 +4521,7 @@ class CustomerController extends Controller
 				{
 					$totalNetAmount = $totalNetAmount + $ShippingSignature;
 				}
-
+				
 				$totalNetAmount	= number_format((float) $totalNetAmount, 2, '.','');
 
                 $htmlString = '<table class="st_table">
@@ -4562,8 +4594,8 @@ class CustomerController extends Controller
 	        return response()->json($response, 400);
 		}
 	}
-
-	public function AjaxListSkus(Request $request)
+	
+	public function AjaxListSkus(Request $request) 
 	{
 		if($request->ajax()) {
 			$sku = $request['skukwd'];
@@ -4587,7 +4619,7 @@ class CustomerController extends Controller
 				}
 
 				if($WebsiteStock == "In")
-				{
+				{					
 					$per = 0;
 					$val = 0;
 					if(config('Settings.WHOLESALE_MARKUP') == 'Yes')
@@ -4604,7 +4636,7 @@ class CustomerController extends Controller
 					$ProductRs->product_price = number_format($ProductRs->product_price,2,'.','');
 					$ProductRs->sale_price = $ProductRs->product_price;
 
-					########################### Code For Change Price of Weekly Deal Product Start ###########################//
+					########################### Code For Change Price of Weekly Deal Product Start ###########################// 
 
 					$dealofdayRS = Dealofweek::select('pu_dealofweek.product_sku', 'pu_dealofweek.deal_price', 'pu_dealofweek.description', 'pu_dealofweek.discount_coupon_flag')
 											->join('pu_dealofweektitle', 'pu_dealofweektitle.did', '=', 'pu_dealofweek.did')
@@ -4626,15 +4658,16 @@ class CustomerController extends Controller
 								if($dealofdayRS->description!='') {
 									$ProductRs->short_description =  $dealofdayRS->description;
 								}
-							}
-						 $ProductRs->DealDiscountFlag = $dealofdayRS->discount_coupon_flag;
-						 $ProductRs->IsDealProducts = 'Yes';
+							}	
+						 $ProductRs->DealDiscountFlag = $dealofdayRS->discount_coupon_flag;	
+						 $ProductRs->IsDealProducts = 'Yes';	
 						}
 					}
 
-					########################### Code For Change Price of Weekly Deal Product End ###########################//
+					########################### Code For Change Price of Weekly Deal Product End ###########################// 
 
-					########################### Code For Change Price of Daily Deal Product Start Here###########################//
+
+					########################### Code For Change Price of Daily Deal Product Start Here###########################// 
 					$date = date('Y-m-d');
 					$dealofdayRS = Dealofweek::select('pu_dealofweek.product_sku', 'pu_dealofweek.deal_price', 'pu_dealofweek.description', 'pu_dealofweek.discount_coupon_flag')
 											->join('pu_dealofweektitle', 'pu_dealofweektitle.did', '=', 'pu_dealofweek.did')
@@ -4654,13 +4687,13 @@ class CustomerController extends Controller
 								if($dealofdayRS->description!='') {
 									$ProductRs->short_description =  $dealofdayRS->description;
 								}
-							}
-						 $ProductRs->DealDiscountFlag = $dealofdayRS->discount_coupon_flag;
-						 $ProductRs->IsDealProducts = 'Yes';
+							}	
+						 $ProductRs->DealDiscountFlag = $dealofdayRS->discount_coupon_flag;	
+						 $ProductRs->IsDealProducts = 'Yes';	
 						}
 					}
 
-					########################### Code For Change Price of Daily Deal Product End Here###########################//
+					########################### Code For Change Price of Daily Deal Product End Here###########################// 
 					$SpecialPriceDetails = '';
 					$ItemPrice = $ProductRs->product_price;
 
@@ -4716,28 +4749,29 @@ class CustomerController extends Controller
 							->where('customer_id', '=', Auth::user()->customer_id)
 							->where('orders_id', '=', $orders_id)
 							->first();
-		}
+		}					
 		$GC_Only = 0;
 		if($OrderRs && $OrderRs->count() <= 0) {
 			// Session::flash('error', config('message.FTP.Failed'));
 			Session::flash('error', 'Wrong order selected, please choose a order from list to view detail.');
 			return redirect()->back();
 		} else {
-
+			
 			/*if(!empty($OrderRs->total_refund_amount) && $OrderRs->total_refund_amount > 0)
 			{
 				$total_refund_amount = $OrderRs->order_total - $OrderRs->total_refund_amount;
 				$OrderRs->total_refund_amount = $total_refund_amount;
 			}*/
-
+			
 			$todayDateTime = $EstimatedDeliveryDate = $show_ship_status = '';
-
+				
 			$todayDateTime = Carbon::now();
 			if($OrderRs->store_id == 0){
 				$EstimatedDeliveryDate = $OrderRs->EstimatedDeliveryDate;
 				$EstimatedDeliveryDate = Carbon::parse($EstimatedDeliveryDate);
 			}
-
+			
+			
 			//if($OrderRs->ship_status == 'Shipped' && $todayDateTime->isAfter($EstimatedDeliveryDate)){
 			if(isset($OrderRs->ship_status) && $OrderRs->ship_status == 'Shipped' && $EstimatedDeliveryDate != '' && $todayDateTime->isAfter($EstimatedDeliveryDate)){
 				$OrderRs->show_ship_status = 'Delivered';
@@ -4749,8 +4783,10 @@ class CustomerController extends Controller
 				$OrderRs->show_ship_status = 'Delivered';
 			}
 
+			
 			$this->PageData['OrderRs'] = $OrderRs;
-
+			
+			 
 			$OrderDetailRs = OrderDetail::select('pu_order_detail.*', 'pu_products.UPC')
 								->join('pu_products', 'pu_products.products_id', '=', 'pu_order_detail.products_id')
 								->where('orders_id', '=', $OrderRs->orders_id)
@@ -4758,7 +4794,7 @@ class CustomerController extends Controller
 								->get();
 			if(count($OrderDetailRs) > 0) {
 				foreach ($OrderDetailRs as $order_details_key => $order_details_value) {
-
+					
 					$IsGiftCertificateItem = $this->checkGiftCertificateItem('IsGiftCertificateItem',$order_details_value,'No');
 					$OrderDetailRs[$order_details_key]['track_url']  = '';
 					/*if($order_details_value["sku"]==config('global.GIFT_CERTIFICATE_SKU'))
@@ -4776,7 +4812,7 @@ class CustomerController extends Controller
 					$OrderDetailRs[$order_details_key]['IsGiftCertificateItem']  =$IsGiftCertificateItem;
 					if($IsGiftCertificateItem == 'Yes'){
 						$GC_IMAGE_URL = $this->checkGiftCertificateItem('SetGiftCertificateImageURL',$order_details_value,'No');
-
+						
 						$this->GetGiftCertificateData($OrderDetailRs, $order_details_key, $order_details_value['orders_detail_id'], $GC_IMAGE_URL);
 					}
 					else
@@ -4806,7 +4842,7 @@ class CustomerController extends Controller
 							}
 						}
 						$OrderDetailRs[$order_details_key]['Image'] = $thumb_image;
-
+						
 						if($OrderDetailRs[$order_details_key]['dtl_tracking_no'] && $OrderDetailRs[$order_details_key]['IsGiftCertificateItem'] == 'No')
 					    {
 							$track_url  = 'javascript:void(0);';
@@ -4817,11 +4853,13 @@ class CustomerController extends Controller
 							}  elseif($OrderDetailRs[$order_details_key]['dtl_ship_method']=='UPS') {
 								$track_url = config('global.SITE_URL').'tracking/'.$OrderDetailRs[$order_details_key]['dtl_tracking_no'];
 							}
-
+							
 							$OrderDetailRs[$order_details_key]['track_url'] = $track_url;
-
+							
 						}
-
+						
+						
+						
 					}
 				}
 
@@ -4841,7 +4879,7 @@ class CustomerController extends Controller
 			$logo = '';
 		}
 		/* Logo coding ends here */
-
+		
 		##############Terms and condition start##############
 		$order_date = date("F dS, Y",$OrderRs->order_datetime);
 		$order_time = date("h:i A",$OrderRs->order_datetime);
@@ -4862,9 +4900,9 @@ class CustomerController extends Controller
 		 $signatureText = "Signature Opted Out: The customer agreed to take full responsibility for this package in case of loss or theft. MAXAROMA cannot take any claims if the status of the package is marked as delivered.";
 		 $OrderRs->is_shipping_signatureOff = "OFF";
 		 }
-
-		$str_terms_condition = " *Agreed to Maxaroma Terms and Conditions on ".$order_date." at ".$order_time."".$str_ip;
-
+		
+		$str_terms_condition = " *Agreed to Maxaroma Terms and Conditions on ".$order_date." at ".$order_time."".$str_ip;	
+		
 		$terms_conditions_content = "";
 		if(isset($OrderRs->customer_comment) && $OrderRs->customer_comment!='')
 		{
@@ -4874,21 +4912,22 @@ class CustomerController extends Controller
 			$terms_conditions_content .=  $OrderRs->order_comment;
 		}
 		$EstimatedDeliveryDate = '';
-
+		
 		if(isset($OrderRs->EstimatedDeliveryDate) && $OrderRs->EstimatedDeliveryDate!='0000-00-00 00:00:00')
 		{
 			$EstimatedDeliveryDate =  $OrderRs->EstimatedDeliveryDate;
 		}
-
+		
+		
 		// $PData = StaticPages::where('name','=','terms_and_conditions')->where('status','=','1')->get();
 		// $terms_conditions_content = $PData[0]->content;
-
+		
 		// if (str_contains($terms_conditions_content, '{$Site_URL}')) {
 			// $terms_conditions_content = str_replace('{$Site_URL}',config('global.SITE_URL'),$terms_conditions_content);
-		// }
+		// }		
 		// echo $terms_conditions_content;exit;
 		##############Terms and condition end##############
-
+		
 		// return view('myaccount.orderdetailpdf',compact('OrderDetailRs', 'OrderRs', 'GC_Only', 'logo','str_terms_condition','terms_conditions_content'));
 		// return PDF::setOptions(['isHtml5ParserEnabled' => true, 'isRemoteEnabled' => true])->loadView('myaccount.orderdetailpdf', compact('OrderDetailRs', 'OrderRs', 'GC_Only', 'logo','str_terms_condition','terms_conditions_content'))->stream('Invoice-'.$OrderRs->orders_no.'.pdf', array("Attachment" => false));	//view pdf
 		$is_skip_address = 'N';
@@ -4897,10 +4936,11 @@ class CustomerController extends Controller
 		// 	if(isset($address_part[0]) && $address_part[0] == 'Yes' ){
 		// 		$is_skip_address = 'Y';
 		// 	}
-		// }
-
+		// }				
+		
 		return PDF::setOptions(['isHtml5ParserEnabled' => true, 'isRemoteEnabled' => true])->loadView('myaccount.orderdetailpdf', compact('OrderDetailRs', 'OrderRs', 'GC_Only', 'logo','str_terms_condition','terms_conditions_content','EstimatedDeliveryDate','insuranceText','signatureText','InsuranceText11','is_skip_address'))->download('Invoice-'.$OrderRs->orders_no.'.pdf');
 	}
+
 
 	public function ReOrderDetail(Request $request)
 	{
@@ -4923,13 +4963,13 @@ class CustomerController extends Controller
 								->get();
 
 			if(count($OrderDetailRs) > 0) {
-
+		   
 				foreach ($OrderDetailRs as $order_details_key => $order_details_value) {
 					$product_item_sku = $order_details_value["sku"];
 					if(strtolower(Session::get('eusertype'))=='wholesaler') {
 						$fetch = ' IF(pu_products.wholesale_price!=0 ,pu_products.wholesale_price, pu_products.our_price) AS our_price ';
 					} else {
-						$fetch = ' IF(pu_products.sale_price!=0 AND pu_products.sale_price < pu_products.our_price,pu_products.sale_price,pu_products.our_price) AS our_price ';
+						$fetch = ' IF(pu_products.sale_price!=0 AND pu_products.sale_price < pu_products.our_price,pu_products.sale_price,pu_products.our_price) AS our_price '; 
 					}
 
 					$prod_info = Products::select('pu_products.sku', 'pu_products.products_id', 'pu_products.product_name', 'pu_products.product_description', 'pu_products.short_description', 'pu_products.sale_price', 'pu_products.retail_price', 'pu_products_category.category_id', 'pu_products.image', 'pu_products.status', 'pu_products.product_type', 'pu_products.minimum_stock', 'pu_products.current_stock')->addSelect(DB::raw($fetch))
@@ -4966,7 +5006,7 @@ class CustomerController extends Controller
 									if($dealofdayRS->description!='') {
 										$prod_info->short_description =  $dealofdayRS->description;
 									}
-								}
+								}	
 							}
 						}
 
@@ -4984,6 +5024,7 @@ class CustomerController extends Controller
 
 			 			$p_link = $this->getProductRewriteURL($prod_info->products_id, $prod_info->product_name, $prod_info->category_id, $prod_info->sku);
 
+
 						$ProdRS[] = array(
 											"sku"				=> $prod_info->sku,
 											"products_id"       => $prod_info->products_id,
@@ -4996,9 +5037,9 @@ class CustomerController extends Controller
 											"p_link"		    => $p_link,
 											"current_stock"     => $stock,
 											"product_type"      => $prod_info->product_type,
-
+											
 									);
-
+			                
 					}
 
 				}
@@ -5021,10 +5062,10 @@ class CustomerController extends Controller
 		$HalfOutOfStockMsg = '';
 		if(Session::get('eusertype')=='Wholesaler' && Session::get('is_dropshipper')=='Yes') {
 			$err_msg = $request["err_msg"];
-
+			
 			$d_start_date = $request["d_start_date"];
 			$d_end_date	= $request["d_end_date"];
-
+			
 			if($d_start_date!='')
 			{
 				$d_start_date = date("Y-m-d",strtotime($d_start_date));
@@ -5048,9 +5089,9 @@ class CustomerController extends Controller
 			$this->PageData['d_start_date_disp'] = $d_start_date_disp;
 			$this->PageData['d_end_date_disp'] = $d_end_date_disp;
 
-			$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Download Tracking Numbers';
+			$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Download Tracking Numbers';	
 			$this->PageData['CSSFILES'] = ['myaccount.css'];
-			$this->PageData['JSFILES'] = ['additional-methods.min.js', 'exportorder.js'];
+			$this->PageData['JSFILES'] = ['additional-methods.min.js', 'exportorder.js'];	
 			return view('myaccount.exportorder')->with($this->PageData);
 		} else {
 			return redirect('/myaccount.html');
@@ -5061,11 +5102,11 @@ class CustomerController extends Controller
 	{
 		$this->PageData['Customer_Reviews'] = $this->Get_Customer_Reviews($request);
 		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Customer Reviews';
-		$this->PageData['CSSFILES'] = ['pagination.css'];
+		$this->PageData['CSSFILES'] = ['pagination.css'];	
 		// dd($Customer_Reviews);
 		return view('myaccount.customerreviews')->with($this->PageData);
 	}
-
+	
 	/* Below functions are common functions which are used in above functions */
 
 	public function GetGiftCertificateData($orderArray, $key, $order_detail_id, $image_url)
@@ -5088,11 +5129,12 @@ class CustomerController extends Controller
 		return $orderArray;
 	}
 
-	public function GetSystemProductPrice($aliasname="",$pricename="")
+	public function GetSystemProductPrice($aliasname="",$pricename="") 
 	{
 		if($aliasname=="") {
 			$aliasname="p";
 		}
+
 
 		if($pricename=="") {
 			$pricename = "AS product_price";
@@ -5130,7 +5172,7 @@ class CustomerController extends Controller
 						CASE
 						WHEN ".$aliasname.".cosmo_sku!='' AND ".$aliasname.".cosmo_current_stock > 0 THEN ".$aliasname.".cosmo_our_price
 						ELSE
-
+							
 							  CASE
 							  WHEN ".$aliasname.".pca_sku!='' AND ".$aliasname.".pca_current_stock > 0 THEN ".$aliasname.".pca_our_price
 							  ELSE
@@ -5158,9 +5200,9 @@ class CustomerController extends Controller
 								->paginate(10);
 		// dd($Reviews);
 		//$rcount = count($Reviews);
-		$rcount = $Reviews->count();
+		$rcount = $Reviews->count(); 
 		$Reviews_res= array();
-
+		
 		if($rcount > 0) {
 
 			for($i=0; $i<$rcount; $i++)
@@ -5172,6 +5214,7 @@ class CustomerController extends Controller
 										->where('pu_products.products_id', '=', $Reviews[$i]['products_id'])
 										->first();
 
+	 			
 	 			//echo "<pre>"; print_r($Product_res); exit;
 	 			if($Product_res && $Product_res->count()> 0)
 	 			{
@@ -5191,13 +5234,13 @@ class CustomerController extends Controller
 	public function OrderTracking(Request $request)
 	{
 		$this->PageData['tracking_no'] = $request['id'];
-		return view('myaccount.tracking')->with($this->PageData);
+		return view('myaccount.tracking')->with($this->PageData); 
 	}
-
+	
 	public function CheckAvailableShippingMethod($shipping_mode_id = NULL, $ship_country,$ship_state,$ship_zip)
 	{
 		$shipping_mode_id = (int)$shipping_mode_id;
-
+		
 		$ShippingMethodRS = ShippingMode::where('status','=','1')->where('shipping_mode_id','=',$shipping_mode_id)->get();
 		if ($ship_country != "")
 		{
@@ -5213,17 +5256,17 @@ class CustomerController extends Controller
 			{
 				$rid = ShippingRule::where('shipping_mode_id','=',$shipping_mode_id)
 								->where('zipcode_to','>=',$ship_zip)->where('zipcode_from','<=',$ship_zip)
-								->where('country','like','%'.$ship_country.'%')->get();
+								->where('country','like','%'.$ship_country.'%')->get();					
 				## this condition is for S + C
 				if ($rid && $rid->count() <= 0)
 				{
 					$rid = ShippingRule::where('shipping_mode_id','=',$shipping_mode_id)
 								->where('state','like','%'.$ship_state.'%')
 								->where('country','like','%'.$ship_country.'%')->get();
-
+					
 					## this condition is for only C
 					if ($rid && $rid->count() <= 0)
-					{
+					{	
 						// dd($rid, $shipping_mode_id);
 						$rid = ShippingRule::where('shipping_mode_id','=',$shipping_mode_id)
 								->where('state','=','')->where('zipcode_to','=','')->where('zipcode_from','=','')
@@ -5246,8 +5289,8 @@ class CustomerController extends Controller
 	}
 
 	public function CalculateAvailableShippingCharge($ship_zip,$ship_state,$ship_country,$shipping_mode_id,$Subtotal=0,$TotalQuantity=0)
-	{
-
+	{	
+		
 		$AllDiscount = $this->GetAllDiscounts();
 		$totalitem = $TotalQuantity;
 		$subTotal = Session::get('ShoppingCart.SubTotal') - $AllDiscount['TotalDiscount'];
@@ -5286,24 +5329,24 @@ class CustomerController extends Controller
 				}
 			}
 		}
-
+		
 		if($rid && $rid->count() > 0 )
 		{
-
+			
 			$shipping_rule_id 	= $rid[0]["shipping_rule_id"];
 			$rule_type  		= $rid[0]["rule_type"];
 			$days				= $rid[0]["days"];
 			if ($shipping_rule_id != "" && $rule_type == 1 )
 			{
-
+					
 				$rowrate = ShippingRate::where('shipping_rule_id','=',$shipping_rule_id)
 											->where('order_amount','<=',$subTotal)
 											->orderBy('order_amount','desc')->limit(1)->get();
-
+														
 			}
 			else if($shipping_rule_id != "" && ($rule_type==0 || $rule_type==2))
 			{
-
+				
 				//$totalitem = $Cart->getTotalItemInCart() - $Cart->getGiftCertiCount();
 				if(empty($totalitem) || $totalitem <= 0)
 				{
@@ -5312,7 +5355,7 @@ class CustomerController extends Controller
 				$rowrate = ShippingRate::where('shipping_rule_id','=',$shipping_rule_id)
 											->where('order_amount','<=',$totalitem)
 											->orderBy('order_amount','desc')->limit(1)->get();
-
+													   
 				############ FOR FREE SHIPPING FOR ITEM COUNT ##########
 					if($rid[0]["is_free_ship"]=="Yes")
 					{
@@ -5324,7 +5367,7 @@ class CustomerController extends Controller
 					}
 				############## FOR FREE SHIPPING FOR ITEM COUNT ##############
 			}
-
+			
 			$charge = 0;
 			if($rowrate && $rowrate->count() > 0)
 			{
@@ -5368,7 +5411,7 @@ class CustomerController extends Controller
 		}
 	}
 
-	public function getShipmentEstimateDate($days)
+	public function getShipmentEstimateDate($days) 
 	{
 		if($days==0)
 		{
@@ -5377,7 +5420,7 @@ class CustomerController extends Controller
 			$sdate = date('Y-m-d');
 			$edate = date('Y-m-d', strtotime("+" . $days . "days"));
 			$satsun_cnt = $this->countWeekendDays($sdate, $edate);
-			$holiday_day_arr = ShippingHoliday::whereBetween('holiday_date',[$sdate,$edate])->where('holiday_status','=','1')->where('holiday_date','!=',date("Y-m-d"))->get();
+			$holiday_day_arr = ShippingHoliday::whereBetween('holiday_date',[$sdate,$edate])->where('holiday_status','=','1')->where('holiday_date','!=',date("Y-m-d"))->get();	
 			$holiday_day = $holiday_day_arr->count();
 			$exact_shipday = $days + $satsun_cnt + $holiday_day;
 			$approx_shipdate = date('Y-m-d', strtotime("+" . $exact_shipday . "days"));
@@ -5475,7 +5518,7 @@ class CustomerController extends Controller
 				})
 				->limit(50)
 				->get();
-
+		
 		$result = [];
 
 		foreach ($customers as $customer) {
@@ -5486,13 +5529,215 @@ class CustomerController extends Controller
 				'last_name' => $customer->last_name,
 				'email' => $customer->email,
 				'phone' => $customer->phone,
-				'city' => $customer->city,
+				'city' => $customer->city,				
 				'state' => $customer->state,
-				'zip' => $customer->zip
+				'zip' => $customer->zip				
 			];
 		}
 		return response()->json($result);
 	}
+	
+	public function SalesTaxExemption(Request $request)
+	{	
+		$uploadArr = array();
+		
+		/*if(isset($request['action']) && $request['action'] == 'submitExemptionForm')
+		{
+	        $validatedData = $request->validate([
+				'first_name' => 'required',
+				'last_name'	=> 'required',
+				'email_id' => 'required|email',
+				'state_for_exemption' => 'required',
+				'upload_sales_tax' => 'required',
+			], [
+				'first_name.required' => config('message.Validate.FirstName'),
+				'last_name.required' => config('message.Validate.LastName'),
+				'email_id.required' => config('message.Validate.ValidEmail'),
+				'email_id.email' => config('message.Validate.ValidEmail'),
+				'state_for_exemption.required' => 'Please enter state for exemption',
+				'upload_sales_tax.required' => 'Please upload certificate',
+			]);
+
+			$ChkEmail = Customer::where('email','=',$request['email'])->where('registration_type','=','M')->get();
+			if($ChkEmail && $ChkEmail->count() > 0)
+			{
+				if($ChkEmail[0]->block_customer_flag == "Yes"){
+					checkBlockedUser($ChkEmail[0]->email,$ChkEmail[0]->customer_id,'Register','Y');
+					return redirect()->back()
+						->withInput()
+						->withErrors([
+							'existing_email' => config('message.Register.Blocked'),
+						]);					
+				}
+				return redirect()->back()
+				->withInput()
+				->withErrors([
+					'existing_email' => config('message.Register.ExistingEmail'),
+				]);
+			}
+			$ChkIP = Customer::where('customer_ip','=',$_SERVER['REMOTE_ADDR'])->where('registration_type','=','M')->get();
+			if($ChkIP && $ChkIP->count() >= 5)
+			{
+				return redirect()->back()
+				->withInput()
+				->withErrors([
+					'duplicate_ip' => config('message.Register.DuplicateIP'),
+				]);
+			}
+			$State = $request['state'];
+			if($request['country'] != 'US')
+				$State = $request['other_state'];
+			$UserData = array(
+				'company_name' => $request['company_name'],
+				'first_name' => $request['first_name'],
+				'last_name' => $request['last_name'],
+				'address1' => $request['address1'],
+				'address2' => ($request['address2'] != '') ? $request['address2'] : '',
+				'phone' => $request['phone'],
+				'email' => $request['email'],
+				'password' => $request['password'],
+				'city' => $request['city'],
+				'state' => $State,
+				'country' => $request['country'],
+				'zip' => $request['zip'],
+				'status' => '1',
+				'eusertype' => 'Wholesaler Pending', // Whole sale or normal customer
+				'registration_type' => 'M', // member or guest customer
+				'customer_ip' => $_SERVER['REMOTE_ADDR'],
+				'customer_browser' => $_SERVER['HTTP_USER_AGENT'],
+				'hear_about' => $request['hear_about'],
+				'is_dropshipper' => $request['is_dropshipper'],
+				'iRewardpoint' => '0',
+				'upd_datetime' => date('Y-m-d H:i:s'),
+				'merge_log' => 'Auto updated from guest to member on registration page',
+				
+			);
+			
+			$UserData['hear_text']  = ($request["hear_about"] == 'Other') ? $request["other"] : '';
+			$UserData['einnumber']  = ($request["state"] == 'NY') ? $request["einnumber"] : '';
+			$UserData['youtube_text']  = ($request["hear_about"] == 'Youtube') ? $request["youtube"] : '';
+
+			$UserData['company_website']  = ($request["company_website"] != '') ? $request["company_website"] : '';
+			$UserData['stores']  = ($request["stores"] != '') ? $request["stores"] : '';
+			$UserData['sell_online']  = $request["sell_online"];
+			$UserData['website']  = $request["website"];
+			$UserData['webiste_url']  = ($request["webiste_url"] != '') ? $request["webiste_url"] : '';
+			$UserData['policy']  = ($request["policy"] != '') ? $request["policy"] : '';
+			$UserData['knowledge']  = ($request["knowledge"] != '') ? $request["knowledge"] : '';
+			$UserData['salestax_id']  = ($request["country"] == 'US' && $request["state"] == 'NY') ? $request["salestax_id"] : '';
+
+			$User = Customer::create($UserData);
+			if($User)
+			{
+				$iCustomerId = $User->customer_id;
+				$AddressBook=array();
+				$AddressBook['customer_id'] = $iCustomerId;
+				$AddressBook['title'] = 'Self Address';
+				$AddressBook['email'] = $User->email;
+				$AddressBook['first_name'] = $User->first_name;
+				$AddressBook['last_name'] = $User->last_name;
+				$AddressBook['address1'] = $User->address1;
+				$AddressBook['address2'] = $User->address2;
+				$AddressBook['company_name'] = $User->company_name;
+				$AddressBook['city'] = $User->city;
+				$AddressBook['state'] = $User->state;
+				$AddressBook['country'] = $User->country;
+				$AddressBook['zip'] = $User->zip;
+				$AddressBook['phone'] = $User->phone;
+				$AddressBook['status'] = '1';
+				$UserAddress = AddressBook::create($AddressBook);
+				
+				if($request->hasFile('upload_sales_tax')){
+					// $path_large = config('global.HOME_IMAGE_PATH');
+			        $image = $request->file('upload_sales_tax');
+			        $image_name = $image->getClientOriginalName();
+			        $destinationPath = base_path('images/homeimg/');
+			        $upload = $image->move($destinationPath, $image_name);
+					
+					$uploadArr = array(
+						'upload_sales_tax'				=> $image_name,
+						'resale_certificate_status'	=> 'Pending',
+					);
+					
+					$result = Customer::where('customer_id', $iCustomerId)->update($uploadArr);
+				}
+				// $request->session()->regenerate();
+				Session::put('sess_useremail',$User->email);
+				Session::put('sess_username',$User->first_name);
+				Session::put('sess_icustomerid',$User->customer_id);
+				Session::put('eusertype',$User->eusertype);
+				Session::put('is_dropshipper',$User->is_dropshipper);
+				Session::put('etype','M');
+				Session::put('eusertype','Retailer');
+				Session::put('resale_certificate',$User->upload_sales_tax);
+				Session::put('resale_certificate_status',$User->resale_certificate_status);
+				
+				$custFname = '';
+				if(isset($User->first_name) &&  $User->first_name!='' )
+				{
+					$custFname = $User->first_name;
+				}
+				$custlname = '';
+				if(isset($User->last_name) && $User->last_name!='')
+				{
+					$custlname = $User->last_name;
+				}		
+				Session::put('sess_custname',$custFname."|".$custlname);
+				$CityVal = '';
+				if(isset($User->city) &&  $User->city!='')
+				{	
+					$CityVal = $User->city;
+				}
+				$StateVal = '';
+				if(isset($User->state) &&  $User->state!='')
+				{	
+					$StateVal = $User->state;
+				}
+				$CountryVal = '';
+				if(isset($User->country) &&  $User->country!='')
+				{	
+					$CountryVal = $User->country;
+				}
+				$ZipVal = '';
+				if(isset($User->zip) &&  $User->zip!='')
+				{	
+					$ZipVal = $User->zip;
+				}
+				$PhoneVal = '';
+				if(isset($User->phone) &&  $User->phone!='')
+				{	
+					$PhoneVal = $User->phone;
+				}
+				Session::put('sess_useraddress',$CityVal."|".$StateVal."|".$CountryVal."|".$ZipVal."|".$PhoneVal);	
+
+				
+				
+				Session::flash('success', config('message.Register.Success'));
+				
+
+
+				$freeshippinginfo = '';
+				if(config('Settings.FREESHIPPING_VALUE')!="")
+				{
+					//$freeshippinginfo .= '<span style="font-size:16px; font-family:Arial;"><strong>FREE</strong> Shipping On $'.config('Settings.FREESHIPPING_VALUE').' or more Orders</span>';
+				}
+				
+
+				
+				return redirect()->back();
+			} else {
+				Session::flash('failed', config('message.Register.Failed'));
+				return redirect()->back();
+			}
+		}*/
+		
+		$this->PageData['meta_title'] =  config('Settings.SITE_TITLE').' :: Sales Tax Exemption';
+		$this->PageData['JSFILES'] = ['salestaxexemption.js'];	
+		$this->PageData['CSSFILES'] = ['myaccount.css','register.css'];	
+		
+		return view('customer.salestaxexemption')->with($this->PageData);
+	}
+
 
 }
 ?>

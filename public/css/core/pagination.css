@@ -1,0 +1,22 @@
+
+/*Pagination*/
+.pagination{display:inline-block;}
+.pagination>a{border-radius:5px;display:inline-block;font-size:14px;line-height:26px;background-color:#F1EEED;width:26px;height:26px;text-align:center;position:relative;margin:0px 5px;}
+.pagination>a:hover, .pagination>a.act{background-color:#565656;color:#fff;}
+.pagination>a.disabled, .pagination>a.disabled:hover, .pagination>a.disabled.act{ cursor:not-allowed;background-color:#f5f2f1;color:#ccc;}
+.pagination>a.pvs, .pagination>a.nex{ font-size:0px;vertical-align:top;background-color:transparent;}
+.pagination>a.pvs:hover, .pagination>a.nex:hover, .pagination>a.pvs.act, .pagination>a.nex.act{background-color:transparent;}
+.pagination>a.pvs:before, .pagination>a.nex:before{border-bottom:8px solid transparent;border-top:8px solid transparent;content:"";display:inline-block;position:absolute;top:5px;}
+.pagination>a.pvs:before{border-right:10px solid #F1EEED;left:12px;}
+.pagination>a.nex:before{border-left:10px solid #F1EEED;right:12px;}
+.pagination>a.pvs:hover:before,.pagination>a.pvs.active:before{border-right:10px solid #000000;}
+.pagination>a.nex:hover:before,.pagination>a.nex.active:before{border-left:10px solid #000000;}
+
+
+.pagination_n{display:inline-block;}
+.pagination_n a{text-decoration:none;font-family:'Nunito Sans', sans-serif;color:#382e2c;display:inline-block;font-size:12px;border-radius:50%;padding:7px 10px;margin:0px 3px; line-height:13px; background-color:#f1eeed;}
+.pagination_n a.arrow{line-height:27px;margin:0px 3px;padding:0px; background-color:transparent;}
+.pagination_n a.arrow>span{font-size:33px;line-height:33px;vertical-align: middle;}
+.pagination_n a:hover:not(.disabled), .pagination_n a.active{background-color:#565656;color:#fff;}
+.pagination_n a.arrow:hover:not(.disabled), .pagination_n a.arrow.active{background-color:transparent;color:#565656;}
+.pagination_n a.disabled{ cursor:default;opacity: 0.3;}

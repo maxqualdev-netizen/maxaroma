@@ -1,0 +1,10 @@
+.gifttext-nw h4{font-weight: 500;}
+.gifttext-nw p{font-size: 14px; margin-bottom: 10px; line-height: 18px;}
+.gifttext-nw a{text-decoration: underline; font-size: 14px; color: #009CDE;}
+.gifttext-nw a:hover{text-decoration: none;}
+.gifttext-nw.lh24 p{line-height: 24px;}
+.giftbox-nw.round-product a img{border-radius: 50%;}
+
+@media(max-width: 479px){
+	.gifthd-nw{font-size: 20px;}
+}

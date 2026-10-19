@@ -1,0 +1,183 @@
+
+#show_shipping_method_box label.comcheck.active {
+	border: solid 1px #000;
+}
+#show_shipping_method_box label.comcheck {
+    border: solid 1px #DDDDDD;
+    padding: 10px 10px 10px 30px;
+    font-size: 14px;
+    line-height: 24px;
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+.w-100 {
+    width: 100%!important;
+}
+.d-inline-block {
+    display: inline-block!important;
+}
+.chebox input {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+#show_shipping_method_box label.comcheck .chebox .checkmark {
+    top: 14px;
+    left: 9px;
+}
+#show_shipping_method_box .radio input:checked ~ span, .shipping-method .chebox input:checked ~ span {
+    font-weight: 600;
+}
+.chebox input:checked ~ .checkmark {
+    background-color: #fff;
+    border: 1px solid #000;
+}
+#show_shipping_method_box label.comcheck span {
+    font-size: 14px;
+    line-height: 24px;
+    font-weight: 500;
+    color: #000;
+}
+.radio .checkmark {
+    background-color: #fff;
+    border-radius: 50%;
+}
+.chebox .checkmark {
+    position: absolute;
+    top: 0px;
+    left: 0;
+    height: 16px;
+    width: 16px;
+    border: 1px solid #d0d0d0;
+    cursor: pointer;
+}
+#show_shipping_method_box .radio input:checked ~ span, .shipping-method .chebox input:checked ~ span {
+    font-weight: 600;
+}
+#show_shipping_method_box label.comcheck span {
+    font-size: 14px;
+    line-height: 24px;
+    font-weight: 500;
+    color: #000;
+}
+.w-75 {
+    width: 75%!important;
+}
+.float-left {
+    float: left!important;
+}
+#show_shipping_method_box label.comcheck .cart-tooltip.max_qttable {
+    position: relative;
+    right: 0;
+    z-index: initial;
+}
+.billtab.shipping-method .cart-tooltip.max_qttable {
+    top: -3px;
+    z-index: initial;
+}
+#show_shipping_method_box label.comcheck span {
+    font-size: 14px;
+    line-height: 24px;
+    font-weight: 500;
+    color: #000;
+}
+.cart-tooltip.max_qttable {
+    position: absolute;
+    right: -25px;
+    top: -3px;
+    z-index: 9;
+    width: 16px;
+}
+#show_shipping_method_box label.comcheck .cart-tooltip.max_qttable a {
+    position: relative;
+    z-index: 0;
+}
+#show_shipping_method_box .cart-tooltip a {
+    background: #fff;
+    border: solid 1px #4c4c4c;
+    color: #4c4c4c;
+    font-size: 9px;
+    width: 11px;
+    height: 11px;
+    line-height: 10px;
+    top: 2px;
+}
+.cart-tooltip a {
+    top: 2px;
+    background: #4c4c4c;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    line-height: 18px;
+    text-align: center;
+    color: #fff;
+    font-size: 12px;
+    display: inline-block;
+    font-weight: 600;
+}
+#show_shipping_method_box .max_qttable .tables {
+    width: 250px;
+    top: 25px;
+    left: -13px;
+    font-size: 12px!important;
+    line-height: 18px;
+}
+#show_shipping_method_box label.comcheck span {
+    font-size: 14px;
+    line-height: 24px;
+    font-weight: 500;
+    color: #000;
+}
+.max_qttable:hover .tables {
+    display: block;
+}
+.max_qttable .tables {
+    font-size: 12px;
+    line-height: 22px;
+    font-weight: 400!important;
+    display: none;
+    position: absolute;
+    right: -11px;
+    top: 23px;
+    width: 230px;
+    padding: 10px;
+    z-index: 99;
+    border: 1px solid #e7e7e7;
+    background: #fff;
+    -webkit-box-shadow: 0px 7px 20px rgb(0 0 0 / 20%);
+    -moz-box-shadow: 0px 7px 20px rgba(0,0,0,.2);
+    box-shadow: 0px 7px 20px rgb(0 0 0 / 20%);
+    -webkit-border-radius: 5px;
+    -moz-border-radius: 5px;
+    border-radius: 5px;
+}
+#show_shipping_method_box .max_qttable .tables:before {
+    left: 8px;
+    right: auto;
+}
+.max_qttable .tables:before {
+    content: "";
+    display: inline-block;
+    position: absolute;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-bottom: 8px solid #e7e7e7;
+    right: 7px;
+    top: -8px;
+}
+#show_shipping_method_box .max_qttable .tables:after {
+    left: 9px;
+    right: auto;
+}
+.max_qttable .tables:after {
+    content: "";
+    display: inline-block;
+    position: absolute;
+    border-left: 9px solid transparent;
+    border-right: 9px solid transparent;
+    border-bottom: 7px solid #fff;
+    right: 8px;
+    top: -7px;
+}

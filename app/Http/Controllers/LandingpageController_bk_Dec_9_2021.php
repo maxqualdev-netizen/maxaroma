@@ -1,0 +1,75 @@
+<?php
+namespace App\Http\Controllers;
+use Illuminate\Http\Request;
+use App\Models\MetaInfo;
+use App\Models\LandingPages;
+use App\Models\LandingPagesData;
+use App\Http\Controllers\Traits\CommonTrait;
+use App\Http\Controllers\Traits\VendorTrait;
+use App\Http\Controllers\Traits\CartTrait;
+use DB;
+use Session;
+use Cache;
+
+class LandingpageController extends Controller
+{
+	use CommonTrait;
+	use VendorTrait;
+	use CartTrait;
+		
+	public function __construct()
+	{
+		$PageType = 'NR';
+		$MetaInfo = MetaInfo::where('type','=',$PageType)->get(); 
+		if($MetaInfo->count() > 0 )
+		{
+			$this->PageData['meta_title'] = $MetaInfo[0]->meta_title;
+			$this->PageData['meta_description'] = $MetaInfo[0]->meta_description;
+			$this->PageData['meta_keywords'] = $MetaInfo[0]->meta_keywords;
+		}
+	}
+	
+	public function GiftGuide(Request $request)
+	{
+		$this->PageData['CSSFILES'] = ['slick.css','home.css','landing-page.css'];
+		$this->PageData['JSFILES'] = ['slick.js','landing-pages.js'];
+		//$this->PageData['SliderProducts'] = ['UP3508441001114','UP3760035450184'];
+		$LandingPages = LandingPages::with('PageData')->where('status','=','1')->where('page_type','=','gift-guide')->orderBy('section_rank')->get();
+		$this->PageData['LandingPages'] = [];
+		//$BestSellers = $this->ProductSlider('TOP SELLERS','Home','');
+
+		$SliderProducts = [];
+		if($LandingPages->count() > 0)
+		{
+			foreach($LandingPages as $LPage)
+			{
+				if($LPage->section_id == 4)
+				{
+					if($LPage->PageData[0]->sku != '');
+						$SliderProducts = $this->GetSliderProducts($LPage->PageData[0]->sku);
+					if(count($SliderProducts) > 0)
+					{	
+						if($SliderProducts > 15)
+						{
+							$SliderProducts = array_slice($SliderProducts,0,15);
+						}
+						$this->PageData['BestSellers'] = $SliderProducts;
+						$this->PageData['BestSellersAttr'] = [
+							'Title' => '',
+							'Slider' => 'home-new-sl',
+							'Page' => 'Landing',
+							'SeeMore' => '',
+						];
+					}						
+				}
+				if($LPage->section_id == 9)
+				{
+					$LPage->PageData[0]->banner_desc = stripslashes($LPage->PageData[0]->banner_desc);
+				}
+			}
+			$this->PageData['LandingPages'] = $LandingPages;
+		}
+			
+		return view('staticpages.landing-page')->with($this->PageData);
+	}
+}

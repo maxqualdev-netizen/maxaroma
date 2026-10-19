@@ -22,7 +22,7 @@ class FrontCacheController extends Controller
 			'AllTheCategory' => ['active_categories', 'active_product_categories']
 		];
 		//'BLMetaInfo','NRMetaInfo','DPMetaInfo','AllTheBrands','FragranceLandingPageMainBanner','BlogVideoQuery','BlogPageQuery','BlogFontQuery'
-		$cacheArray = array('categories','menu_array','brandlist','popular_brands','arr_currency','BottomHtmlText','HomeBanners','HomeCategoryBanners','HOMEMETAINFO','DefaultMetaInfo','DealBrands','settingvars_cache','generalsettingvars_cache','HomeBannersVideo','HomePageProductss','HomePageProductssTop','DealProductCache','HomeDealBanners','RecommendedProductCache','homepage_newarrival_cache','homepage_bestseller_cache','AllTheCategory','VariationProductCache','CATEMETAINFO','BLMetaInfo','DPMetaInfo','NRMetaInfo','AllTheBrands','FragranceLandingPageMainBanner','BlogVideoQuery','BlogPageQuery','BlogFontQuery',$DateVaRnEWvAL,'ShippingStaticCache','Afterpay_payCache','PRODUCTBANNERCache','FragranceLandingPage','SiteOfferCache','TopFirstHeaderBar','TopSecondHeaderBar','topHeaderPopupText','DropshipperFAQ','RetailerFAQ',$DealHomeWholesalerProd,$DealHomeRetailerProd,'PromoBadges','variation_cache','Menu','MaxaromaEditLandingPage','downloadSiteControl','afterpay_payment_method_ca','country_list_ca','state_list_ca','active_brand_ids');
+		$cacheArray = array('categories','menu_array','brandlist','popular_brands','arr_currency','BottomHtmlText','HomeBanners','HomeCategoryBanners','HOMEMETAINFO','DefaultMetaInfo','DealBrands','settingvars_cache','generalsettingvars_cache','HomeBannersVideo','HomePageProductss','HomePageProductssTop','DealProductCache','HomeDealBanners','RecommendedProductCache','RecommendedLoopProducts','homepage_newarrival_cache','homepage_bestseller_cache','AllTheCategory','VariationProductCache','CATEMETAINFO','BLMetaInfo','DPMetaInfo','NRMetaInfo','AllTheBrands','FragranceLandingPageMainBanner','BlogVideoQuery','BlogPageQuery','BlogFontQuery',$DateVaRnEWvAL,'ShippingStaticCache','Afterpay_payCache','PRODUCTBANNERCache','FragranceLandingPage','SiteOfferCache','TopFirstHeaderBar','TopSecondHeaderBar','topHeaderPopupText','DropshipperFAQ','RetailerFAQ',$DealHomeWholesalerProd,$DealHomeRetailerProd,'PromoBadges','variation_cache','Menu','MaxaromaEditLandingPage','downloadSiteControl','afterpay_payment_method_ca','country_list_ca','state_list_ca','active_brand_ids','AdvancedLandingPage');
 		if (in_array($request->cachevarialbe, $cacheArray)) {
 			Cache::forget($request->cachevarialbe);
 			$array = array(
@@ -40,6 +40,19 @@ class FrontCacheController extends Controller
 			return response()->json($array);
 		}
 	}
+	
+	public function ClearFrontCacheNew(Request $request)
+	{
+		if ($request->cachevarialbe != '') {
+			Cache::forget($request->cachevarialbe);
+			$array = array(
+				'message' => $request->cachevarialbe.' cache clear sucessfully',
+			);
+			return response()->json($array);
+		}
+	}
+	
+	
 	public function CreateFrontCache(Request $request)
 	{
 		$cacheArray = array('VariationProductCacheCreate');
@@ -57,7 +70,7 @@ class FrontCacheController extends Controller
 	{
 		$MaxaromaEditData = $request->all();
 
-		$ImagePath = config('global.MAXAROMA_EDIT_IMAGE_PATH');
+		$ImagePath = config('global.PHYSICAL_PATH').'images';
 		$CacheData = [];
 		$ignoreKeys = [];
 		foreach($MaxaromaEditData as $key => $secData)
@@ -66,36 +79,36 @@ class FrontCacheController extends Controller
 			{
 				if($secDataDetail['section_id'] == '1')
 				{
-					$newLogo = config('global.MAXAROMA_EDIT_IMAGE_URL').$secDataDetail['hid_logo'];
+					$newLogo = url('/images/'.$secDataDetail['hid_logo']);
 					if(isset($secDataDetail['logo']))
 					{
 						$file = $secDataDetail['logo'][0];
 
 						if ($file instanceof UploadedFile && $file->isValid())
 						{
-							if(file_exists($ImagePath.'preview_logo'))
+							if(file_exists($ImagePath.'/preview_logo'))
 							{
-								unlink($ImagePath.'preview_logo');
+								unlink($ImagePath.'/preview_logo');
 							}
 							$newLogo = 'preview_logo' . '.' . $file->getClientOriginalExtension();
 							$file->move($ImagePath, $newLogo);
-							$newLogo = config('global.MAXAROMA_EDIT_IMAGE_URL').$newLogo;
+							$newLogo = url('/images/'.$newLogo);
 						}
 					}
-					$newHeaderImage = config('global.MAXAROMA_EDIT_IMAGE_URL').$secDataDetail['hid_header_image'];
+					$newHeaderImage = url('/images/'.$secDataDetail['hid_header_image']);
 					if(isset($secDataDetail['header_image']))
 					{
 						$file = $secDataDetail['logo'][0];
 
 						if ($file instanceof UploadedFile && $file->isValid())
 						{
-							if(file_exists($ImagePath.'preview_header_image'))
+							if(file_exists($ImagePath.'/preview_header_image'))
 							{
-								unlink($ImagePath.'preview_header_image');
+								unlink($ImagePath.'/preview_header_image');
 							}
 							$newHeaderImage = 'preview_header_image' . '.' . $file->getClientOriginalExtension();
 							$file->move($ImagePath, $newHeaderImage);
-							$newHeaderImage = config('global.MAXAROMA_EDIT_IMAGE_URL').$newHeaderImage;
+							$newHeaderImage = url('/images/'.$newHeaderImage);
 						}
 					}
 					$CacheData[$secDataDetail['section_id']] = [
@@ -108,33 +121,33 @@ class FrontCacheController extends Controller
 				{
 
 					$header_image = $secDataDetail['hid_sec3_banner'];
-					$header_image = config('global.MAXAROMA_EDIT_IMAGE_URL').$header_image;
+					$header_image = url('/images/'.$header_image);
 
 					$file = 'sec3_banner';
 					if ($file instanceof UploadedFile && $file->isValid())
 					{
 						$PreviewImgName = 'preview_sec3_banner.' . $file->getClientOriginalExtension();
-						if(file_exists($ImagePath.$PreviewImgName))
+						if(file_exists($ImagePath.'/'.$PreviewImgName))
 						{
-							unlink($ImagePath.$PreviewImgName);
+							unlink($ImagePath.'/'.$PreviewImgName);
 						}
 						$file->move($ImagePath, $PreviewImgName);
-						$header_image = config('global.MAXAROMA_EDIT_IMAGE_URL').$PreviewImgName;
+						$header_image = url('/images/'.$PreviewImgName);
 					}
 
 					$header_image_mobile = $secDataDetail['hid_sec3_banner_mobile'];
-					$header_image_mobile = config('global.MAXAROMA_EDIT_IMAGE_URL').$header_image_mobile;
+					$header_image_mobile = url('/images/'.$header_image_mobile);
 
 					$file = 'sec3_banner_mobile';
 					if ($file instanceof UploadedFile && $file->isValid())
 					{
 						$PreviewImgName = 'preview_sec3_banner_mobile.' . $file->getClientOriginalExtension();
-						if(file_exists($ImagePath.$PreviewImgName))
+						if(file_exists($ImagePath.'/'.$PreviewImgName))
 						{
-							unlink($ImagePath.$PreviewImgName);
+							unlink($ImagePath.'/'.$PreviewImgName);
 						}
 						$file->move($ImagePath, $PreviewImgName);
-						$header_image_mobile = config('global.MAXAROMA_EDIT_IMAGE_URL').$PreviewImgName;
+						$header_image_mobile = url('/images/'.$PreviewImgName);
 					}
 					$CacheData[$secDataDetail['section_id']] = [
 						'introduction' => $secDataDetail['introduction'],
@@ -159,17 +172,17 @@ class FrontCacheController extends Controller
 							if(isset($secDataDetail['brand_image_'.$rowId][0]))
 							{
 								$file = $secDataDetail['brand_image_'.$rowId][0];
-								$newName = config('global.MAXAROMA_EDIT_IMAGE_URL').$secDataDetail['hid_brand_image_'.$rowId];
+								$newName = url('/images/'.$secDataDetail['hid_brand_image_'.$rowId]);
 
 								if ($file instanceof UploadedFile && $file->isValid())
 								{
-									if(file_exists($ImagePath.'preview_brand_image_'.$secDataDetail['section_id']."_".$rowId))
+									if(file_exists($ImagePath.'/preview_brand_image_'.$secDataDetail['section_id']."_".$rowId))
 									{
-										unlink($ImagePath.'preview_brand_image_'.$secDataDetail['section_id']."_".$rowId);
+										unlink($ImagePath.'/preview_brand_image_'.$secDataDetail['section_id']."_".$rowId);
 									}
 									$newName = 'preview_brand_image_'.$secDataDetail['section_id']."_".$rowId . '.' . $file->getClientOriginalExtension();
 									$file->move($ImagePath, $newName);
-									$newName = config('global.MAXAROMA_EDIT_IMAGE_URL').$newName;
+									$newName = url('/images/'.$newName);
 								}
 
 								$ignoreKeys[] = 'hid_'.$dataKey;
@@ -194,7 +207,7 @@ class FrontCacheController extends Controller
 							$CacheData[$secDataDetail['section_id']][] = [
 								'id' => (int)$rowId,
 								'brand_title_'.$rowId => $secDataDetail['brand_title_'.$rowId],
-								'brand_image_'.$rowId => config('global.MAXAROMA_EDIT_IMAGE_URL').$secDataDetail['hid_brand_image_'.$rowId],
+								'brand_image_'.$rowId => url('/images/'.$secDataDetail['hid_brand_image_'.$rowId]),
 								'link_'.$rowId => $secDataDetail['link_'.$rowId]
 							];
 						}
@@ -208,33 +221,33 @@ class FrontCacheController extends Controller
 				if($secDataDetail['section_id'] == '5')
 				{
 					$header_image = $secDataDetail['hid_sec5_banner'];
-					$header_image = config('global.MAXAROMA_EDIT_IMAGE_URL').$header_image;
+					$header_image = url('/images/'.$header_image);
 
 					$file = 'sec5_banner';
 					if ($file instanceof UploadedFile && $file->isValid())
 					{
 						$PreviewImgName = 'preview_sec5_banner.' . $file->getClientOriginalExtension();
-						if(file_exists($ImagePath.$PreviewImgName))
+						if(file_exists($ImagePath.'/'.$PreviewImgName))
 						{
-							unlink($ImagePath.$PreviewImgName);
+							unlink($ImagePath.'/'.$PreviewImgName);
 						}
 						$file->move($ImagePath, $PreviewImgName);
-						$header_image = config('global.MAXAROMA_EDIT_IMAGE_URL').$PreviewImgName;
+						$header_image = url('/images/'.$PreviewImgName);
 					}
 
 					$header_image_mobile = $secDataDetail['hid_sec5_banner_mobile'];
-					$header_image_mobile = config('global.MAXAROMA_EDIT_IMAGE_URL').$header_image_mobile;
+					$header_image_mobile = url('/images/'.$header_image_mobile);
 
 					$file = 'sec5_banner_mobile';
 					if ($file instanceof UploadedFile && $file->isValid())
 					{
 						$PreviewImgName = 'preview_sec5_banner_mobile.' . $file->getClientOriginalExtension();
-						if(file_exists($ImagePath.$PreviewImgName))
+						if(file_exists($ImagePath.'/'.$PreviewImgName))
 						{
-							unlink($ImagePath.$PreviewImgName);
+							unlink($ImagePath.'/'.$PreviewImgName);
 						}
 						$file->move($ImagePath, $PreviewImgName);
-						$header_image_mobile = config('global.MAXAROMA_EDIT_IMAGE_URL').$PreviewImgName;
+						$header_image_mobile = url('/images/'.$PreviewImgName);
 					}
 					$CacheData[$secDataDetail['section_id']] = [
 						'title' => $secDataDetail['title'],

@@ -1,0 +1,69 @@
+/**/
+.bdk-perfume{background: #D9C9CC;padding: 50px 0;text-align: center;margin-bottom: 100px;}
+.bdk-main{margin: 0 auto;}
+.product-story-logo img{width: 200px;padding-top: 40px;}
+.bdk-main p{line-height: 43px;color: #333;font-weight: 300;padding: 45px 0;text-transform: capitalize;margin: 0;font-size: 24px;}
+.bdk-perfume .btn.btn-secondary{font-weight: 300;background: transparent;}
+.bdk-perfume .btn.btn-secondary:hover{background: #000000;}
+
+/*Loop*/
+.common-specing{padding-bottom: 100px;}
+.loop-sec{display: flex;align-items: center;}
+.loop-sec .img-sec{width: 50%;}
+.loop-sec .img-sec img{width: 100%;}
+.loop-sec .text-sec{width: 50%;padding: 0 300px 0 95px;}
+.loop-sec .text-sec h2.lending-hd a{font-size: 50px;margin: 0;}
+.loop-sec .text-sec h2.lending-hd a span.big-text{font-size: 100px;}
+.loop-sec .text-sec p{font-size: 24px;padding: 27px 0;margin: 0;}
+.loop-sec .text-sec li{font-size: 18px;line-height: normal;margin-bottom: 15px;}
+.loop-sec .text-sec li:last-child{margin-bottom: 0;}
+.loop-sec .shop-btn{padding-top: 25px;}
+.loop-sec .shop-btn a.btn{border-radius: 5px;}
+
+.loop-sec.img-right-loop .img-sec{order: 2;}
+.loop-sec.img-right-loop .text-sec{order: 1;padding: 0 95px 0 220px;}
+
+/*vedio-sec*/
+.vedio-bg,.vedio-sec{position: relative;}
+.vedio-bg:after{content: "";background: #000000;display: block;position: absolute;top: 0;bottom: 0;right: 0;left: 0;height:100%;width: 100%;opacity: 0.5;}
+a.play-btn{position: absolute;top: 50%;right: 0;left: 0;text-align: center;transform: translate(0, -50%);z-index: 9;}
+a.play-btn svg{height: 70px;width: 70px;fill: #ffffff;}
+
+@media screen and (max-width: 1500px) {
+    .loop-sec .text-sec{padding: 0 100px 0 95px;}
+    .loop-sec.img-right-loop .text-sec{padding: 0 95px 0 100px;}
+    .loop-sec .text-sec h2.lending-hd a{font-size: 36px;}
+    .loop-sec .text-sec h2.lending-hd a span.big-text{font-size: 60px;}
+}
+
+@media screen and (max-width: 1200px) {
+    .loop-sec.img-right-loop .text-sec{padding: 0 10px 0 50px;}
+    .loop-sec .text-sec{padding: 0 10px 0 50px;}
+    .loop-sec .text-sec p{padding: 15px 0;}
+    .loop-sec .shop-btn{padding-top: 15px;}
+}
+
+@media screen and (max-width: 991px) {
+.bdk-perfume{margin-bottom: 50px;}
+    .loop-sec .text-sec{padding: 0 15px 0 15px;}
+    .loop-sec.img-right-loop .text-sec{padding: 0 15px 0 15px;}
+    .loop-sec .text-sec h2.lending-hd a{font-size: 26px;}
+    .loop-sec .text-sec p{padding: 15px 0;font-size: 16px;}
+    .loop-sec .text-sec li{font-size: 16px;margin-bottom: 10px;}
+    .common-specing{padding-bottom: 50px;}
+    .bdk-main p{padding: 20px 0;font-size: 16px;line-height: 25px;}
+}
+
+@media screen and (max-width: 767px) {    
+    .bdk-logo img{max-width: 150px;}
+    .loop-sec{flex-wrap: wrap;}
+    .loop-sec .img-sec{width: 100%;}
+    .loop-sec .text-sec{width: 100%;padding: 10px 10px 0 10px;text-align: center;}
+    .loop-sec.img-right-loop .img-sec{order: 1;}
+    .loop-sec.img-right-loop .text-sec{order: 2;padding: 10px 10px 0 10px;}
+    .loop-sec .text-sec h2.lending-hd a{font-size: 20px;}
+    .loop-sec .text-sec p{font-size: 14px;}
+    .loop-sec .text-sec li{font-size: 14px;}
+    a.play-btn svg{height: 30px;width: 30px;}
+    .bdk-main p{font-size: 14px;}
+}

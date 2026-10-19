@@ -16,9 +16,12 @@ use App\Models\OrderDetail;
 use App\Models\Customer;
 use App\Models\NewsLetter;
 use App\Models\RewardPoint;
+use App\Models\ShippingRule;
 use App\Services\Checkout\ShippingService;
 use App\Services\Payment\PaypalService;
 use App\Services\Payment\AfterpayService;
+use App\Services\Payment\AmazonPayService;
+use App\Services\Checkout\CheckoutTotalsService;
 
 class CheckoutController extends Controller
 {
@@ -29,13 +32,17 @@ class CheckoutController extends Controller
     protected ShippingService $ShippingService;
     protected PaypalService $PaypalService;
     protected AfterpayService $AfterpayService;
+    protected AmazonPayService $AmazonPayService;
+    protected CheckoutTotalsService $checkoutTotals;
 
     public function __construct(
         CheckoutService $checkoutService,
         StripePaymentService $StripePaymentService,
         ShippingService $ShippingService,
         PaypalService $PaypalService,
-        AfterpayService $AfterpayService
+        AfterpayService $AfterpayService,
+        AmazonPayService $AmazonPayService,
+        CheckoutTotalsService $checkoutTotals
     )
     {
         $this->checkoutService = $checkoutService;
@@ -43,6 +50,8 @@ class CheckoutController extends Controller
         $this->ShippingService = $ShippingService;
         $this->PaypalService = $PaypalService;
         $this->AfterpayService = $AfterpayService;
+        $this->AmazonPayService = $AmazonPayService;
+        $this->checkoutTotals = $checkoutTotals;
     }
 
     /**
@@ -74,6 +83,9 @@ class CheckoutController extends Controller
         } elseif($method == 'afterpay')
         {
             $selectedPaymentMethod = "PAYMENT_PAYWITHAFTERPAY";
+        } elseif($method == 'amazonpay')
+        {
+            $selectedPaymentMethod = "PAYMENT_PAYWITHAMAZON";
         }
 
         $result['data']['selectedPaymentMethod'] = $selectedPaymentMethod;
@@ -908,7 +920,7 @@ class CheckoutController extends Controller
             'payment_method' 	=> $PaymentMethod,
             'pay_status' 		=> 'Unpaid',
             'ccinfo' 			=> "",
-            'customer_comment' 	=> $request->customer_commment??'',
+            'customer_comment' 	=> $request->customer_comment??'',
             'status'			=> 'Pending',
             'currency_info'		=> $currency_info,
             'checkout_type' 	=> $checkout_type,
@@ -1265,6 +1277,103 @@ class CheckoutController extends Controller
                     'status' => false,
                     'message' => 'Payment has not been completed.'
                 ], 422);
+            }
+        }elseif($request->has('PayMethod') && $request->PayMethod == 'PAYMENT_PAYWITHAMAZON'){
+            $requestParameters = array();
+            $OrderID = $request->order_id;
+            $OrderID = 'MAX'.(int)$OrderID;
+            $OrdID = Session::get('ShoppingCart.OrderID');
+            $AmazonOrder = Order::find($request->order_id);
+            $OrderAmount = $AmazonOrder->order_total;
+            $requestParameters['merchant_id'] 				= $this->AmazonPayService->MERCHANT_ID;
+            $requestParameters['amazon_order_reference_id'] = Session::get('AMAZON_ORDER_REFERENCE_ID');
+            $requestParameters['charge_amount']             = $OrderAmount;
+            $requestParameters['currency_code']     		= 'USD';
+            $requestParameters['authorization_reference_id']= 'MAXAuthorize'.$OrdID;
+            $requestParameters['charge_order_id']   		= $OrderID;
+            $requestParameters['store_name']        		= config('Settings.SITE_TITLE');
+            $requestParameters['capture_now']        		= false;
+            $paywithamazon_response = $this->AmazonPayService->charge($requestParameters);
+            $response = $paywithamazon_response->toArray();
+            if(isset($response['ResponseStatus']) && $response['ResponseStatus'] == '200')
+            {
+                $AmazonAuthorizationId = '';
+                $amazon_response = 'Status: '.$response['ResponseStatus'].', ';
+                if(isset($response['AuthorizeResult']['AuthorizationDetails']))
+                {
+                    $AuthorizeResult = $response['AuthorizeResult']['AuthorizationDetails'];
+                    $AmazonAuthorizationId = $AuthorizeResult['AmazonAuthorizationId'];
+                    $amazon_response .= 'AuthorizationAmount: '.$AuthorizeResult['AuthorizationAmount']['Amount'].' '.$AuthorizeResult['AuthorizationAmount']['CurrencyCode'].', ';
+                    $amazon_response .= 'CapturedAmount: '.$AuthorizeResult['CapturedAmount']['Amount'].' '.$AuthorizeResult['CapturedAmount']['CurrencyCode'].', ';
+                    $amazon_response .= 'Timestamp: '.$AuthorizeResult['CreationTimestamp'].', ';
+                }
+                $updAray = array (
+                                    'status'					=> 'Pending By Amazon',
+                                    'pay_status' 	   			=> 'Unpaid',
+                                    'AmazonAuthorizationId'		=> $AmazonAuthorizationId,
+                                    'AmazonRequestId'			=> $response['ResponseMetadata']['RequestId'],
+                                    'transaction_info' 			=> $amazon_response,
+                                    'payment_gateway_response' 	=> serialize($response)
+                                );
+                $uporderres = Order::where("orders_id", '=' , Session::get('ShoppingCart.OrderID'))->update($updAray);
+
+                $cRequestParameters['merchant_id'] 				 = $this->AmazonPayService->MERCHANT_ID;
+                $cRequestParameters['amazon_order_reference_id'] = Session::get('AMAZON_ORDER_REFERENCE_ID');
+                $closeOrder = $this->AmazonPayService->closeOrderReference($cRequestParameters);
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Payment has been completed.',
+                ]);
+            } else {
+                $amazon_response = 'Status: '.$response['ResponseStatus'].', ';
+
+                if(isset($response['Error']['message']) && $response['Error']['message']!='')
+                {
+                    $amazon_response .= 'Error: '.$response['Error']['message'].', ';
+                }
+                $AmazonAuthorizationId = '';
+                if(isset($response['AuthorizeResult']['AuthorizationDetails']))
+                {
+                    $AuthorizeResult = $response['AuthorizeResult']['AuthorizationDetails'];
+                    $AmazonAuthorizationId = $AuthorizeResult['AmazonAuthorizationId'];
+                }
+                $updAray = array (
+                                    'status' 	  	   			=> 'Declined',
+                                    'AmazonRequestId'			=> ($response['ResponseMetadata']['RequestId'] ?? null),
+                                    'transaction_info' 			=> $amazon_response,
+                                    'payment_gateway_response' 	=> serialize($response)
+                                );
+                $uporderres = Order::where("orders_id", '=' , Session::get('ShoppingCart.OrderID'))->update($updAray);
+                $msg = "Sorry, your payment has been DECLINED, please make sure to verify the accuracy of your payment details and try again.";
+
+                $sessionDetails	= Session::get('ShoppingCart.BillingAddress');
+
+                $customerEmail = '';
+                if(isset($sessionDetails['email']) && $sessionDetails['email']!='')
+                {
+                    $customerEmail	= $sessionDetails['email'];
+                }
+
+                $orderNo		= 'OR'.Session::get('ShoppingCart.OrderID');
+                $customerName = '';
+                if((isset($sessionDetails['first_name']) && $sessionDetails['first_name']!=''))
+                {
+                    $customerName	= $sessionDetails['first_name']." ";
+                }
+
+                if(isset($sessionDetails['last_name']) && $sessionDetails['last_name'])
+                {
+                    $customerName = $customerName.$sessionDetails['last_name'];
+                }
+
+                $Data = ['toMail' => $customerEmail, 'orderno' => $orderNo, 'customer_name' => $customerName];
+                //OmanisendRequest('63c113f03d897d0020e8b31e',$Data);
+
+                Session::flash('PlaceOrderError',$msg);
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment has not been completed.',
+                ]);
             }
         }
 
@@ -1919,5 +2028,62 @@ class CheckoutController extends Controller
     {
         $data = $this->checkoutService->GetDropshipperDetails();
         return response()->json($data);
+    }
+
+    public function ApplyCreditDiscount(Request $request)
+    {
+        $this->checkoutService->ApplyCreditDiscount($request->creditLimitFlag);
+        return response()->json(['status' => true]);
+    }
+
+    public function GetCheckoutOffers(Request $request)
+    {
+        $Badges = [];
+        $FreeShipping = [];
+        $Totals = ($this->checkoutTotals->calculate());
+        $SubTotal = (float)$Totals['SubTotal'];
+        $Rules = ShippingRule::where("shipping_mode_id",'22')->first();
+        if($Rules)
+        {
+            if($SubTotal < $Rules->free_ship_amt)
+            {
+                $RemainAmount = number_format(($Rules->free_ship_amt - $SubTotal),2,'.','');
+                $Percentage = (number_format(($SubTotal * 100) / $Rules->free_ship_amt,2,'.',''));
+                $FreeShipping = [
+                    'label' => 'Free Shipping',
+                    'remain_amount' => (float)$RemainAmount,
+                    'percentage' => (float)$Percentage,
+                    'title' => "Unlock your free shipping"
+                ];
+            }
+        }
+
+        if(Session::has("ShoppingCart.SampleInfo") && !empty(Session::get("ShoppingCart.SampleInfo")))
+        {
+            $SampleInfo = Session::get("ShoppingCart.SampleInfo");
+            $Percentage = (number_format(($SubTotal * 100) / $SampleInfo['start_price'],2,'.',''));
+            $Badges[] = [
+                'id' => 'free_sample',
+                'label' => "Free Sample",
+                'remain_amount' => (float)$SampleInfo['remain_amount'],
+                'percentage' => (float)$Percentage,
+                'start_price' => (float)$SampleInfo['start_price'],
+                'cart_value' => (float)$SampleInfo['cart_value'],
+                'title' => "Unlock your free sample"
+            ];
+        }
+
+        if(count($Badges) > 0)
+        {
+            return response()->json([
+                'status' => true,
+                'subTotal' => $SubTotal,
+                'free_shipping' => $FreeShipping,
+                'badges' => $Badges
+            ]);
+        }
+        return response()->json([
+            'status' => false
+        ]);
     }
 }

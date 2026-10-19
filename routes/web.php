@@ -1118,12 +1118,17 @@ Route::post('/get-client-secret',[CheckoutStripeController::class,'GetStripeClie
 Route::post('/checkout/order/create',[CheckoutController::class,'MaxOrder'])->name('checkout.order.create');
 Route::post('/checkout/order/update',[CheckoutController::class,'UpdateOrder'])->name('checkout.order.update');
 Route::post('/checkout/order/dropshipper',[CheckoutController::class,'DropshipperDetails'])->name('checkout.order.dropshipper');
+Route::post('/afterpay-widget',[CheckoutAfterpayController::class,'GetAfterpayWidget']);
+Route::post('/checkout-offers',[CheckoutController::class,'GetCheckoutOffers'])->name('checkout.offers');
 
 Route::post('/checkout/afterpay/placeorder_express',[CheckoutAfterpayController::class,'SetAfterpay_Express']);
 Route::get('/checkout/afterpay/placeorder_express',[CheckoutAfterpayController::class,'SetAfterpay_Express']);
 Route::get('checkout/afterpay-billing-checkout-express/{status}/{orderToken}',[CheckoutAfterpayController::class,'Billing_Checkout_Express']);
 
 Route::get('/setup-amazon/{page_from?}',[CheckoutAmazonpayController::class,'SetupAmazon'])->name('checkout.setup-amazon');
+Route::post('amazon-order-details',[CheckoutAmazonpayController::class,'GetOrderInfo']);
+
+Route::post('apply-credit-discount',[CheckoutController::class,'ApplyCreditDiscount']);
 //New Stripe Integration
 
 // Search Change

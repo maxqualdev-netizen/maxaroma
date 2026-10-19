@@ -246,9 +246,9 @@ function Price($Amount)
 	return $FormatAmount;
 }
 
-function GetCountries()
+function getCountries()
 {
-	return Cache::rememberForever('country_list_ca', function () {
+    return Cache::rememberForever('country_list_ca', function () {
 
         return \App\Models\Countries::where('status', '1')
             ->orderBy('countries_name', 'asc')
@@ -309,6 +309,12 @@ if(!function_exists('isMobile')){
 	}
 }
 
+if(!function_exists('isTablet')){
+	function isTablet() {
+		return preg_match("/(ipad|android(?!.*mobile)|kindle|silk|playbook|tablet)/i", Request::header('user-agent'));
+	}
+}
+
 function GetBottomHtml()
 {
 	$BottomHtmlText = Cache::remember('BottomHtmlText', 3600, function() {
@@ -319,6 +325,25 @@ function GetBottomHtml()
 		$BottomHtmlText = str_replace('{$shipping_policy}',$shipping_policy,$BottomHtmlText);
 		return $BottomHtmlText;
 	});
+}
+
+if (!function_exists('GetBottomHtml2026')) {
+	function GetBottomHtml2026()
+	{
+		return Cache::remember('BottomHtmlText2026', 3600, function () {
+			$BottomHtml = \App\Models\BottomHtml::query()->first();
+
+			if (!$BottomHtml || trim((string) $BottomHtml->bottom_html_text) === '') {
+				return '';
+			}
+
+			$shipping_policy = '<a href="' . config('global.SITE_URL') . 'shipping-policy.html">Shipping Policy</a>';
+
+			$BottomHtmlText2026 = stripcslashes($BottomHtml->bottom_html_text);
+			$BottomHtmlText2026 = str_replace('{$Site_URL}',config('global.SITE_URL'),$BottomHtmlText2026);
+			return str_replace('{$shipping_policy}',$shipping_policy,$BottomHtmlText2026);
+		});
+	}
 }
 
 function GetMetaInfo()
@@ -1080,6 +1105,7 @@ function GetDealOfWeek($SKU='',$DealType='Weekly',$ForPage='',$ismultipleSku = a
 					->where('dw.status','=','1')
 					->where('dw.start_date','<=',date('Y-m-d H:i'))->where('dw.end_date','>=',date('Y-m-d H:i'))
 					->where('dw.deal_type','=',$DealType)->where('p.current_stock', '>', 0);
+
 	if(!empty($SKU) && empty($ismultipleSku))
 	{
 		$FlagCache= "No";
@@ -1092,6 +1118,7 @@ function GetDealOfWeek($SKU='',$DealType='Weekly',$ForPage='',$ismultipleSku = a
 		$DealQuery->whereIn('dw.product_sku',$ismultipleSku);
 		$DealQuery->whereIn('p.sku',$ismultipleSku);
 	}
+
 	if($ForPage == 'Cart' || $ForPage == 'ForProductDetail')
 	{
 		$FlagCache= "No";
@@ -1842,36 +1869,40 @@ function GCGenerateCode( $seed=false)
 
 function GetPages()
 {
-	$Pages = [];
-	Cache::remember('StaticPagesCache', 3600, function() {
-		$StaticPages = \App\Models\StaticPages::where('status','=','1')->get();
+	return Cache::remember('StaticPagesCache', 3600, function () {
+		$Pages = [];
+		try {
+			$StaticPages = \App\Models\StaticPages::where('status', '=', '1')->get();
+		} catch (\Throwable $e) {
+			\Log::warning('GetPages skipped: ' . $e->getMessage());
+			return $Pages;
+		}
 		$DirectPages = ['faq','about_us','site_map','free_sample','coupons_promotional','reward_point_program','security_policy','privacy_policy','shipping_policy','return_exchange_policy','terms_and_conditions'];
 		$PageWithUnderscore = ['Redemption_policy','store_credit'];
-        $Pkey = 0;
-		foreach($StaticPages as $key => $Page)
-		{
-			if($Page->name == 'contactus')
+		$Pkey = 0;
+		foreach ($StaticPages as $key => $Page) {
+			if ($Page->name == 'contactus') {
 				continue;
+			}
 			$Pages[$Pkey]['slug'] = $Page->name;
-			if($Page->name == 'FAQS')
-			{
+			if ($Page->name == 'FAQS') {
 				$Page->name = 'faq';
 			}
 			$Page->name = strtolower($Page->name);
 
-			if(!in_array($Page->name,$DirectPages)){
-				if(in_array($Page->name,$PageWithUnderscore)){
-					$StaticPage = '/site-page/'.$Page->name.'.html';
+			if (!in_array($Page->name, $DirectPages)) {
+				if (in_array($Page->name, $PageWithUnderscore)) {
+					$StaticPage = '/site-page/' . $Page->name . '.html';
 				} else {
-					$StaticPage = str_replace('_','-',$Page->name);
-					$StaticPage = '/site-page/'.$StaticPage.'.html';
+					$StaticPage = str_replace('_', '-', $Page->name);
+					$StaticPage = '/site-page/' . $StaticPage . '.html';
 				}
-			}else{
-				$StaticPage = str_replace('_','-',$Page->name);
-				$StaticPage = '/'.$StaticPage.'.html';
+			} else {
+				$StaticPage = str_replace('_', '-', $Page->name);
+				$StaticPage = '/' . $StaticPage . '.html';
 			}
 			$Pages[$Pkey]['link'] = $StaticPage;
-            $Pkey++;
+			$Pkey++;
 		}
 		return $Pages;
 	});
@@ -2058,7 +2089,7 @@ function OmanisendRequest($RequestType='',$Data=[],$OtherData=[])
 				$estimatedDate	= $OtherData['estimated_ship_date'];
 			}
 			$RequestData = [];
-			$RequestData = ['email' => $OtherData['toMail'],'phone' => $OtherData['phone'] ?? '',// '+16312741060',//
+			$RequestData = ['email' => $OtherData['toMail'],//'phone' => $OtherData['phone'] ?? '',// '+16312741060',//
 				'fields' => [
 					'customer_ip' => $OtherData['customer_ip'],
                     'shipping_insurance' => $OtherData['shipping_insurance'],
@@ -2460,19 +2491,11 @@ function OmanisendRequest($RequestType='',$Data=[],$OtherData=[])
 			$totaldiscount = $Data->auto_discount + $Data->quantity_discount + $Data->reward_discount + $Data->bogo_discount + $Data->coupon_amount + $Data->gc_amount + $Data->manual_discount;
 			$totaldiscount = number_format($totaldiscount,2);
 			$RequestData = [];
-
-			$oth_phone = trim($OtherData['phone'] ?? '');
-			$oth_phone = preg_replace('/[^0-9+]/', '', $oth_phone);
-			if($oth_phone != '' && substr($oth_phone, 0, 1) != '+')
-			{
-				if(strlen($oth_phone) == 10){
-					$oth_phone = '+1'.$oth_phone;
-				}
-			}
-
-			//$OtherData['toMail'] = "qualdev.devs@gmail.com";
+			// if(isset($OtherData['toMail']) && $OtherData['toMail'] == 'gequaldev@gmail.com'){
+			// 	$OtherData['toMail'] = 'tempchecknew@gmail.com';
+			// }
 			//$RequestData = ['email' => $OtherData['toMail'],
-			$RequestData = ['email' => trim($OtherData['toMail']),'phone' => $oth_phone, //$OtherData['phone'] ?? '',// '+16312741060',//
+			$RequestData = ['email' => $OtherData['toMail'],//'phone' => $OtherData['phone'] ?? '',// '+16312741060',//
 				'fields' => [
 					'order_tax' => Price($Data['tax']),
                     'first_name' => $Data->bill_first_name,
@@ -2501,7 +2524,8 @@ function OmanisendRequest($RequestType='',$Data=[],$OtherData=[])
 				$estimatedDate	= $OtherData['estimated_ship_date'];
 			}
 			$RequestData = [];
-			$RequestData = ['email' => $OtherData['toMail'],'phone' => $OtherData['phone'] ?? '',// '+16312741060',//
+			//$RequestData = ['email' => $OtherData['toMail'],
+			$RequestData = ['email' => $OtherData['toMail'],//'phone' => $OtherData['phone'] ?? '',// '+16312741060',//
 				'fields' => [
 					'customer_ip' => $OtherData['customer_ip'],
                     'shipping_insurance' => $OtherData['shipping_insurance'],
@@ -2521,6 +2545,20 @@ function OmanisendRequest($RequestType='',$Data=[],$OtherData=[])
 				]
 			];
 			break;
+		case "6aa17249c5a0731a770475fb": // POS - Bank Deposit Email Notification
+			$ApiURL.="events/".$RequestType;
+			$RequestData = [];
+			$RequestData = ['email' => $OtherData['toMail'],//'phone' => $OtherData['phone'] ?? '',// '+16312741060',//
+				'fields' => [
+					'deposited_by' => $OtherData['deposited_by'],
+                    'deposit_amount' => $OtherData['deposit_amount'],
+                    'store_name' => $OtherData['store_name'],
+					'deposited_date_time' => $OtherData['deposited_date_time'],
+					'CONTACT_MAIL' => config('Settings.CONTACT_MAIL'),
+					'SITE_NAME' => config('Settings.SITE_TITLE')
+				]
+			];
+			break;
 		case "61fb93a4b86552001e976b3c": // ORDER_RECEIPT_NEW - Order Receipt Email
 			$ApiURL.="events/".$RequestType;
 			$customernote	= $estimatedDate = '';
@@ -2531,7 +2569,7 @@ function OmanisendRequest($RequestType='',$Data=[],$OtherData=[])
 				$estimatedDate	= $OtherData['estimated_ship_date'];
 			}
 			$RequestData = [];
-			$RequestData = ['email' => trim($OtherData['toMail']),
+			$RequestData = ['email' => $OtherData['toMail'],
 				'fields' => [
 					'customer_ip' => $OtherData['customer_ip'],
                     'shipping_insurance' => $OtherData['shipping_insurance'],
@@ -2828,7 +2866,7 @@ function OmanisendRequest($RequestType='',$Data=[],$OtherData=[])
                         $Products[$i]['sku'] = $CartProduct['SKU'];
                         $Products[$i]['title'] = $CartProduct['ProductName'];
                         $Products[$i]['description'] = $CartProduct['ProductName'];
-                        $Products[$i]['quantity'] = (int)$CartProduct['Qty'];
+                        $Products[$i]['quantity'] = $CartProduct['Qty'];
                         $Products[$i]['price'] = (int)($CartProduct['Price']*100);
                         $CartProd = \App\Models\Products::where('products_id','=',$CartProduct['ProductID'])->get();
                         if(isset($CartProd[0]->image) && file_exists(config('global.PRD_THUMB_IMG_PATH').stripslashes($CartProd[0]->image)) && !empty($CartProd[0]->image))
@@ -2918,56 +2956,9 @@ function OmanisendRequest($RequestType='',$Data=[],$OtherData=[])
 		{
 			$UpdateCustomer = \App\Models\Customer::where('email','=',$Data->email)->update(['omnisend_accountid' => $OmaniRes['contactID']]);
 		}
-		if($RequestType == "create_customer"){
-			Log::info('Omnisend Create Customer: Omnisend Response', [
-				'Data'     => json_encode($Data ?? []),
-				'Request'  => json_encode($RequestData ?? []),
-				'Response' => json_encode($OmaniRes ?? [])
-			]);
-		}
-		if($RequestType == '69f8b45dbe5da69308eeb38d'){
-			Log::warning('OmnisendResponse: Omnisend Response', [
-				'Request' => json_encode($RequestData),'Response' => json_encode($OmaniRes)
-			]);
-
-			if(isset($RequestData['phone']) && $RequestData['phone']!=''){
-				$requestDataPhone = [
-					"identifiers" => [
-						[
-							"type" => "phone",
-							"id" => trim($RequestData['phone']),
-							"channels" => [
-								"sms" => [
-									"status" => "subscribed",
-									"statusDate" => gmdate("Y-m-d\TH:i:s\Z")
-								]
-							]
-						]
-					]
-				];
-
-				$chPhone = curl_init();
-
-				curl_setopt_array($chPhone, [
-					CURLOPT_URL => "https://api.omnisend.com/v3/contacts",
-					CURLOPT_RETURNTRANSFER => true,
-					CURLOPT_CUSTOMREQUEST => "POST",
-					CURLOPT_HTTPHEADER => [
-						"X-API-KEY: 61a57424f7860b001f9ed49f-7g0VYzQJLyDNsljKTSUIRTtDu5e44XZToAeB4WMGNmN3c4cv5q",
-						"Content-Type: application/json",
-						"Accept: application/json"
-					],
-					CURLOPT_POSTFIELDS => json_encode($requestDataPhone),
-				]);
-
-				$responsePhone = curl_exec($chPhone);
-				curl_close($chPhone);
-				Log::warning('OmnisendSubscribeResponse: Omnisend Subscribe Response', [
-					'Request' => json_encode($requestDataPhone),'Response' => json_encode(json_decode($responsePhone,true))
-				]);
-			}
-		}
-
+		// Log::warning('OmnisendResponse: Omnisend Response', [
+		// 		'Request' => json_encode($RequestData),'Response' => json_encode($OmaniRes)
+		// 	]);
 		if(isset($OmaniRes['error']))
 		{
             $fp = fopen(config('global.PHYSICAL_PATH').'omnisend/omnisend.txt', 'a');
@@ -3506,17 +3497,32 @@ function googleAnalyticsGA4($pageType="",$temp_ary=array(),$NetTotal=0, $couponC
 					$PriceVal = $temp_ary['ItemPrice'];
 				}
 				/** Get Total Cart Quantity */
+				$ContentIds = [];
+				$Contents = [];
 				$TotalQty = 0;
-				if(Session::has('ShoppingCart.Cart'))
-				{
+
+				if (Session::has('ShoppingCart.Cart')) {
 					$FullCart = Session::get('ShoppingCart.Cart');
-					if(count($FullCart) > 0)
-					{
-						foreach($FullCart as $CartProduct)
-						{
-							$TotalQty+=(int)$CartProduct['Qty'];
+
+					if (count($FullCart) > 0) {
+						foreach ($FullCart as $CartProduct) {
+							$Qty = (int) ($CartProduct['Qty'] ?? 0);
+							$Sku = $CartProduct['sku'] ?? null;
+
+							$TotalQty += $Qty;
+
+							if ($Sku !== null && $Qty > 0) {
+								$ContentIds[] = (string) $Sku;
+
+								$Contents[] = [
+									'id' => (string) $Sku,
+									'quantity' => $Qty,
+								];
+							}
 						}
 					}
+					$FBContent_strAdd = json_encode($Contents);
+					$Content_id_Brcket_strAdd = json_encode($ContentIds);
 				}
 				if(empty($UserDataInfo) && $UserDataInfo=='')
 				{
@@ -3527,6 +3533,9 @@ function googleAnalyticsGA4($pageType="",$temp_ary=array(),$NetTotal=0, $couponC
         $GA4 .="dataLayer.push({
 								  event: 'add_to_cart',
 								 ".$UserDataInfo."
+								  contents : ".$FBContent_strAdd.",
+								  content_ids : ".$Content_id_Brcket_strAdd.",
+								  content_type: 'product',
 								  ecommerce: {
 								  currency: '".$CurrencySymbol."',
 								  value:".$temp_ary["TotPrice"].",
@@ -4459,6 +4468,68 @@ function setImageName($image, $imgpath, $imgURL)
 	return $imageName;
 }
 
+function GetProductComparison()
+{
+	return Cache::remember('ProductComparisons',3600, function(){
+		$ProductComparisons = [];
+		try {
+			if (!\Illuminate\Support\Facades\Schema::hasTable('pu_product_comparisons')) {
+				return $ProductComparisons;
+			}
+			$Comparisons = DB::table('pu_product_comparisons')
+				->where('status', '=', '1')
+				->orderBy('products_id')
+				->orderBy('priority')
+				->get();
+			if($Comparisons && count($Comparisons) > 0)
+			{
+				foreach($Comparisons as $Comparison)
+				{
+					$ProductComparisons[$Comparison->products_id][] = [
+						'reference_brand_name' => $Comparison->reference_brand_name,
+						'reference_product_name' => $Comparison->reference_product_name,
+						'difference_note' => $Comparison->difference_note
+					];
+				}
+			}
+		} catch (\Throwable $e) {
+			\Log::warning('Product comparisons unavailable: ' . $e->getMessage());
+		}
+		return $ProductComparisons;
+	});
+}
+
+function GetWearContextTags()
+{
+	return Cache::remember('WearContextTags',3600, function(){
+		$ProductWearContextsTags = [];
+		try {
+			if (
+				!\Illuminate\Support\Facades\Schema::hasTable('pu_product_wear_context')
+				|| !\Illuminate\Support\Facades\Schema::hasTable('pu_wear_contexts')
+			) {
+				return $ProductWearContextsTags;
+			}
+			$WearContexts = DB::table('pu_product_wear_context as pt')
+			->join('pu_wear_contexts as w', 'pt.wear_context_id', '=', 'w.id')
+			->orderBy('w.tag_name')->get();
+			if($WearContexts && count($WearContexts) > 0)
+			{
+				foreach($WearContexts as $WearContext)
+				{
+					$ProductWearContextsTags[$WearContext->products_id][] = [
+						'wear_context_id' => $WearContext->wear_context_id,
+						'tag_name' => $WearContext->tag_name
+					];
+				}
+			}
+		} catch (\Throwable $e) {
+			\Log::warning('Wear context tags unavailable: ' . $e->getMessage());
+		}
+		return $ProductWearContextsTags;
+	});
+}
+
 function GetStorePrefix()
 {
 	$StorePrefix = "OR";
@@ -4467,4 +4538,120 @@ function GetStorePrefix()
 		$StorePrefix = Session::get("sess_store_prefix");
 	}
 	return $StorePrefix;
+}
+
+function MaxaromaSendTrustpilotEmail($OrderDetails=[])
+{
+	return true;
+	if($OrderDetails)
+	{
+		$To = "maxaroma.com+b1ff7c3c82@invite.trustpilot.com";
+		$From = config('Settings.CONTACT_MAIL');
+		$Subject = "Trustpilot Review";
+		$CustomerName = $OrderDetails['ship_first_name'];
+		if(!empty($OrderDetails['ship_last_name']))
+		{
+			$CustomerName.=" ".$OrderDetails['ship_last_name'];
+		}
+		$ReceiptMailBody = '
+		<script type="application/json+trustpilot">
+		{
+			"recipientName": "'.$CustomerName.'",
+			"recipientEmail": "'.$OrderDetails['ship_email'].'",
+			"referenceId": "'.$OrderDetails['orders_no'].'"
+		}
+		</script>';
+		$CC=$BCC="";
+		$MailSend = Mail::send(array(), array(), function ($message) use ($To,$Subject,$ReceiptMailBody,$From,$CC,$BCC) {
+			$message->from($From,"Maxaroma");
+			$message->to($To)
+				->subject($Subject)
+				->html($ReceiptMailBody);
+			if($CC != '')
+				$message->cc($CC);
+			if($BCC != '')
+				$message->bcc($BCC);
+		});
+	}
+}
+
+/**
+ * Toggle Meili custom search vs SearchSpring.
+ * URL: ?is_custom=1 enables (and remembers in session for AJAX).
+ *      ?is_custom=0 forces SearchSpring and clears session.
+ * Default / no param: SearchSpring unless session already enabled.
+ */
+function useCustomProductSearch($request = null): bool
+{
+	$request = $request ?? request();
+	$raw = $request->query('is_custom', $request->input('is_custom', null));
+	if ($raw === '1' || $raw === 1 || $raw === true || $raw === 'true') {
+		session(['use_custom_search' => true]);
+		return true;
+	}
+	if ($raw === '0' || $raw === 0 || $raw === false || $raw === 'false') {
+		session(['use_custom_search' => false]);
+		return false;
+	}
+	return (bool) session('use_custom_search', false);
+}
+
+/**
+ * Resolve core CSS/JS filename: foo.css → foo-custom.css when custom search is on
+ * and the custom file exists on disk.
+ */
+function customSearchCoreFile(string $filename, ?string $basePath = null): string
+{
+	$filename = ltrim($filename, '/');
+	if ($filename === '' || !function_exists('useCustomProductSearch') || !useCustomProductSearch()) {
+		return $filename;
+	}
+	$dot = strrpos($filename, '.');
+	if ($dot === false) {
+		return $filename;
+	}
+	$customName = substr($filename, 0, $dot) . '-custom' . substr($filename, $dot);
+	$ext = strtolower(substr($filename, $dot + 1));
+	$path = rtrim((string) ($basePath ?? ''), '/\\');
+	if ($path === '') {
+		$path = ($ext === 'js')
+			? (string) config('global.SITE_JS_CORE_PATH')
+			: (string) config('global.SITE_STYLE_CORE_PATH');
+	}
+	$candidates = [
+		rtrim($path, '/\\') . DIRECTORY_SEPARATOR . $customName,
+		public_path(($ext === 'js' ? 'js/core/' : 'css/core/') . $customName),
+		base_path('public/' . ($ext === 'js' ? 'js/core/' : 'css/core/') . $customName),
+	];
+	foreach ($candidates as $full) {
+		if ($full !== '' && is_file($full)) {
+			return $customName;
+		}
+	}
+	return $filename;
+}
+
+/**
+ * Resolve a Blade view name: product.listing_search → product.listing_search-custom
+ * when custom search is on and the view exists.
+ */
+function customSearchView(string $view): string
+{
+	if (!function_exists('useCustomProductSearch') || !useCustomProductSearch()) {
+		return $view;
+	}
+	$custom = $view . '-custom';
+	return view()->exists($custom) ? $custom : $view;
+}
+
+/**
+ * Write to storage/logs/search-YYYY-MM-DD.log (NLP / Meili / custom search).
+ */
+function searchLog(string $level, string $message, array $context = []): void
+{
+	$level = strtolower(trim($level));
+	if (!in_array($level, ['debug', 'info', 'warning', 'error'], true)) {
+		$level = 'info';
+	}
+	\App\Support\SearchLog::{$level}($message, $context);
 }

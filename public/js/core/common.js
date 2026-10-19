@@ -660,7 +660,7 @@ function Valid_Search_Keyword() {
         keyword = keyword.replace(/  +/g, ' ');
         keyword = keyword.replace("&","andd");
         keyword = keyword.replace("/","backslash");
-        keyword = keyword.split(" ").join("-");
+        //keyword = keyword.split(" ").join("-");
 
         if (keyword != '') {
             searchURL = site_url + "p4u/key-" + keyword + "/view";

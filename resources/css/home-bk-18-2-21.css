@@ -1,0 +1,86 @@
+.home-new-cont {max-width: 1200px; margin: 0 auto; padding: 0 15px; }
+
+/*Home Category Banner*/
+.main-heading { position: relative; display: inline-block; width: 100%; }
+.main-heading .viewall {z-index: 9; position: absolute; right: 0px; top: 4px; font-size: 12px; line-height: 30px;}
+.main-heading .viewall:hover { text-decoration: underline; }
+
+.home-main-banner{ max-width:1920px; margin:0 auto; position:relative;}
+.home-main-banner .bncontainer{position:relative;}
+.home-main-banner .bncontainer .bnrtext{width:40%; margin:auto; left:45%; right:0; position: absolute; top:50%; transform: translate(0%,-50%); right:0px; display: table;}
+.home-main-banner .bncontainer .bnrtext .bnrtext_inner {display:table-cell; padding:0px; width:100%; height:100%; vertical-align:middle; text-align:center; text-transform:uppercase;}
+
+.home-main-banner h2{ font-size:100px; line-height:90px; color:#000; margin:0px; padding:0px;}
+.home-main-banner h2 span{ font-size:36px; line-height:36px; display:block; padding:10px 0px;}
+.home-main-banner p{ font-size:30px; color:#000; margin:0px; padding:0px;}
+.home-main-banner p span{ font-size:50px; display:block; }
+
+@media (max-width: 1199px){
+.home-main-banner h2{ font-size:70px; line-height:60px;}
+.home-main-banner h2 span{ font-size:30px; line-height:30px;}
+.home-main-banner p{ font-size:24px;}
+.home-main-banner p span{ font-size:40px;}
+}
+@media (max-width: 1024px){
+	.home-product{padding: 0 5px;}
+}
+
+@media (max-width: 991px){
+	.home-main-banner h2{ font-size:50px; line-height:40px;}
+	.home-main-banner h2 span{ font-size:24px; line-height:24px;}
+	.home-main-banner p{ font-size:20px;}
+	.home-main-banner p span{ font-size:30px;}
+}
+
+@media (max-width: 767px){
+	.home-main-banner .bncontainer .bnrtext{position:inherit; background:#eee; padding:20px 0px; width:100%; margin:0px 0px 10px 0px; left:0; top:0; transform:translate(0%, 0%)}
+	.main-heading .viewall { position: inherit; }
+}
+
+@media (max-width: 479px){
+	.home-product .slick-prev,.home-product .slick-next{margin-top: -38px;}
+}
+@media (max-width: 399px){
+	.home-product .slick-prev,.home-product .slick-next{margin-top: -68px;}
+}
+
+.home-brand-sl a:hover{opacity: 0.7;}
+
+
+/*Home Review*/
+.review-text h4{font-weight: 700; font-size: 16px; text-transform:capitalize;}
+.review-text h4 span{font-weight:400; display: block; padding: 10px 0 0; font-size:18px; line-height:30px; color:#333;}
+.review-text i{font-size:12px; color:#828282; line-height:15px; padding-bottom:10px;}
+.review-text p{max-width:700px; margin: 0 auto; font-weight:500; font-size: 14px; line-height: 24px; margin-top: 10px; color:#333;}
+.home-review-sl .slick-list{margin: 0 70px;}
+.home-review .btn { border-radius: 0; }
+.home-review .slick-prev{left: 0;}
+.home-review .slick-next{right: 0;}
+
+@media (max-width: 767px){
+	.home-review-sl .slick-list{margin: 0 40px;}
+	.review-text h4{font-size: 12px;}
+	.home-review-sl .slick-prev{left: 0;}
+	.home-review-sl .slick-right{right: 0;}
+	.home-review h3{font-size: 20px;}
+	.review-text h4 span{font-size: 16px;}
+	.review-text p{font-size: 13px;}
+}
+
+
+/*LET’S BE FRIENDS*/
+.home-new-hd {font-size: 24px; color: #000; padding-bottom: 20px; font-weight: 400; text-transform: none; }
+.lets-home{padding: 40px 0; font-size: 18px;}
+.lets-home p{max-width: 350px; margin: 0 auto; line-height: 24px; font-size: 16px;}
+.lets-home a{text-decoration: underline;}
+.lets-home a:hover{text-decoration: none;}
+
+/*Home Brand Sl*/
+.home-brand-sec{padding: 5px 0px 20px; border-top: solid 1px #adadad; border-bottom: solid 1px #adadad; position: relative;}
+.home-brand-sec a.viewall{top: -17px;}
+.home-brand-sec .slick-slide a{height: 100px; display: flex; justify-content: center; align-items: center;}
+@media(max-width: 767px){
+	.home-brand-sec a.viewall{top: 0;}
+	.home-brand-sec .slick-slide a{height: 80px;}
+	.lets-home{font-size: 16px;}
+}

@@ -53,8 +53,9 @@ class StripeController extends Controller
 			$arrPEVar		= unserialize($db_res[0]->pm_details);
 			$STRIPE_KEY = $this->decrypt($arrPEVar['Secret_Key']);
 		}
-		if(Session::get('sess_useremail') == 'wgequaldev@gmail.com' || Session::get('sess_useremail') == 'gequaldev@gmail.com' || Session::get('sess_useremail') == 'qqualdev@gmail.com' || Session::get('sess_useremail') == 'qualdev.devs@gmail.com' ||  Session::get('sess_useremail') =='testing12345678@gmail.com' ||  Session::get('sess_useremail') =='tetn@gmail.com' || Session::get('sess_useremail') =='qualdevtest344555@gmail.com' || Session::get('sess_useremail') =='maxdev86@gmail.com' )
+		if(Session::get('sess_useremail') == 'qualdev999@gmail.com' || Session::get('sess_useremail') == 'wgequaldev@gmail.com' || Session::get('sess_useremail') == 'gequaldev@gmail.com' || Session::get('sess_useremail') == 'qqualdev@gmail.com' || Session::get('sess_useremail') == 'qualdev.devs@gmail.com' ||  Session::get('sess_useremail') =='testing12345678@gmail.com' ||  Session::get('sess_useremail') =='tetn@gmail.com' || Session::get('sess_useremail') =='qualdevtest344555@gmail.com' || Session::get('sess_useremail') =='maxdev86@gmail.com' )
 		{
+			Stripe::setApiKey('sk_test_UQbJgAk4zBzJ0jksAKZUD4ey00O2mvNHXG');
 		} else {
 			Stripe::setApiKey($STRIPE_KEY);
 		}
@@ -78,6 +79,11 @@ class StripeController extends Controller
 		$session = \Stripe\Checkout\Session::create([
 			'customer_email' => $CustEmail,
 			'client_reference_id' => "OR".$OrderID,
+			'payment_intent_data' => [
+				'metadata' => [
+					'order_number' => 'OR' . $OrderID,
+				],
+			],
 			'payment_method_types' => ['card'],
 			'line_items' => [[
 				'quantity' => 1,
@@ -239,6 +245,7 @@ class StripeController extends Controller
 
 			if($CustEmail == 'wgequaldev@gmail.com' || $CustEmail == 'gequaldev@gmail.com' || $CustEmail == 'qqualdev@gmail.com' || $CustEmail == 'gequaldev1234567@gmail.com')
 			{
+				Stripe::setApiKey('sk_test_UQbJgAk4zBzJ0jksAKZUD4ey00O2mvNHXG');
 			} else {
 				Stripe::setApiKey($STRIPE_KEY);
 			}

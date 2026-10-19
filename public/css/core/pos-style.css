@@ -1,0 +1,232 @@
+/* Common CSS Start */
+/* .header-posNavigation a{font-size:14px;font-weight:600;text-transform:uppercase;}
+@media screen and (min-width:992px){.header-posNavigation{position:absolute;top:10px;left:50%;transform:translateX(-50%);}}
+@media screen and (max-width:1199.98px){.header-posNavigation a{font-size:11px;}}
+@media screen and (max-width:1024.98px){.header-posNavigation{top:19px;}}
+@media screen and (max-width:991.98px){.header-posNavigation{position:relative;top:0;text-align:right;}}
+@media screen and (max-width:767.98px){.header-posNavigation{display:none;}} */
+/*.header-posNavigation{position:absolute;top:10px;left:50%;transform:translateX(-50%); z-index: 99;}
+.header-posNavigation a{font-size:14px;font-weight:600;text-transform:uppercase;}*/
+.header-posNavigation{position:absolute;top:10px;left:22.6%;transform:translateX(-50%); z-index: 99;}
+.header-posNavigation a{font-size:12px;font-weight:600;text-transform:uppercase; padding:5px 10px 5px;}
+@media screen and (max-width:1199.98px){.header-posNavigation a{font-size:11px;}}
+@media screen and (max-width:1024.98px){.header-posNavigation{top:8px; left: 205px;} .header-fixed .header-posNavigation{left: 235px;}}
+@media screen and (max-width:767.98px){.header-posNavigation{top:0px; left: 210px;} .header-fixed .header-posNavigation {left: 215px;}}
+@media screen and (max-width:479.98px){.header-posNavigation{top:0px; left: 170px;} .header-fixed .header-posNavigation {left: 171px; top:-1px;}}
+
+.pos-page{font-size:14px;}
+.pos-page .breadcrumb{padding:15px 0 10px;}
+.pos-page .text-success{color:#198754 !important;}
+.pos-page .text-danger{color:#dc3545 !important;}
+.pos-page .text-warning{color:#ffc107 !important;}
+.pos-page .text-muted{color:rgba(33,37,41,0.75) !important;}
+.pos-page .font-weight-light{font-weight:300 !important;}
+.pos-page .font-weight-lighter{font-weight:lighter !important;}
+.pos-page .font-weight-normal{font-weight:400 !important;}
+.pos-page .font-weight-medium{font-weight:500 !important;}
+.pos-page .font-weight-semibold{font-weight:600 !important;}
+.pos-page .font-weight-bold{font-weight:700 !important;}
+.pos-page .font-weight-bolder{font-weight:bolder !important;}
+.pos-page .font-italic{font-style:italic !important;}
+.posstatus-span{font-weight:600;}
+.posstatus-link{color:#1a1a1a;text-decoration:underline;}
+.posstatus-link:hover{color:#333333;text-decoration:none;}
+
+.pos-page .posmain-hd{font-size:18px;font-weight:700;margin-bottom:0;}
+.pos-page .btn{font-size:14px;border:1px solid #1a1a1a;border-radius:5px;}
+.pos-page .btn-primary{font-weight:600;background-color:#1a1a1a;color:#ffffff;border-color:#1a1a1a;}
+.pos-page .btn-primary:hover, .pos-page .btn-primary:active, .pos-page .btn-primary:focus{background-color:#333333;border-color:#333333;}
+.pos-page .btn-outline-secondary{font-weight:600;color:#1a1a1a;border-color:#1a1a1a;}
+.pos-page .btn-outline-secondary:hover, .pos-page .btn-outline-secondary.show{background-color:#333333;color:#ffffff;border-color:#333333;}
+.pos-page .back-link{display:inline-flex;align-items:center;gap:5px;color:#1a1a1a;text-decoration:none;font-weight:500;}
+.pos-page .back-link:hover{color:#333333;text-decoration:underline;}
+.pos-page .btn-submit{padding:12px 30px;}
+.pos-page .btn-dark-custom{color:#ffffff;font-weight:600;background-color:#1a1a1a;}
+.pos-page .btn-dark-custom:hover{background-color:#333333;}
+
+.pos-page .table-responsive{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.pos-page .table .thead-light th{background-color:#ffffff;font-weight:600;}
+.pos-page .table th, .pos-page .table td{border-top:none;border-bottom:1px solid #dee2e6;}
+
+.pos-page .custom-tabnav{display:flex;align-items:center;}
+.pos-page .fade{transition:opacity 0.15s linear;}
+.pos-page .fade:not(.show){opacity:0;}
+.pos-page .tab-content > .tab-pane{display:none;}
+.pos-page .tab-content > .active{display:block;}
+.pos-page .btn-option{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:600;color:#1a1a1a;text-decoration:none;padding:15px;background-color:#ffffff;border:1px solid #dee2e6;transition:0.2s;}
+.pos-page .btn-option:hover, .pos-page .btn-option.active{font-weight:600;color:#ffffff;border-color:#1a1a1a;background-color:#1a1a1a;}
+@media screen and (max-width:767.98px){
+    .pos-page .custom-tabnav{flex-direction:column;align-items:flex-start;}
+    .pos-page .btn-option{width:100%;}
+}
+
+.pos-page .custom-input-flex{display:flex;flex-wrap:nowrap;gap:10px;align-items:center; position: relative;}
+@media screen and (max-width:767.98px){.pos-page .custom-input-flex{flex-direction:column;}}
+/* Common CSS End */
+
+/* POS left menu CSS Start */
+.pos-page .myact_left_link>li>a>i{position:absolute;left:12px;top:50%;font-size:24px;-webkit-transform:translate3d(0%, -50%, 0);transform:translate3d(0%, -50%, 0);}
+/* POS left menu CSS End */
+
+/* Dashboard Page CSS Start */
+.dashboard-card{display:block;text-decoration:none;background:#f7f7f7;border:1px solid transparent;box-shadow:0 4px 8px rgba(0,0,0,0.15);padding:30px 20px;text-align:center;transition:0.3s;color:#1a1a1a;height:100%;}
+.dashboard-card:hover{border-color:#1a1a1a;transform:translateY(-5px);box-shadow:0 6px 12px rgba(0,0,0,0.18);color:inherit;}
+.dashboard-card i{font-size:30px;margin-bottom:5px;display:block;}
+.dashboard-card .dashboard-cardHd{font-weight:600;margin-bottom:5px;}
+@media screen and (max-width:991.98px){
+    .dashboard-card{font-size:12px;padding:20px 20px;}
+    .dashboard-card i{font-size:24px;}
+}
+/* Dashboard Page CSS End */
+
+/* POS New Order Page CSS Start */
+.status-card{background:#f7f7f7;padding:20px;border:1px solid #dee2e6;}
+/* POS New Order Page CSS End */
+
+/* POS Devices Page CSS Start */
+.device-card{background-color:#f7f7f7;border:1px solid #dee2e6;padding:20px;box-shadow:0 6px 10px rgba(0,0,0,0.15);height:100%;transition:transform 0.2s;}
+/* .device-card:hover{transform:translateY(-4px);} */
+.device-title{font-size:16px;font-weight:700;}
+.device-card-icon{font-size:22px;margin-right:10px;}
+.device-connect-link{color:#1a1a1a;text-decoration:underline;font-weight:600;}
+.device-connect-link:hover{text-decoration:none;}
+/* POS Devices Page CSS End */
+
+/* POS Cash Drawer Page CSS Start */
+.cash-drawer-card{background-color:#f7f7f7;border:1px solid #dee2e6;box-shadow:0 6px 10px rgba(0,0,0,0.15);padding:20px;}
+.cash-drawer-card .label-row{border-bottom:1px solid #dee2e6;padding:8px 0;}
+.cash-drawer-card .label-row:last-child{border-bottom:none;font-weight:bold;}
+.drawer-actions-card .action-btn{width:100%;padding:12px;font-weight:600;border-radius:5px;}
+/* POS Cash Drawer Page CSS End */
+
+/* POS Cash Drawer Daily Open/Close Page CSS Start */
+.daily-card-section{background-color:#f7f7f7;border:1px solid #dee2e6;box-shadow:0 6px 10px rgba(0,0,0,0.15);padding:20px;}
+.currency-table{font-size:14px;color:#1a1a1a;}
+.currency-table th, .currency-table td{vertical-align:middle;}
+.currency-table .value-col, .currency-table .total-col{white-space:nowrap;}
+.daily-card-section .note{font-size:0.9rem;}
+.daily-card-section .note span{font-weight:600;}
+@media screen and (max-width:767.98px){.daily-card-section{padding:15px;}}
+/* POS Cash Drawer Daily Open/Close Page CSS End */
+
+/* POS Cash Drawer Manual Open Page CSS Start */
+.manual-open-card-section{background-color:#f7f7f7;border:1px solid #dee2e6;box-shadow:0 6px 10px rgba(0,0,0,0.15);padding:30px;}
+.manual-open-card-section textarea.form-control{min-height:120px;}
+/* POS Cash Drawer Manual Open Page CSS End */
+
+.checkout-header .header-posNavigation { position: absolute; transform: none; text-align: center; right: 0; left: auto; top: 50%; transform: translate(0, -50%); }
+.business_page #frmCheckOut #addAgent .frmerror{display: inline-block!important; text-align: left; width: 100%; margin-top: -10px;}
+.ui-autocomplete {
+    max-height: 328px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid #ddd!important;
+    z-index: 99;
+   font-family: montserrat, sans-serif;
+}
+.customer-autocomplete-row.ui-state-active,.autocomplete-row.ui-state-active{border-color: #ddd!important;}
+
+.ui-autocomplete li .autocomplete-row
+{
+    transition: background-color 0.15s ease;
+}
+
+.input-loader-wrapper{
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+.input-loader-wrapper input{
+    padding-right: 35px;
+}
+
+.input-loader{
+    position: absolute;
+    right: 59px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    border: 2px solid #ddd;
+    border-top: 2px solid #333;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+}
+
+@keyframes spin{
+    0%{ transform: translateY(-50%) rotate(0deg); }
+    100%{ transform: translateY(-50%) rotate(360deg); }
+}
+
+#ui-id-1 li:nth-child(odd) {
+    background-color: #f9f9f9;
+}
+
+#ui-id-1 li:nth-child(even) {
+    background-color: #ffffff;
+}
+.highlight-match{
+    background:#e0e0d9;
+    font-weight:bold;
+    padding:0 2px;
+}
+.gr{
+    color: #28a745;
+}
+
+@media screen and (min-width:768px){
+    .checkout-uspsection{margin-bottom: 5px;}
+}
+
+#change_cardreader_link{
+    background: none;
+    border: none;
+}
+#change_cardreader_link:hover{border: none;text-decoration:none;}
+#change_cardreader_link:focus{outline: 0px dotted !important;}
+
+.card-manuallyDtl{
+    margin-bottom:5px;
+}
+.cart-hd-sub{
+    padding:10px 0 20px 0 !important;
+}
+.completing-txt{
+    padding:10px 0 !important;
+}
+
+
+/*Auto complete*/
+.auto-prdtext-row{display: flex; justify-content: space-between; flex: 1;}
+.price-auto{display:flex;align-items:center;gap:15px;flex-wrap: wrap;}
+.auto-price-text{font-weight:bold; font-size:16px; color:#000;}
+.auto-prdtext-sub{font-size:12px; color:#333; overflow:hidden; text-overflow:ellipsis; max-width:300px;height:18px;}
+.auto-pricevalue{font-weight:bold; font-size:14px; color:#000; padding-bottom: 3px;}
+.autocomplete_icons {display: flex; align-items: center; position: absolute; right: 15px; z-index: 9; top: 2px;}
+.autocomplete_icons .clear-input,.autocomplete_icons .dropdown-arrow{display: none; font-size:18px;}
+.autocomplete_icons .clear-input{padding: 7px; font-size: 22px;}
+.autocomplete_icons .input-loader{top:18px; right: 44px;}
+@media screen and (max-width:767.98px){
+    /*#ui-id-1.ui-menu{display: block!important; width: inherit !important;  right: 36px;}*/
+    #ui-id-1.ui-menu{display: block; width: inherit !important;  right: 36px;}
+    .price-auto{justify-content: space-between; padding-top: 8px; width: 100%;}
+    .auto-price-stock{padding-top: 2px;}
+    .ui-autocomplete li .autocomplete-row{flex-wrap: wrap;}
+    .auto-price-text{font-weight:bold; font-size:14px;}
+    .auto-prdtext-sub p{white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 225px; margin-bottom: 7px;}
+    .auto-prdtext-row{flex-direction: column; padding-right: 10px;}
+    .auto-pricevalue{font-size: 14px; padding-bottom: 4px;}
+}
+
+.form-group.required.input-fcs .autocomplete_icons_checkout{position: absolute; right: 0; gap:5px; display: flex; align-items: center; top: 14px; font-size:18px;}
+.form-group.required.input-fcs .autocomplete_icons_checkout i{width: 24px; height: 24px; display: flex; align-items: center;}
+.form-group.required.input-fcs .input-loader {top: 5px; right: 60px; width: 16px; height: 16px; }
+.form-group.required.input-fcs .clear-input{padding: 0px!important; font-size: 24px;}
+
+@media screen and (max-width: 1024px) {
+    body .myact_left_link {
+       display: none;
+    }
+}

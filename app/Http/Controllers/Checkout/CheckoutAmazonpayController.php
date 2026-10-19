@@ -1,6 +1,7 @@
 <?php
 namespace App\Http\Controllers\Checkout;
 
+use App\Http\Controllers\Controller;
 use Srmklive\PayPal\Services\ExpressCheckout;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -49,6 +50,7 @@ class CheckoutAmazonpayController extends Controller
 		if(isset($request->access_token) && $request->access_token != '')
 		{
 			Session::put('AMAZON_ACCESS_TOKEN',$request->access_token);
+			Session::put('AMAZON_ACCESS_TOKEN_EXPIRES_AT',time() + (int) $request->expires_in);
 			if(isset($request->page_from))
 			{
 				Session::put('page_from',$request->page_from);
@@ -75,16 +77,17 @@ class CheckoutAmazonpayController extends Controller
 					if($this->CheckUser($reqtoken))
 					{
 
-						return redirect('/billing-amazon-checkout');
+						//return redirect('/billing-amazon-checkout');
+						return redirect('/secure-checkout1/amazonpay');
 					} else {
 						Session::forget('AMAZON_ACCESS_TOKEN');
 						return redirect('/shoppingcart');
 					}
 				}
 				else {
-						Session::forget('AMAZON_ACCESS_TOKEN');
-						return redirect('/shoppingcart');
-					}
+					Session::forget('AMAZON_ACCESS_TOKEN');
+					return redirect('/shoppingcart');
+				}
 			}
 		}
 	}
@@ -302,13 +305,13 @@ class CheckoutAmazonpayController extends Controller
 				Session::put('ShoppingCart.BillingAddress',$temp);
 				Session::put('ShoppingCart.ShippingAddress',$temp);
 
-				return true;
+				return response()->json(['success' => true, 'address' => Session::get('ShoppingCart.ShippingAddress')]);
 			} else {
-				return false;
+				return response()->json(['success' => false]);
 			}
 
 		} else {
-			return false;
+			return response()->json(['success' => false]);
 		}
 	}
 
@@ -642,5 +645,18 @@ class CheckoutAmazonpayController extends Controller
 		} else {
 			return false;
 		}
+	}
+
+	public function isAccessTokenExpired(): bool
+	{
+		$token = Session::get('AMAZON_ACCESS_TOKEN');
+		$expiresAt = Session::get('AMAZON_ACCESS_TOKEN_EXPIRES_AT');
+
+		if (empty($token) || empty($expiresAt)) {
+			return true;
+		}
+
+		// Expire 60 seconds early to avoid edge cases.
+		return time() >= ((int) $expiresAt - 60);
 	}
 }

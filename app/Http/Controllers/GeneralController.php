@@ -49,7 +49,8 @@ use Cache;
 
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\ExportOrders;
-
+use Stripe\Stripe;
+use Stripe\Exception\ApiErrorException;
 class GeneralController extends Controller
 {
 	use CommonTrait;
@@ -1466,6 +1467,7 @@ class GeneralController extends Controller
 		}
 		$customer_id = $OrderRs[0]->customer_id;
 
+		//echo "Encryption: ".$this->encrypt("sk_live_le79xVg0h7UgoRfE7NHhNquq00Bi11RGmn");echo "<br>Decryption: ".$this->decrypt("ASoA1f/Rxr7Lw/29tsfEwJXWrMa5wpDdvsiu75yW2tPA2Pr9y46LociLuKqeyM0=");exit;
 
 		$OrderDetailRs = DB::table('pu_order_detail as od')
 							->select('od.is_gift_wrap', 'od.dtl_ship_status','od.price', 'od.quantity', 'od.total', 'p.image', 'p.product_name', 'p.sku', 'p.short_description', 'b.brand_name')
@@ -1819,20 +1821,25 @@ class GeneralController extends Controller
 							// ->where('orders_id', '=', $OrderID)
 							// ->get();
 
-		$OrderRs = DB::table('pu_orders')->select('orders_id', 'orders_no','customer_id', 'sub_total', 'tax', 'shipping_amt', 'order_total', 'refund_amount', 'wire_discount', 'auto_discount', 'quantity_discount', 'reward_discount', 'coupon_amount', 'gc_amount', 'bogo_discount', 'pay_status', 'status', 'payment_type', 'use_credit_limit', 'payment_method','payment_gateway_response','order_datetime','phoneorder_paymentdate','phoneorder_shipping_method_id','route_shipping_insurance_charge','is_shipping_signature','shipping_signature','order_upd_datetime','gift_charge','apply_credit','refer_amount','coupon_code','shipping_amt','gc_code','coupon_code','coupon_id','tax','phoneorder_shipping_method_id','ship_zip','ship_state','ship_country','ship_city','route_shipping_insurance_charge','is_shipping_signature','shipping_signature')
+		$OrderRs = DB::table('pu_orders')->select('orders_id', 'orders_no','customer_id', 'sub_total', 'tax', 'shipping_amt', 'order_total', 'refund_amount', 'wire_discount', 'auto_discount', 'quantity_discount', 'reward_discount', 'coupon_amount', 'gc_amount', 'bogo_discount', 'pay_status', 'status', 'payment_type', 'use_credit_limit', 'payment_method','payment_gateway_response','order_datetime','phoneorder_paymentdate','phoneorder_shipping_method_id','route_shipping_insurance_charge','is_shipping_signature','shipping_signature','order_upd_datetime','gift_charge','apply_credit','refer_amount','coupon_code','shipping_amt','gc_code','coupon_code','coupon_id','tax','phoneorder_shipping_method_id','ship_zip','ship_state','ship_country','ship_city','route_shipping_insurance_charge','is_shipping_signature','shipping_signature','transaction_info')
 							->where('orders_id', '=', $OrderID)
 							->get();
-
+		
+		
+			
 		if($OrderRs->count() <= 0)
 		{
 			return redirect('/');
 		}
+		
+		
 
 		if($OrderRs[0]->order_total == "" || $OrderRs[0]->order_total < 0){
 			$OrderRs[0]->order_total = 0;
 		}
 		$customer_id = $OrderRs[0]->customer_id;
 
+		//echo "Encryption: ".$this->encrypt("sk_live_le79xVg0h7UgoRfE7NHhNquq00Bi11RGmn");echo "<br>Decryption: ".$this->decrypt("ASoA1f/Rxr7Lw/29tsfEwJXWrMa5wpDdvsiu75yW2tPA2Pr9y46LociLuKqeyM0=");exit;
 		$orderDetails = array();
 		$OrderDetailRs = DB::table('pu_order_detail as od')
 							->select('od.orders_detail_id','od.is_gift_wrap', 'od.dtl_ship_status','od.price', 'od.quantity', 'od.total', 'p.image', 'p.product_name', 'p.sku', 'p.short_description', 'b.brand_name','od.VendorSKU','od.IsCosmo','od.IsNandansons','od.IsPerfumePW','od.IsPCA','od.IsND','p.minimum_stock','p.current_stock','p.cosmo_current_stock','p.cosmo_sku','p.nandansons_current_stock','p.nandansons_current_stock','p.nandansons_sku','p.pca_current_stock','p.pca_current_stock','p.pca_sku','p.nd_sku','p.nd_current_stock','p.perfumeworldwide_sku','p.perfumeworldwide_currentstock','od.discount_price','od.excluded_flag')
@@ -2193,6 +2200,23 @@ class GeneralController extends Controller
 
 					$STRIPE_KEY   = $this->decrypt($STRIPE_KEY);
 					$PUBLISH_KEY   = $this->decrypt($PUBLISH_KEY);
+					
+					$stripe = new \Stripe\StripeClient('sk_test_UQbJgAk4zBzJ0jksAKZUD4ey00O2mvNHXG');
+
+					$paymentIntent = $stripe->paymentIntents->retrieve(
+						'pi_3UIpHeLbHfosEnPT1owdwBcS',
+						[]
+					);
+
+					$status = isset($paymentIntent->status)
+						? $paymentIntent->status
+						: null;
+
+					$this->PageData["Paymentstatus"] = $status;
+					
+		
+					
+					
 					#############################
 				}else if($db_res[$i]->pm_group_name == "PAYMENT_PAYWITHAFTERPAY"){
 					$Afterpay_Checkout ='Yes';
@@ -2530,7 +2554,6 @@ class GeneralController extends Controller
 		}
 
 	}
-
 	public function PhoneOrderTaxCalculation_old($subTotal,$ship_country,$ship_state,$ship_zip)
 	{
 

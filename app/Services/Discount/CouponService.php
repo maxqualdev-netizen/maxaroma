@@ -475,6 +475,10 @@ public function apply(
                     $excludeSkuList
                 );
 
+            if (empty($result['matched'])) {
+                return $this->invalidCartCoupon($log);
+            }
+
             $couponDiscount =
                 $result['discount'];
 
@@ -588,6 +592,10 @@ public function apply(
                     $coupon,
                     $excludeSkuList
                 );
+
+            if (empty($result['matched'])) {
+                return $this->invalidCartCoupon($log);
+            }
 
             $couponDiscount =
                 $result['discount'];
@@ -2537,6 +2545,7 @@ protected function applyFreeShippingCoupon(
         return [
             'discount' => 0,
             'free_gift_sku' => null,
+            'matched' => false,
         ];
     }
 
@@ -2560,6 +2569,7 @@ protected function applyFreeShippingCoupon(
         return [
             'discount' => 0,
             'free_gift_sku' => null,
+            'matched' => false,
         ];
     }
 
@@ -2671,6 +2681,7 @@ protected function applyFreeShippingCoupon(
         return [
             'discount' => 0,
             'free_gift_sku' => null,
+            'matched' => false,
         ];
     }
 
@@ -2688,6 +2699,7 @@ protected function applyFreeShippingCoupon(
         return [
             'discount' => 0,
             'free_gift_sku' => null,
+            'matched' => false,
         ];
     }
 
@@ -2696,6 +2708,8 @@ protected function applyFreeShippingCoupon(
             NumberFormat(
                 $couponDiscount
             ),
+
+        'matched' => true,
 
         'free_gift_sku' =>
             !empty(
@@ -3328,6 +3342,30 @@ Session::put('ShoppingCart.YotpoRewardCode', '');
 Session::put('ShoppingCart.YotpoRewardCouponID', '');
 Session::put('ShoppingCart.YotpoReward_Detail', []);
 }
+    /**
+     * Remove only coupon-provided Free Gift items after the coupon
+     * becomes invalid for the current cart. Normal rule gifts and
+     * Free Samples are deliberately preserved.
+     */
+    protected function removeCouponFreeGiftFromCart(): void
+    {
+        $cart = Session::get('ShoppingCart.Cart', []);
+
+        if (!is_array($cart) || $cart === []) {
+            Session::put('ShoppingCart.PromoCoupon.HasFreeGift', 'No');
+            return;
+        }
+
+        foreach ($cart as $index => $item) {
+            if (($item['FreeGiftCoupon'] ?? 'No') === 'Yes') {
+                unset($cart[$index]);
+            }
+        }
+
+        Session::put('ShoppingCart.Cart', array_values($cart));
+        Session::put('ShoppingCart.PromoCoupon.HasFreeGift', 'No');
+    }
+
    protected function clearCouponSessions(): void
     {
         Session::forget(
@@ -3354,6 +3392,7 @@ Session::put('ShoppingCart.YotpoReward_Detail', []);
         string $message,
         array $log = []
     ): array {
+        $this->removeCouponFreeGiftFromCart();
         $this->clearCouponSessions();
 
         $log['message'] =
@@ -3387,6 +3426,7 @@ Session::put('ShoppingCart.YotpoReward_Detail', []);
         $message =
             'Coupon code does not apply to the item you have in your bag.';
 
+        $this->removeCouponFreeGiftFromCart();
         $this->clearCouponSessions();
 
         $log['message'] =

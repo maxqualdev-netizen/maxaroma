@@ -27,6 +27,7 @@ use App\Models\Dealofweek;
 use App\Models\ReferFriend;
 use App\Models\SiteSettings;
 use App\Models\StoreCardReader;
+use App\Models\Coupon;
 
 use Stripe\Stripe;
 use Stripe\Exception\ApiErrorException;
@@ -2802,6 +2803,7 @@ trait POSTrait
 		$AllDiscount = $this->GetSplitAllDiscounts('',$CartArr=array(),$Flag);
 
 		$TotalDiscount = $AllDiscount['TotalDiscount'];
+		
 		$NetTotal = $TotalAmount - $TotalDiscount;
 
 		if($NetTotal <= 0)
@@ -2811,6 +2813,7 @@ trait POSTrait
 	}
 	public function GetSplitAllCharges($ChargeName='',$Flag="Store")
 	{
+		
 		$log['ChargeName'] = $ChargeName;
 		addLog('GetAllChargesStart',$log);
 		$Charges = [];
@@ -2832,9 +2835,16 @@ trait POSTrait
 		if(Session::has('shipping_insurance_charge') && $Flag=="Website")
 			$Charges['ShippingInsurance'] = ['label' => 'Shipping Insurance Charge', 'charge' => Session::get('shipping_insurance_charge')];
 
+		
+		
+		
 		if($ChargeName != '')
 		{
+			
+			
 			$Charge = (isset($Charges[$ChargeName])?NumberFormat($Charges[$ChargeName]['charge']):0);
+			
+			
 			$log['Charge'] = $Charge;
 			addLog('GetAllCharges',$log);
 			return $Charge;
@@ -3082,15 +3092,56 @@ trait POSTrait
 
 	public function ApplySplitCouponDiscountNew($StoreOrderArr,$WebsiteOrderArr)
 	{
-		//$StoreCouponDiscount = array_sum(array_column($StoreOrderArr, 'CouponDisItemWiseDiscout'));
+		$couponCode = $this->GetAllCoupons('CouponCode');
+		$CouponDiscount = $this->GetAllDiscounts('CouponDiscount');		
+		$CartInfo 		 = Session::get('ShoppingCart.Cart');
+	
+		$TotalItemWiseCoupon =ArraySum($CartInfo,'CouponDisItemWiseDiscout');
+		
+		$difference = 0;
+		if(isset($couponCode) && $couponCode!='' && $CouponDiscount > 0)
+		{
+			
+			$CouponRS = Coupon::where('coupon_number','=',$couponCode)
+							->where('status','=','1')->get();
+			if($CouponRS  && $CouponRS[0]['count_ship_tax'] == '1')
+			{ 
+				
+				  $difference = NumberFormat($CouponDiscount - $TotalItemWiseCoupon);
+				
+			}
+		}	
+		
+		if($difference > 0)
+		{
+			$lastCouponKey = null;
+
+			foreach ($CartInfo as $k => $item) {
+				if (($item['CouponDisItemWiseDiscout'] ?? 0) > 0) {
+					$lastCouponKey = $k;
+				}
+			}
+			
+			if ($lastCouponKey !== null) {
+				$CartInfo[$lastCouponKey]['CouponDisItemWiseDiscout'] += $difference;
+			}
+			
+			Session::put('ShoppingCart.Cart',$CartInfo);
+			
+			
+		}
+		
+		$groupedOrders = collect(Session::get('ShoppingCart.Cart'))->groupBy('OrderType')->toArray();
+		$StoreOrderArr = array_values($groupedOrders["Store"]);
+		$WebsiteOrderArr = array_values($groupedOrders["Website"]);
+		
 		$StoreCouponDiscount = ArraySum($StoreOrderArr,'CouponDisItemWiseDiscout');
 		$StoreCouponDiscount = NumberFormat($StoreCouponDiscount);
-		//$WebsiteCouponDiscount = array_sum(array_column($WebsiteOrderArr, 'CouponDisItemWiseDiscout'));
+		Session::put('ShoppingCart.PromoCoupon.StoreCouponDiscount', $StoreCouponDiscount);
+		
 		$WebsiteCouponDiscount = ArraySum($WebsiteOrderArr,'CouponDisItemWiseDiscout');
 		$WebsiteCouponDiscount = NumberFormat($WebsiteCouponDiscount);
 		Session::put('ShoppingCart.PromoCoupon.WebsiteCouponDiscount', $WebsiteCouponDiscount);
-		Session::put('ShoppingCart.PromoCoupon.StoreCouponDiscount', $StoreCouponDiscount);
-
 	}
 	public function ApplySplitRewardDiscountNew($StoreOrderArr,$WebsiteOrderArr)
 	{

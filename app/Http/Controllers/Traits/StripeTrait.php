@@ -46,6 +46,8 @@ trait StripeTrait
 
         if (in_array(strtolower($sess_useremail), $devEmails))
         {
+            $STRIPE_KEY = 'sk_test_UQbJgAk4zBzJ0jksAKZUD4ey00O2mvNHXG';
+            $PUBLISH_KEY = 'pk_test_xWTUgWDaaFSIfHkKClwzQrhS00eb9PQSLX';
         }
 
         //Sandbox Keys

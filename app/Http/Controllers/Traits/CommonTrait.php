@@ -54,8 +54,8 @@ trait CommonTrait
 		}
 	}
 
-	public function CountOptions($VariationIDs=[],$DisplayProducts=[],$CatArrVal=[],$Flag='',$ismaxTwoDay = '', $isPocketPerfume = '',$isMaxaromaEdit='No'){
-		//echo count($DisplayProducts)nn; exit;
+	public function CountOptions($VariationIDs=[],$DisplayProducts=[],$CatArrVal=[],$Flag='',$ismaxTwoDay = '', $isPocketPerfume = '',$isMaxaromaEdit='No')
+	{
 		$NewProduct = [];
 		$VariationData = [];
 		$VariationIDs = array_unique($VariationIDs);
@@ -85,8 +85,8 @@ trait CommonTrait
 								->select('pv.variation_id','pv.total_count','pv.min_price','pv.max_price','pv.w_min_price','pv.w_max_price')
 								->whereIn('pv.variation_id',$VariationIDs);
 			$VariationProducts = $VariationProductQry->get()->toArray();
-			foreach($VariationProducts as $Product){
-
+			foreach($VariationProducts as $Product)
+			{
 				if(Session::has("eusertype") && Session::get("eusertype")=="Wholesaler" )
 				{
 					$VariationData[$Product->variation_id]['min_price'] = $Product->w_min_price;
@@ -100,8 +100,9 @@ trait CommonTrait
 				$VariationData[$Product->variation_id]['size_cnt'] = $Product->total_count;
 			}
 		}
-		//echo "<pre>"; print_r($VariationData['9944436102']); exit;
-		foreach($DisplayProducts as $ProductNew){
+
+		foreach($DisplayProducts as $ProductNew)
+		{
 			if(isset($VariationData[$ProductNew->variation_id])){
 				$ProductNew->size_cnt = $VariationData[$ProductNew->variation_id]['size_cnt'];
 			} else {
@@ -161,57 +162,57 @@ trait CommonTrait
 							}
 
 				}*/
+
 				if(($NewProduct[$i]->is_atomizer == "Yes" && $isPocketPerfume=='N') || $NewProduct[$i]->stock == "Out")
 				{
 					$sql = DB::table('pu_products as po')
-							->join('pu_products_category as pc','po.products_id','=','pc.products_id')
-							->join('pu_category as c','pc.category_id','=','c.category_id')
-							->leftJoin('pu_products_one as p1','po.products_id','=','p1.products_id')
-							// ->join('pu_brand as b','b.brand_id','=','po.brand_id')
-							// ->join('pu_manufacture as m',function($join){
-							// 	$join->on('po.imanufactureid','=','m.imanufactureid');
-							// 	$join->on('b.imanufactureid','=','m.imanufactureid');
-							// })
-							->select('po.products_id','po.sku','po.is_gift_wrap','po.short_description','po.maxtwodaydelivery','po.fragrance_family','po.formulation','po.size','po.coverage','po.finish','po.skin_type','po.product_name','po.vtype','po.imanufactureid','po.brand_id','po.is_atomizer',
-									'po.fragrance_seasons','po.fragrance_occasion','po.fragrance_personality','po.image','po.current_stock','po.retail_price','po.cosmo_retail_price','po.pca_retail_price','po.minimum_stock','po.gender','po.new_arrival','po.featured','po.clearance','po.top_seller',
-									'po.product_type','po.cosmo_sku','po.cosmo_current_stock','po.cosmo_wholesale_price','po.cosmo_our_price','po.pca_sku','po.pca_current_stock','po.pca_wholesale_price','po.pca_our_price',
-									'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price','po.vtype','po.variation_id','po.refine_feature',
-									'po.perfumeworldwide_sku','po.perfumeworldwide_currentstock','po.perfumeworldwide_wholesale_price','po.perfumeworldwide_our_price','po.perfumeworldwide_retail_price',
-									'po.nd_sku','po.nd_current_stock','po.nd_wholesale_price','po.nd_our_price','po.nd_retail_price',
-									'po.product_type','pc.category_id','p1.extra_images')
-							->WHERE('po.variation_id',$NewProduct[$i]->variation_id);
-						//$sql->where('po.status','=','1')->where('c.status','=','1')->where('b.status','=','1')->where('m.status','=','1');
-						$sql->where('po.status','=','1')->where('c.status','=','1');
-						if($Flag == "TOP_SELLERS" || $Flag == "NEW_ARRIVALS")
-						{
-							if($Flag == "NEW_ARRIVALS"){
-								if(count($CatArrVal) > 0)
-									$sql->whereIn('pc.category_id',$CatArrVal);
-								// $sql->whereNotIn('pc.category_id',['198','199','200','201']);
+						->join('pu_products_category as pc','po.products_id','=','pc.products_id')
+						->join('pu_category as c','pc.category_id','=','c.category_id')
+						// ->join('pu_brand as b','b.brand_id','=','po.brand_id')
+						// ->join('pu_manufacture as m',function($join){
+						// 	$join->on('po.imanufactureid','=','m.imanufactureid');
+						// 	$join->on('b.imanufactureid','=','m.imanufactureid');
+						// })
+						->select('po.products_id','po.sku','po.is_gift_wrap','po.short_description','po.maxtwodaydelivery','po.fragrance_family','po.formulation','po.size','po.coverage','po.finish','po.skin_type','po.product_name','po.vtype','po.imanufactureid','po.brand_id','po.is_atomizer',
+								'po.fragrance_seasons','po.fragrance_occasion','po.fragrance_personality','po.image','po.current_stock','po.retail_price','po.cosmo_retail_price','po.pca_retail_price','po.minimum_stock','po.gender','po.new_arrival','po.featured','po.clearance','po.top_seller',
+								'po.product_type','po.cosmo_sku','po.cosmo_current_stock','po.cosmo_wholesale_price','po.cosmo_our_price','po.pca_sku','po.pca_current_stock','po.pca_wholesale_price','po.pca_our_price',
+								'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price','po.vtype','po.variation_id','po.refine_feature',
+								'po.perfumeworldwide_sku','po.perfumeworldwide_currentstock','po.perfumeworldwide_wholesale_price','po.perfumeworldwide_our_price','po.perfumeworldwide_retail_price',
+								'po.nd_sku','po.nd_current_stock','po.nd_wholesale_price','po.nd_our_price','po.nd_retail_price',
+								'po.product_type','pc.category_id')
+						->WHERE('po.variation_id',$NewProduct[$i]->variation_id);
+					//$sql->where('po.status','=','1')->where('c.status','=','1')->where('b.status','=','1')->where('m.status','=','1');
+					$sql->where('po.status','=','1')->where('c.status','=','1');
+					if($Flag == "TOP_SELLERS" || $Flag == "NEW_ARRIVALS")
+					{
+						if($Flag == "NEW_ARRIVALS"){
+							if(count($CatArrVal) > 0)
+								$sql->whereIn('pc.category_id',$CatArrVal);
+							// $sql->whereNotIn('pc.category_id',['198','199','200','201']);
 
-								// $sql->where(function($query){
-								// 	$from = Carbon::now()->subDays(30);
-								// 	$to = Carbon::now();
-								// 	$query->where('po.new_arrival','=','Yes');
-								// 	$query->orwhereBetween(DB::raw("DATE_FORMAT(po.add_datetime,'%Y-%m-%d')"),[$from,$to]);
-								// });
-							}
+							// $sql->where(function($query){
+							// 	$from = Carbon::now()->subDays(30);
+							// 	$to = Carbon::now();
+							// 	$query->where('po.new_arrival','=','Yes');
+							// 	$query->orwhereBetween(DB::raw("DATE_FORMAT(po.add_datetime,'%Y-%m-%d')"),[$from,$to]);
+							// });
 						}
+					}
 
-						if($ismaxTwoDay == 'Y'){
-							$sql->where('po.maxtwodaydelivery','Yes');
-							$sql->whereNotIn('po.sku', function ($query) {
-									$query->select('product_sku')->from('pu_dealofweek')->where('status','=','1')->where('start_date','<=',date('Y-m-d H:i'))->where('end_date','>=',date('Y-m-d H:i'));
-							});
-						}
+					if($ismaxTwoDay == 'Y'){
+						$sql->where('po.maxtwodaydelivery','Yes');
+						$sql->whereNotIn('po.sku', function ($query) {
+								$query->select('product_sku')->from('pu_dealofweek')->where('status','=','1')->where('start_date','<=',date('Y-m-d H:i'))->where('end_date','>=',date('Y-m-d H:i'));
+						});
+					}
 
-						$sql->orderBy('po.current_stock');
-						$sql->orderBy('po.nandansons_current_stock');
-						$sql->orderBy('po.cosmo_current_stock');
-						$sql->orderBy('po.pca_current_stock');
-						$sql->orderBy('po.perfumeworldwide_currentstock');
-						$sql->orderBy('po.nd_current_stock');
-						$VariationProducts = $sql->groupBy('po.products_id')->get();
+					$sql->orderBy('po.current_stock');
+					$sql->orderBy('po.nandansons_current_stock');
+					$sql->orderBy('po.cosmo_current_stock');
+					$sql->orderBy('po.pca_current_stock');
+					$sql->orderBy('po.perfumeworldwide_currentstock');
+					$sql->orderBy('po.nd_current_stock');
+					$VariationProducts = $sql->groupBy('po.products_id')->get();
 
 					foreach($VariationProducts as $Product)
 					{
@@ -264,6 +265,7 @@ trait CommonTrait
 									break;
 								}
 							} else if ($Product->stock == "In") {
+
 								$NewProduct[$i] = $this->PrepareProduct($Product,$i);
 								if(isset($VariationData[$NewProduct[$i]->variation_id]['size_cnt']))
 									$NewProduct[$i]->size_cnt = $VariationData[$NewProduct[$i]->variation_id]['size_cnt'];
@@ -282,6 +284,7 @@ trait CommonTrait
 							} else {
 								if ($NewProduct[$i]->is_atomizer != 'Yes' && $NewProduct[$i]->stock != 'In') {
 									$NewProduct[$i] = $this->PrepareProduct($Product,$i);
+
 									if(isset($VariationData[$NewProduct[$i]->variation_id]['size_cnt']))
 										$NewProduct[$i]->size_cnt = $VariationData[$NewProduct[$i]->variation_id]['size_cnt'];
 									else
@@ -404,7 +407,7 @@ trait CommonTrait
 		if($Flag == "NEW ARRIVALS")
 		{
 			$ProdQry = DB::table('pu_products_new_arrivals')
-						->select('products_id','sku','extra_images','image','product_name','maxtwodaydelivery','category_id','product_price','total_variants','min_price','max_price','w_min_price','w_max_price','product_type','short_description','vmanufacture','gender','sale_price',
+						->select('products_id','sku','image','product_name','maxtwodaydelivery','category_id','product_price','total_variants','min_price','max_price','w_min_price','w_max_price','product_type','short_description','vmanufacture','gender','sale_price',
 									'brand_name','stock','wholesale_product_price','retail_price','maxtwodaydelivery','imanufactureid','WebsiteStock','vtype');
 
 			if(Session::get('eusertype') && strtolower(Session::get('eusertype')) == 'wholesaler')
@@ -416,7 +419,7 @@ trait CommonTrait
 		 if($Flag == "BEST SELLERS")
 		 {
 			$ProdQry = DB::table('pu_products_best_sellers')
-						->select('products_id','sku','extra_images','image','product_name','maxtwodaydelivery','category_id','product_price','total_variants','min_price','max_price','w_min_price','w_max_price','product_type','short_description','vmanufacture','gender','sale_price',
+						->select('products_id','sku','image','product_name','maxtwodaydelivery','category_id','product_price','total_variants','min_price','max_price','w_min_price','w_max_price','product_type','short_description','vmanufacture','gender','sale_price',
 									'brand_name','stock','wholesale_product_price','retail_price','maxtwodaydelivery','imanufactureid','WebsiteStock','vtype');
 
 			if(Session::get('eusertype') && strtolower(Session::get('eusertype')) == 'wholesaler')
@@ -434,7 +437,6 @@ trait CommonTrait
 				Cache::put('homepage_newarrival_cache', $Prods);
 			 }
 			 else{
-
 				$Prods = Cache::get('homepage_newarrival_cache');
 			}
 			//echo "<pre>"; print_r($Prods); exit;
@@ -731,7 +733,7 @@ trait CommonTrait
 									'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price',
 									'po.perfumeworldwide_sku','po.perfumeworldwide_currentstock','po.perfumeworldwide_wholesale_price','po.perfumeworldwide_our_price','po.perfumeworldwide_retail_price',
 									'po.nd_sku','po.nd_current_stock','po.nd_wholesale_price','po.nd_our_price','po.nd_retail_price',
-									'po.vtype','po.variation_id','po.refine_feature','m.vmanufacture','po.product_type','b.brand_name','pc.category_id','c.category_name','c.parent_id','p1.extra_images')
+									'po.vtype','po.variation_id','po.refine_feature','m.vmanufacture','po.product_type','b.brand_name','pc.category_id','c.category_name','c.parent_id')
 						/*
                         ->addSelect(['TotalRate' => ProductsReview::select(DB::raw('SUM(star_rate)'))
 										->where('approved','=','Yes')->where('star_rate','!=','0')->whereColumn('sku','po.sku')
@@ -741,7 +743,6 @@ trait CommonTrait
                         ->join('pu_products_category as pc','po.products_id','=','pc.products_id')
 						->join('pu_category as c','pc.category_id','=','c.category_id')
 						->join('pu_brand as b','b.brand_id','=','po.brand_id')
-						->leftJoin('pu_products_one as p1','po.products_id','=','p1.products_id')
 						->join('pu_manufacture as m',function($join){
 							$join->on('po.imanufactureid','=','m.imanufactureid');
 							$join->on('b.imanufactureid','=','m.imanufactureid');
@@ -1486,6 +1487,7 @@ trait CommonTrait
         $new_vcat_name = '';
 		//$CatDetails = Category::where('category_id','=',$category_id)->where('status','=','1')->orderBy('category_name')->get();
 		$CatDetails = CacheService::Categories()->firstWhere('category_id',(int)$category_id);
+
         if($CatDetails)
         {
             $new_iparent_id = $CatDetails->parent_id;
@@ -1493,8 +1495,10 @@ trait CommonTrait
             $new_vcat_name = remove_special_chars(trim($CatDetails->category_name));
             while($new_iparent_id != 0)
             {
-				//$ParentCatDetails = Category::where('category_id','=',$new_iparent_id)->where('status','=','1')->orderBy('category_name')->get();
+				// $ParentCatDetails = Category::where('category_id','=',$new_iparent_id)
+				// 		->where('status','=','1')->orderBy('category_name')->get();
 				$ParentCatDetails = CacheService::Categories()->firstWhere('category_id',(int)$new_iparent_id);
+
                 $new_iparent_id = $ParentCatDetails->parent_id;
                 $new_icat_id = $ParentCatDetails->category_id;
                 $new_vcat_name = remove_special_chars(trim($ParentCatDetails->category_name)) . "/" . $new_vcat_name;
@@ -1506,7 +1510,6 @@ trait CommonTrait
 	public function SetFiltersNew($Params)
 	{
         //dd($Params->filters);
-
         $AllFilters = [];
         if(isset($Params->filters) && $Params->filters != 'view')
         {
@@ -1526,7 +1529,8 @@ trait CommonTrait
 		$ParamString = ['cid' => 'categories', 'mid' => 'brands','family' => 'fragrance_family', 'type' => 'vtype',
 				'formulation' => 'formulation', 'stock' => 'stock', 'size' => 'size',
 				'special' => 'special', 'coverage' => 'coverage', 'finish' => 'finish',
-				'skin' => 'skin_type', 'features' => 'features', 'gen' => 'gender', 'max2day' => 'max2day', 'ftype' => 'ftype', 'sort' => 'sort', 'InStockItems' => 'InStockItems', 'OnTopRated' => 'OnTopRated', 'OnSaleDeal' => 'OnSaleDeal','fragrance_occasion' => 'fragrance_occasion','fragrance_season' => 'fragrance_season','review_rating' => 'review_rating'];
+				'skin' => 'skin_type', 'features' => 'features', 'gen' => 'gender', 'max2day' => 'max2day', 'ftype' => 'ftype', 'sort' => 'sort', 'InStockItems' => 'InStockItems', 'OnTopRated' => 'OnTopRated', 'OnSaleDeal' => 'OnSaleDeal','fragrance_occasion' => 'fragrance_occasion','fragrance_season' => 'fragrance_season','review_rating' => 'review_rating', 'note' => 'note', 'top' => 'top','middle' => 'middle','base' => 'base'];
+
 		foreach($ExpFilters as $AllParam)
 		{
 			$ExpParam = explode("-",$AllParam);
@@ -1545,7 +1549,25 @@ trait CommonTrait
 					}
 					//$AllFilters['fragrance_season'][] = explode(",",$fragrance_season_param);
 					$AllFilters['fragrance_season'] = explode(",",$fragrance_season_param);
-				} else {
+				}
+				else if(isset($ExpParam[0]) && $ExpParam[0] == 'top' || isset($ExpParam[0]) && $ExpParam[0] == 'middle' || isset($ExpParam[0]) && $ExpParam[0] == 'base'){
+					$top = $ExpParam[1];
+					if(isset($ExpParam[2])){
+						$top .= " ".$ExpParam[2];
+					}
+					//$top = urlencode($top);
+					$AllFilters[$ExpParam[0]] = explode(",",$top);
+					//$AllFilters['top'] = explode(",",$top);
+					//echo "<pre>"; print_r($AllFilters['top']); echo "</pre>"; exit;
+				} else if(isset($ExpParam[0]) && $ExpParam[0] == 'note')
+				{
+					$note = $ExpParam[1];
+					if(isset($ExpParam[2])){
+						$note .= " ".$ExpParam[2];
+					}
+					$AllFilters[$ExpParam[0]] = explode(",",$note);
+				}
+				else {
 					$Key = $ParamString[$ExpParam[0]];
 					if(isset($ExpParam[1])){
 						$AllFilters[$Key] = explode(',',$ExpParam[1]);
@@ -1593,6 +1615,7 @@ trait CommonTrait
 		$ismaxTwoDay = 'N';
 		$isPocketPerfume = 'N';
 		$isGiftSet = 'N';
+		//dd($Filters);
 		if(isset($Filters['sort']) && isset($Filters['sort'][0])){
 			$Filters['sortby'] = $Filters['sort'][0];
 		}
@@ -1610,7 +1633,6 @@ trait CommonTrait
 		}
 
 		$SortBy = isset($Filters['sortby'])?$Filters['sortby']:'';
-
 		//$CatProdsQry = DB::table('pu_products as po')
 		//$query = DB::raw("IF(INSTR(LOWER(po.size),'ml') > 0,ROUND((REPLACE(LOWER(po.size),'ml','') * 0.34),2),REPLACE(REPLACE(LOWER(po.size),'oz.',''),'oz','')) as psize");
 		if(isset($Filters['size']) && count($Filters['size']) > 0){
@@ -1628,6 +1650,7 @@ trait CommonTrait
 						$join->on('b.imanufactureid','=','m.imanufactureid');
 					})
 					->leftJoin('pu_products_one as po1', 'po.products_id', '=', 'po1.products_id')
+					->leftJoin('pu_products_attribute as patt', 'po.products_id', '=', 'patt.products_id')
 					->select($query,'po.size',DB::raw('COUNT(po.variation_id) as variarioncnt')
 ,'po.products_id','po.sku','po.is_gift_wrap','po.short_description','po.maxtwodaydelivery','po.fragrance_family','po.formulation','po.size','po.coverage','po.finish','po.skin_type','po.product_name','po.vtype','po.imanufactureid','po.brand_id','po.is_atomizer',
 								'po.fragrance_seasons','po.fragrance_occasion','po.fragrance_personality','po.image','po.current_stock','po.retail_price','po.cosmo_retail_price','po.pca_retail_price','po.minimum_stock','po.gender','po.new_arrival','po.featured','po.clearance','po.top_seller',
@@ -1635,7 +1658,7 @@ trait CommonTrait
 								'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price',
 								'po.perfumeworldwide_sku','po.perfumeworldwide_currentstock','po.perfumeworldwide_wholesale_price','po.perfumeworldwide_our_price','po.perfumeworldwide_retail_price',
 								'po.nd_sku','po.nd_current_stock','po.nd_wholesale_price','po.nd_our_price','po.nd_retail_price',
-								'po.vtype','po.variation_id','po.refine_feature','po1.extra_images as extra_images','m.vmanufacture','po.product_type','b.brand_name','m.is_popular','pc.category_id','c.parent_id','po.add_datetime','po.upd_datetime')
+								'po.vtype','po.variation_id','po.refine_feature','po1.extra_images as extra_images','m.vmanufacture','po.product_type','b.brand_name','m.is_popular','pc.category_id','c.parent_id','po.add_datetime','po.upd_datetime','patt.topnote', 'patt.middlenote', 'patt.basenote')
 					/*->select('po.products_id','po.sku','po.is_gift_wrap','po.short_description','po.maxtwodaydelivery','po.fragrance_family','po.formulation','po.size','po.coverage','po.finish','po.skin_type','po.product_name','po.vtype','po.imanufactureid','po.brand_id','po.is_atomizer',
 								'po.fragrance_seasons','po.fragrance_occasion','po.fragrance_personality','po.image','po.current_stock','po.retail_price','po.cosmo_retail_price','po.pca_retail_price','po.minimum_stock','po.gender','po.new_arrival','po.featured','po.clearance','po.top_seller',
 								'po.product_type','po.cosmo_sku','po.cosmo_current_stock','po.cosmo_wholesale_price','po.cosmo_our_price','po.pca_sku','po.pca_current_stock','po.pca_wholesale_price','po.pca_our_price',
@@ -1804,6 +1827,87 @@ trait CommonTrait
 					}
 				}
 			});
+		}
+
+		if(isset($Filters['top']) && count($Filters['top']) > 0)
+		{
+			$Filters['top'][0] = remove_special_chars($Filters['top'][0]);
+			$Filters['top'][0] = str_replace("-"," ",$Filters['top'][0]);
+			$top_keywords = preg_split('/\s+/', trim($Filters['top'][0]));
+
+			/*Log::info('Top New '.$Filters['top'][0]);
+			$CatProdsQry->join('pu_products_attribute as pa', 'pa.products_id', '=', 'po.products_id')
+				->where('pa.template','Maxaroma-Edit')
+				->where('pa.topnote','like', '%'.$Filters['top'][0].'%');*/
+
+			$CatProdsQry->join('pu_products_attribute as pa', 'pa.products_id', '=', 'po.products_id')
+						->where('pa.template', 'Maxaroma-Edit')
+						->where(function ($query) use ($top_keywords) {
+							foreach ($top_keywords as $keyword) {
+								$query->orWhere('pa.topnote', 'like', '%' . $keyword . '%');
+							}
+						});
+
+		}
+		if(isset($Filters['middle']) && count($Filters['middle']) > 0)
+		{
+			$Filters['middle'][0] = remove_special_chars($Filters['middle'][0]);
+			$Filters['middle'][0] = str_replace("-"," ",$Filters['middle'][0]);
+			$middle_keywords = preg_split('/\s+/', trim($Filters['middle'][0]));
+			/*$CatProdsQry->join('pu_products_attribute as pa', 'pa.products_id', '=', 'po.products_id')
+				->where('pa.template','Maxaroma-Edit')
+				->where('pa.middlenote','like', '%'.str_replace("-"," ",$Filters['middle'][0]).'%');*/
+
+			$CatProdsQry->join('pu_products_attribute as pa', 'pa.products_id', '=', 'po.products_id')
+						->where('pa.template', 'Maxaroma-Edit')
+						->where(function ($query) use ($middle_keywords) {
+							foreach ($middle_keywords as $keyword) {
+								$query->orWhere('pa.middlenote', 'like', '%' . $keyword . '%');
+							}
+						});
+
+		}
+		if(isset($Filters['base']) && count($Filters['base']) > 0)
+		{
+			$Filters['base'][0] = remove_special_chars($Filters['base'][0]);
+			$Filters['base'][0] = str_replace("-"," ",$Filters['base'][0]);
+			$base_keywords = preg_split('/\s+/', trim($Filters['base'][0]));
+
+			/*$CatProdsQry->join('pu_products_attribute as pa', 'pa.products_id', '=', 'po.products_id')
+				->where('pa.template','Maxaroma-Edit')
+				->where('pa.basenote','like', '%'.str_replace("-"," ",$Filters['base'][0]).'%');*/
+
+			$CatProdsQry->join('pu_products_attribute as pa', 'pa.products_id', '=', 'po.products_id')
+						->where('pa.template', 'Maxaroma-Edit')
+						->where(function ($query) use ($base_keywords) {
+							foreach ($base_keywords as $keyword) {
+								$query->orWhere('pa.basenote', 'like', '%' . $keyword . '%');
+							}
+						});
+		}
+		if(isset($Filters['note']) && count($Filters['note']) > 0)
+		{
+			// $Filters['note'][0] = remove_special_chars($Filters['note'][0]);
+			// $Filters['note'][0] = str_replace("-"," ",$Filters['note'][0]);
+			// $note_keywords = preg_split('/\s+/', trim($Filters['note'][0]));
+
+			$note_keywords = $Filters['note'];
+
+			/*$CatProdsQry->join('pu_products_attribute as pa', 'pa.products_id', '=', 'po.products_id')
+				->where('pa.template','Maxaroma-Edit')
+				->where('pa.basenote','like', '%'.str_replace("-"," ",$Filters['base'][0]).'%');*/
+
+			$CatProdsQry->join('pu_products_attribute as pa', 'pa.products_id', '=', 'po.products_id')
+						//->where('pa.template', 'Maxaroma-Edit')
+						->where(function ($query) use ($note_keywords) {
+							foreach ($note_keywords as $keyword) {
+								$keyword = remove_special_chars($keyword);
+								$keyword = str_replace("-"," ",$keyword);
+								$query->orWhere('pa.topnote', 'like', '%' . $keyword . '%');
+								$query->orWhere('pa.middlenote', 'like', '%' . $keyword . '%');
+								$query->orWhere('pa.basenote', 'like', '%' . $keyword . '%');
+							}
+						});
 		}
 
 		if(isset($Filters['categories']) && count($Filters['categories']) > 0){
@@ -3067,6 +3171,17 @@ trait CommonTrait
 		$Filters[$i]['FragranceSeason']['Data'][] = ['label' => 'Year Around','value' => 'Year Around'];
 		$Filters[$i]['FragranceSeason']['Selected'] = [];
 
+		$Notes = DB::table('pu_product_notes')->get();
+		if($Notes && $Notes->count() > 0)
+		{
+			$Filters[$i]['Notes']['Attr'] = ['id' => 'note', 'title' => 'Notes'];
+			foreach($Notes as $ProdNote)
+			{
+				$Filters[$i]['Notes']['Data'][] = ['label' => $ProdNote->note,'value' => $ProdNote->note];
+			}
+			$Filters[$i]['Notes']['Selected'] = [];
+		}
+
         if($ListFrom != 'deals'){
 			//$Filters[$i]['FragranceType']['Attr'] = ['id' => 'fragrance_type', 'title' => 'Fragrance Type'];
 
@@ -3260,7 +3375,6 @@ trait CommonTrait
 					->join('pu_products_category as pc','po.products_id','=','pc.products_id')
 					->join('pu_category as c','pc.category_id','=','c.category_id')
 					->join('pu_brand as b','b.brand_id','=','po.brand_id')
-					->join('pu_products_one as p1', 'po.products_id', '=', 'p1.products_id')
 					->join('pu_manufacture as m',function($join){
 						$join->on('po.imanufactureid','=','m.imanufactureid');
 						$join->on('b.imanufactureid','=','m.imanufactureid');
@@ -3271,7 +3385,7 @@ trait CommonTrait
 								'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price',
 								'po.perfumeworldwide_sku','po.perfumeworldwide_currentstock','po.perfumeworldwide_wholesale_price','po.perfumeworldwide_our_price','po.perfumeworldwide_retail_price',
 								'po.nd_sku','po.nd_current_stock','po.nd_wholesale_price','po.nd_our_price','po.nd_retail_price',
-								'po.vtype','po.variation_id','po.refine_feature','m.vmanufacture','po.product_type','b.brand_name','m.is_popular','pc.category_id','c.parent_id','p1.extra_images')
+								'po.vtype','po.variation_id','po.refine_feature','m.vmanufacture','po.product_type','b.brand_name','m.is_popular','pc.category_id','c.parent_id')
 					/*
                     ->addSelect(['TotalRate' => ProductsReview::select(DB::raw('SUM(star_rate)'))
 										->where('approved','=','Yes')->where('star_rate','!=','0')->whereColumn('sku','=','po.sku')
@@ -3472,6 +3586,7 @@ trait CommonTrait
 		$VariationIDs=[];
 		$ProdIds=[];
 		$DealData = GetDealOfWeek('',"Weekly");
+
 		$CatProdsQry->offset($Offset)->chunk(1000, function($MyCatProdsWithoutLimit)use(&$CatProducts,&$VariationIDs,&$ProdIds,&$TotalProds,$CategoryID,$DealData,$FilterStock,$FilterMinPrice,$FilterMaxPrice,$BrandInSearch)
 		{
 			//$SliderCategory = $this->GetCategories($CatProdsWithoutLimit);
@@ -3719,7 +3834,7 @@ trait CommonTrait
 		return $ProductsDetails;
 	}
 
-	public function GetProductsForMaxaromaTemplate($brand_id,$skus,$pageFrom='')
+	public function GetProductsForMaxaromaTemplate($brand_id,$skus)
 	{
 		$CatProdsQry = DB::table('pu_products as po')
 					->join('pu_products_category as pc','po.products_id','=','pc.products_id')
@@ -3738,7 +3853,6 @@ trait CommonTrait
 					->where('po.status','=','1')
 					->where('c.status','=','1')
 					->where('po.imanufactureid',$brand_id);
-
 		if(count($skus) > 0)
 		{
 			$CatProdsQry->whereIn('po.sku',$skus);
@@ -3749,25 +3863,9 @@ trait CommonTrait
         else
             $CatProdsQry->whereIn('po.product_type',['both','retailer']);
 
-		$MaxQry = $CatProdsQry;
-
-		if($pageFrom == 'PDP')
-		{
-			$CatProdsQry->join('pu_products_attribute as pa','po.products_id','=','pa.products_id');
-			$CatProdsQry->where('pa.template','Maxaroma-Edit');
-			$CatProdsQry->where('po.current_stock','>',0);
-		}
+		//$CatProdsQry->groupBy(['po.variation_id']);
 
 		$CatProdsWithoutLimit = $CatProdsQry->get();
-
-		if($pageFrom == 'PDP')
-		{
-			if(empty($CatProdsWithoutLimit))
-			{
-				$CatProdsWithoutLimit = $MaxQry->get();
-			}
-		}
-
 		$CatProducts = [];
 		$TotalProds = 0;
 		$VariationIDs=[];
@@ -3791,6 +3889,7 @@ trait CommonTrait
 				$CatProd->prod_image = config('global.NO_IMAGE_LARGE');
 			}
 
+			$CatProd->extra_images = "PP3614273308229.jpg";
 			$ExtraImages = !empty($CatProd->extra_images)? explode('#', $CatProd->extra_images): [];
 			$CatProd->second_image = "";
 			if(count($ExtraImages) > 0)
@@ -3892,6 +3991,215 @@ trait CommonTrait
 		// }
 		$ProductsDetails = ['Products' => $CatProducts];
 		return $ProductsDetails;
+	}
+
+	public function CountOptionsForMaxaromaTemplate($VariationIDs=[],$DisplayProducts=[],$CatArrVal=[],$Flag='',$ismaxTwoDay = '', $isPocketPerfume = ''){
+		$NewProduct = [];
+		$VariationData = [];
+		$VariationIDs = array_unique($VariationIDs);
+
+		$VariationProducts = Cache::get('variation_cache');
+
+		if (Cache::has('variation_cache')) {
+			$VariationProducts = Cache::get('variation_cache');
+
+			foreach($VariationProducts as $variation_id => $Product){
+
+				if(Session::has("eusertype") && Session::get("eusertype")=="Wholesaler" )
+				{
+					$VariationData[$variation_id]['min_price'] = $Product['w_min_price'];
+					$VariationData[$variation_id]['max_price'] = $Product['w_max_price'];
+				}
+				else
+				{
+					$VariationData[$variation_id]['min_price'] = $Product['min_price'];
+					$VariationData[$variation_id]['max_price'] = $Product['max_price'];
+
+				}
+				$VariationData[$variation_id]['size_cnt'] = $Product['total_count'];
+			}
+		} else {
+			$VariationProductQry = DB::table('pu_product_variations as pv')
+								->select('pv.variation_id','pv.total_count','pv.min_price','pv.max_price','pv.w_min_price','pv.w_max_price')
+								->whereIn('pv.variation_id',$VariationIDs);
+			$VariationProducts = $VariationProductQry->get()->toArray();
+			foreach($VariationProducts as $Product){
+
+				if(Session::has("eusertype") && Session::get("eusertype")=="Wholesaler" )
+				{
+					$VariationData[$Product->variation_id]['min_price'] = $Product->w_min_price;
+					$VariationData[$Product->variation_id]['max_price'] = $Product->w_max_price;
+				}
+				else
+				{
+					$VariationData[$Product->variation_id]['min_price'] = $Product->min_price;
+					$VariationData[$Product->variation_id]['max_price'] = $Product->max_price;
+				}
+				$VariationData[$Product->variation_id]['size_cnt'] = $Product->total_count;
+			}
+		}
+
+		foreach($DisplayProducts as $ProductNew)
+		{
+			if(isset($VariationData[$ProductNew->variation_id])){
+				$ProductNew->size_cnt = $VariationData[$ProductNew->variation_id]['size_cnt'];
+			} else {
+				$ProductNew->size_cnt = 0;
+			}
+
+			if(isset($VariationData[$ProductNew->variation_id]) && count($VariationData[$ProductNew->variation_id]) > 0)
+			{
+				$ProductNew->minPrice = $VariationData[$ProductNew->variation_id]['min_price'];
+				$ProductNew->maxPrice = $VariationData[$ProductNew->variation_id]['max_price'];
+			} else {
+				$ProductNew->minPrice = 0;
+				$ProductNew->maxPrice = 0;
+			}
+			$NewProduct[] = $ProductNew;
+		}
+
+		// for($i=0;$i<count($NewProduct);$i++)
+		// {
+		// 	if(($NewProduct[$i]->is_atomizer == "Yes" && $isPocketPerfume=='N') || $NewProduct[$i]->stock == "Out")
+		// 	{
+		// 		$sql = DB::table('pu_products as po')
+		// 			->join('pu_products_category as pc','po.products_id','=','pc.products_id')
+		// 			->join('pu_category as c','pc.category_id','=','c.category_id')
+		// 			->select('po.products_id','po.sku','po.is_gift_wrap','po.short_description','po.maxtwodaydelivery','po.fragrance_family','po.formulation','po.size','po.coverage','po.finish','po.skin_type','po.product_name','po.vtype','po.imanufactureid','po.brand_id','po.is_atomizer',
+		// 					'po.fragrance_seasons','po.fragrance_occasion','po.fragrance_personality','po.image','po.current_stock','po.retail_price','po.cosmo_retail_price','po.pca_retail_price','po.minimum_stock','po.gender','po.new_arrival','po.featured','po.clearance','po.top_seller',
+		// 					'po.product_type','po.cosmo_sku','po.cosmo_current_stock','po.cosmo_wholesale_price','po.cosmo_our_price','po.pca_sku','po.pca_current_stock','po.pca_wholesale_price','po.pca_our_price',
+		// 					'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price','po.vtype','po.variation_id','po.refine_feature',
+		// 					'po.perfumeworldwide_sku','po.perfumeworldwide_currentstock','po.perfumeworldwide_wholesale_price','po.perfumeworldwide_our_price','po.perfumeworldwide_retail_price',
+		// 					'po.nd_sku','po.nd_current_stock','po.nd_wholesale_price','po.nd_our_price','po.nd_retail_price',
+		// 					'po.product_type','pc.category_id')
+		// 			->WHERE('po.variation_id',$NewProduct[$i]->variation_id);
+		// 		$sql->where('po.status','=','1')->where('c.status','=','1');
+
+		// 		$sql->orderBy('po.current_stock');
+		// 		$sql->orderBy('po.nandansons_current_stock');
+		// 		$sql->orderBy('po.cosmo_current_stock');
+		// 		$sql->orderBy('po.pca_current_stock');
+		// 		$sql->orderBy('po.perfumeworldwide_currentstock');
+		// 		$sql->orderBy('po.nd_current_stock');
+		// 		$VariationProducts = $sql->groupBy('po.products_id')->get();
+
+		// 		foreach($VariationProducts as $Product)
+		// 		{
+		// 			$Product->vmanufacture = $NewProduct[$i]->vmanufacture;
+		// 			$Product->brand_name = $NewProduct[$i]->brand_name;
+		// 			$Product->gender = $NewProduct[$i]->gender;
+
+		// 			// if ($Product->products_id == $NewProduct[$i]->products_id)
+		// 			// 	continue;
+		// 			if ($Product->variation_id != $NewProduct[$i]->variation_id)
+		// 				continue;
+
+		// 			$Product = $this->SetProduct($Product);
+		// 			if ($Product->is_atomizer == "Yes" && $Product->stock == "Out")
+		// 				continue;
+		// 			if ($Product->stock == "Out" && $Product->is_atomizer == "No")
+		// 				continue;
+
+		// 			if ($Product->is_atomizer == "No")
+		// 			{
+		// 				if ($Product->stock == "In" && $Product->category_id == $NewProduct[$i]->category_id)
+		// 				{
+		// 					$NewProduct[$i] = $this->PrepareProduct($Product,$i);
+		// 					if(isset($VariationData[$NewProduct[$i]->variation_id]['size_cnt']))
+		// 						$NewProduct[$i]->size_cnt = $VariationData[$NewProduct[$i]->variation_id]['size_cnt'];
+		// 					else
+		// 						$NewProduct[$i]->size_cnt = 0;
+
+		// 					if(isset($VariationData[$NewProduct[$i]->variation_id]) && count($VariationData[$NewProduct[$i]->variation_id]) > 0)
+		// 					{
+		// 						$NewProduct[$i]->minPrice = $VariationData[$NewProduct[$i]->variation_id]['min_price'];
+		// 						$NewProduct[$i]->maxPrice = $VariationData[$NewProduct[$i]->variation_id]['max_price'];
+
+		// 					} else {
+		// 						$NewProduct[$i]->minPrice = 0;
+		// 						$NewProduct[$i]->maxPrice = 0;
+		// 					}
+		// 					if (count($CatArrVal) > 0) {
+		// 						$isAtom1 = 'No';
+		// 						for ($j = 0; $j < count($CatArrVal); $j++) {
+		// 							if ($CatArrVal[$j] != 68 && $CatArrVal[$j] != 70 &&  $CatArrVal[$j] != 71 &&  $CatArrVal[$j] != 69) {
+		// 								$isAtom1 = 'Yes';
+		// 							}
+		// 						}
+		// 						if ($isAtom1 == 'Yes') {
+		// 							break;
+		// 						}
+		// 					} else {
+		// 						break;
+		// 					}
+		// 				} else if ($Product->stock == "In") {
+
+		// 					$NewProduct[$i] = $this->PrepareProduct($Product,$i);
+		// 					if(isset($VariationData[$NewProduct[$i]->variation_id]['size_cnt']))
+		// 						$NewProduct[$i]->size_cnt = $VariationData[$NewProduct[$i]->variation_id]['size_cnt'];
+		// 					else
+		// 						$NewProduct[$i]->size_cnt = 0;
+
+		// 					if(isset($VariationData[$NewProduct[$i]->variation_id]) && count($VariationData[$NewProduct[$i]->variation_id]) > 0)
+		// 					{
+		// 						$NewProduct[$i]->minPrice = $VariationData[$NewProduct[$i]->variation_id]['min_price'];
+		// 						$NewProduct[$i]->maxPrice = $VariationData[$NewProduct[$i]->variation_id]['max_price'];
+		// 					} else {
+		// 						$NewProduct[$i]->minPrice = 0;
+		// 						$NewProduct[$i]->maxPrice = 0;
+		// 					}
+
+		// 				} else {
+		// 					if ($NewProduct[$i]->is_atomizer != 'Yes' && $NewProduct[$i]->stock != 'In') {
+		// 						$NewProduct[$i] = $this->PrepareProduct($Product,$i);
+
+		// 						if(isset($VariationData[$NewProduct[$i]->variation_id]['size_cnt']))
+		// 							$NewProduct[$i]->size_cnt = $VariationData[$NewProduct[$i]->variation_id]['size_cnt'];
+		// 						else
+		// 							$NewProduct[$i]->size_cnt = 0;
+
+		// 						if(isset($VariationData[$NewProduct[$i]->variation_id]) && count($VariationData[$NewProduct[$i]->variation_id]) > 0)
+		// 						{
+		// 							$NewProduct[$i]->minPrice = $VariationData[$NewProduct[$i]->variation_id]['min_price'];
+		// 							$NewProduct[$i]->maxPrice = $VariationData[$NewProduct[$i]->variation_id]['max_price'];
+		// 						} else {
+		// 							$NewProduct[$i]->minPrice = 0;
+		// 							$NewProduct[$i]->maxPrice = 0;
+		// 						}
+		// 					}
+		// 				}
+		// 			} else {
+		// 				if ($Product->stock == "In" && ($NewProduct[$i]->stock != 'In' || in_array(68, $CatArrVal) || in_array(70, $CatArrVal) || in_array(71, $CatArrVal) || in_array(69, $CatArrVal))) {
+		// 					$NewProduct[$i] = $this->PrepareProduct($Product,$i);
+		// 					if(isset($VariationData[$NewProduct[$i]->variation_id]['size_cnt']))
+		// 						$NewProduct[$i]->size_cnt = $VariationData[$NewProduct[$i]->variation_id]['size_cnt'];
+		// 					else
+		// 						$NewProduct[$i]->size_cnt = 0;
+
+		// 					if(isset($VariationData[$NewProduct[$i]->variation_id]) && count($VariationData[$NewProduct[$i]->variation_id]) > 0)
+		// 					{
+		// 						$NewProduct[$i]->minPrice = $VariationData[$NewProduct[$i]->variation_id]['min_price'];
+		// 						$NewProduct[$i]->maxPrice = $VariationData[$NewProduct[$i]->variation_id]['max_price'];
+		// 					} else {
+		// 						$NewProduct[$i]->minPrice = 0;
+		// 						$NewProduct[$i]->maxPrice = 0;
+		// 					}
+		// 					$isAtom = 'No';
+		// 					for ($j = 0; $j < count($CatArrVal); $j++) {
+		// 						if ($CatArrVal[$j] == 68 || $CatArrVal[$j] == 70 ||  $CatArrVal[$j] == 71 ||  $CatArrVal[$j] == 69) {
+		// 							$isAtom = 'Yes';
+		// 						}
+		// 					}
+		// 					if ($isAtom == 'Yes')
+		// 						break;
+		// 				}
+		// 			}
+		// 		}
+		// 	}
+		// }
+
+		return $NewProduct;
+		//$TotalVariations = array_count_values(array_column($VariationProducts, 'variation_id'));
 	}
 
     public function GetProductsForMainCategory($Flag,$CategoryID,$limit=12,$Filters=[])
@@ -4942,11 +5250,45 @@ trait CommonTrait
 			foreach($Params as $pkey => $Param)
 			{
 				$ExpParam = explode('-',$Param);
-				//if(count($ExpParam)>1)
-				if(count($ExpParam)>1 && $ExpParam[1] != "pocket") //09052024
-					$NewParams[$ExpParam[0]] = $ExpParam[1];
 
-				$sizeParams[$ExpParam[0]] = $ExpParam;
+				if(count($ExpParam) > 0 && isset($ExpParam[0]) && ($ExpParam[0] == 'top' || $ExpParam[0] == 'base' || $ExpParam[0] == 'middle'))
+				{
+					if(isset($ExpParam[1]) && $ExpParam[1] != ''){
+						$NewParams[$ExpParam[0]] = $ExpParam[1];
+					}
+					if(isset($ExpParam[2]) && $ExpParam[2] != ''){
+						$NewParams[$ExpParam[0]] .= " ".$ExpParam[2];
+					}
+					if(isset($ExpParam[3]) && $ExpParam[3] != ''){
+						$NewParams[$ExpParam[0]] .= " ".$ExpParam[3];
+					}
+					if(isset($ExpParam[4]) && $ExpParam[4] != ''){
+						$NewParams[$ExpParam[0]] .= " ".$ExpParam[4];
+					}
+				}
+				else if(count($ExpParam) > 0 && isset($ExpParam[0]) && $ExpParam[0] == 'note')
+				{
+					if(isset($ExpParam[1]) && $ExpParam[1] != ''){
+						$NewParams[$ExpParam[0]] = $ExpParam[1];
+					}
+					if(isset($ExpParam[2]) && $ExpParam[2] != ''){
+						$NewParams[$ExpParam[0]] .= " ".$ExpParam[2];
+					}
+					if(isset($ExpParam[3]) && $ExpParam[3] != ''){
+						$NewParams[$ExpParam[0]] .= " ".$ExpParam[3];
+					}
+					if(isset($ExpParam[4]) && $ExpParam[4] != ''){
+						$NewParams[$ExpParam[0]] .= " ".$ExpParam[4];
+					}
+				}
+				else {
+					//if(count($ExpParam)>1)
+					if(count($ExpParam)>1 && $ExpParam[1] != "pocket") //09052024
+						$NewParams[$ExpParam[0]] = $ExpParam[1];
+
+					$sizeParams[$ExpParam[0]] = $ExpParam;
+				}
+
 			}
 		}
 
@@ -5272,7 +5614,7 @@ trait CommonTrait
 			$Bredcrum[$i]['rank'] = 0;
 			$Rank++;
 			$i++;
-			$Bredcrum[$i]['title'] = ucwords($RequestParams->keyword);
+			$Bredcrum[$i]['title'] = ucwords(rawurldecode($RequestParams->keyword));
 			$Bredcrum[$i]['link'] = config('global.SITE_URL').'p4u/key-'.$RequestParams->keyword.'/view';
 			$Bredcrum[$i]['rank'] = 1;
 			$Rank++;
@@ -5445,7 +5787,8 @@ trait CommonTrait
 						}
 					}
 				}
-			}else if($fkey == 'brands')
+			}
+			else if($fkey == 'brands')
 			{
 				$ExpBrands = $FParam;
 
@@ -5478,7 +5821,29 @@ trait CommonTrait
 						}
 					}
 				}
-			} else {
+			}
+			else if($fkey == 'top'){
+				$ExpParams = $FParam;
+
+				if(!isset($RequestParams->keyword) && $RequestParams->keyword == ''){
+					if(is_array($ExpParams) && count($ExpParams) > 0)
+					{
+						for($e=0;$e<count($ExpParams);$e++)
+						{
+							$i++;
+							$Bredcrum[$i]['title'] = ucwords(str_replace("-"," ",$ExpParams[$e]));
+							$BLink = config('global.SITE_URL').'p4u/';
+							$BLink.= $fkey."-".$ExpParams[$e].'/view';
+
+							$Bredcrum[$i]['link'] = $BLink;
+							$Bredcrum[$i]['rank'] = 0;
+							if($CurrFilter == $Bredcrum[$i]['title'])
+								$Bredcrum[$i]['rank'] = 1;
+						}
+					}
+				}
+			}
+			else {
 				$ExpParams = $FParam;
 
 				if(!isset($RequestParams->keyword) && $RequestParams->keyword == ''){
@@ -5606,6 +5971,8 @@ trait CommonTrait
 												->orWhere('var_name','=','GIFT_CERTIFICATE_IMAGE_TITLE4')
 												->get();
 
+		$temp_ary['SKU']         	= config('global.GIFT_CERTIFICATE_SKU');
+		$temp_ary['ProductName'] 	= $getGCNameRes[0]['setting'];
 		if($request["GiftImage"] == "GiftCard1.png")
 		{
 			$temp_ary['SKU']         	= config('global.GIFT_CERTIFICATE_SKU');
@@ -5689,7 +6056,8 @@ trait CommonTrait
 		$temp_ary['Message']		= $request['permassage'];
 		//$temp_ary['Signature']		= $request['signature'];
 		$temp_ary['DeliveryDate']	= $request['deliverydate'];
-		$temp_ary['GiftImage']		= $request['GiftImage'];
+		//$temp_ary['GiftImage']		= $request['GiftImage'];
+		$temp_ary['GiftImage'] 	= "https://www.maxaroma.com/images/gift-cards/GiftCard1.png";
 		$temp_ary['IsDealProducts'] = 'No';
 		$temp_ary['DealDiscountFlag'] = 'No';
 		$temp_ary['ImanufactureID']  = '99999';
@@ -6004,7 +6372,6 @@ trait CommonTrait
 					->join('pu_products_category as pc','po.products_id','=','pc.products_id')
 					->join('pu_category as c','pc.category_id','=','c.category_id')
 					->join('pu_brand as b','b.brand_id','=','po.brand_id')
-					->join('pu_products_one as p1', 'po.products_id', '=', 'p1.products_id')
 					->join('pu_manufacture as m',function($join){
 						$join->on('po.imanufactureid','=','m.imanufactureid');
 						$join->on('b.imanufactureid','=','m.imanufactureid');
@@ -6015,7 +6382,7 @@ trait CommonTrait
 								'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price',
 								'po.perfumeworldwide_sku','po.perfumeworldwide_currentstock','po.perfumeworldwide_wholesale_price','po.perfumeworldwide_our_price','po.perfumeworldwide_retail_price',
 								'po.nd_sku','po.nd_current_stock','po.nd_wholesale_price','po.nd_our_price','po.nd_retail_price',
-								'po.vtype','po.variation_id','m.vmanufacture','po.product_type','b.brand_name','pc.category_id','c.parent_id','p1.extra_images')
+								'po.vtype','po.variation_id','m.vmanufacture','po.product_type','b.brand_name','pc.category_id','c.parent_id')
 					->where('po.status','=','1')
 					->where('c.status','=','1');
 
@@ -6980,12 +7347,12 @@ trait CommonTrait
 
 		$SortBy = isset($Filters['sortby'])?$Filters['sortby']:'';
 
-		$CatProdsQry = Products::select('pu_products.products_id','pu_products.sku','pu_products.is_gift_wrap','pu_products.short_description','pu_products.maxtwodaydelivery','pu_products.fragrance_family','pu_products.formulation','pu_products.size','pu_products.coverage','pu_products.finish','pu_products.skin_type','pu_products.product_name','pu_products.vtype','pu_products.imanufactureid','pu_products.brand_id','pu_products.is_atomizer',
-								'pu_products.fragrance_seasons','pu_products.fragrance_occasion','pu_products.fragrance_personality','pu_products.image','pu_products.current_stock','pu_products.retail_price','pu_products.cosmo_retail_price','pu_products.pca_retail_price','pu_products.minimum_stock','pu_products.gender','pu_products.new_arrival','pu_products.featured','pu_products.clearance','pu_products.top_seller',
-								'pu_products.product_type','pu_products.cosmo_sku','pu_products.cosmo_current_stock','pu_products.cosmo_wholesale_price','pu_products.cosmo_our_price','pu_products.pca_sku','pu_products.pca_current_stock','pu_products.pca_wholesale_price','pu_products.pca_our_price',
-								'pu_products.nandansons_sku','pu_products.nandansons_current_stock','pu_products.nandansons_wholesale_price','pu_products.nandansons_our_price','pu_products.nandansons_retail_price','pu_products.perfumeworldwide_sku','pu_products.perfumeworldwide_currentstock','pu_products.perfumeworldwide_wholesale_price','pu_products.perfumeworldwide_our_price','pu_products.perfumeworldwide_retail_price',
-								'pu_products.nd_sku','pu_products.nd_current_stock','pu_products.nd_wholesale_price','pu_products.nd_our_price','pu_products.nd_retail_price','pu_products.wholesale_price','pu_products.our_price','pu_products.sale_price',
-								'pu_products.vtype','pu_products.variation_id','pu_products.refine_feature','pu_products.product_type','pu_products_one.extra_images')->leftJoin('pu_products_one','pu_products_one.product_id','=','pu_products.products_id');
+		$CatProdsQry = Products::select('products_id','sku','is_gift_wrap','short_description','maxtwodaydelivery','fragrance_family','formulation','size','coverage','finish','skin_type','product_name','vtype','imanufactureid','brand_id','is_atomizer',
+								'fragrance_seasons','fragrance_occasion','fragrance_personality','image','current_stock','retail_price','cosmo_retail_price','pca_retail_price','minimum_stock','gender','new_arrival','featured','clearance','top_seller',
+								'product_type','cosmo_sku','cosmo_current_stock','cosmo_wholesale_price','cosmo_our_price','pca_sku','pca_current_stock','pca_wholesale_price','pca_our_price',
+								'nandansons_sku','nandansons_current_stock','nandansons_wholesale_price','nandansons_our_price','nandansons_retail_price','perfumeworldwide_sku','perfumeworldwide_currentstock','perfumeworldwide_wholesale_price','perfumeworldwide_our_price','perfumeworldwide_retail_price',
+								'nd_sku','nd_current_stock','nd_wholesale_price','nd_our_price','nd_retail_price','wholesale_price','our_price','sale_price',
+								'vtype','variation_id','refine_feature','product_type');
 		if(Session::get('eusertype') && strtolower(Session::get('eusertype')) == 'wholesaler')
             $CatProdsQry->whereIn('product_type',['both','retailer','wholesaler']);
         else
@@ -7116,7 +7483,7 @@ trait CommonTrait
 									'po.nandansons_sku','po.nandansons_current_stock','po.nandansons_wholesale_price','po.nandansons_our_price','po.nandansons_retail_price','po.wholesale_price','po.our_price','po.sale_price',
 									'po.perfumeworldwide_sku','po.perfumeworldwide_currentstock','po.perfumeworldwide_wholesale_price','po.perfumeworldwide_our_price','po.perfumeworldwide_retail_price',
 									'po.nd_sku','po.nd_current_stock','po.nd_wholesale_price','po.nd_our_price','po.nd_retail_price',
-									'po.vtype','po.variation_id','po.refine_feature','m.vmanufacture','po.product_type','b.brand_name','pc.category_id','c.category_name','c.parent_id','p1.extra_images')
+									'po.vtype','po.variation_id','po.refine_feature','m.vmanufacture','po.product_type','b.brand_name','pc.category_id','c.category_name','c.parent_id')
 						/*
                         ->addSelect(['TotalRate' => ProductsReview::select(DB::raw('SUM(star_rate)'))
 										->where('approved','=','Yes')->where('star_rate','!=','0')->whereColumn('sku','po.sku')
@@ -7124,7 +7491,6 @@ trait CommonTrait
 										->where('approved','=','Yes')->where('star_rate','!=','0')->whereColumn('sku','po.sku')])
                         */
 						->join('pu_products_category as pc','po.products_id','=','pc.products_id')
-						->leftJoin('pu_products_one as p1','po.products_id','=','p1.products_id')
 						->join('pu_category as c','pc.category_id','=','c.category_id')
 						->join('pu_brand as b','b.brand_id','=','po.brand_id')
 						->join('pu_manufacture as m',function($join){
@@ -7983,7 +8349,6 @@ trait CommonTrait
 	public function checkGiftCertificateItem($switchCase='', $ary=[], $aryValInCaps='', $ordersDetailId=0, $custId=0,$isAmazon='No', $fromFlag='', $checkSku=''){
 
 		$sku = $aryVal = '';
-
 		if($aryValInCaps == '' || $aryValInCaps == 'Yes'){
 			$aryVal = "SKU";
 		}else{
@@ -8523,7 +8888,7 @@ public function PhoneorderPaymentSuccess($payment_mode)
 				"currency" => [
 					"code" => "USD"
 				],
-				//"dev" => true,//comment this on live
+				"dev" => true,//comment this on live
 			],
 			"data" => $data
 		];
@@ -8543,7 +8908,7 @@ public function PhoneorderPaymentSuccess($payment_mode)
 		]);
 
 		$response = curl_exec($ch);
-		//echo "Beacon API Response - <pre>";print_r($response);echo "</pre>";
+		//echo "<pre>";print_r($response);echo "</pre>";
 		$statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		//echo "<pre>";print_r($statusCode);echo "</pre>";
 	}
