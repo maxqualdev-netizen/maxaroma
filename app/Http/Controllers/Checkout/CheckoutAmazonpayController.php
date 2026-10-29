@@ -78,7 +78,7 @@ class CheckoutAmazonpayController extends Controller
 					{
 
 						//return redirect('/billing-amazon-checkout');
-						return redirect('/secure-checkout1/amazonpay');
+						return redirect('/secure-checkout/amazonpay');
 					} else {
 						Session::forget('AMAZON_ACCESS_TOKEN');
 						return redirect('/shoppingcart');

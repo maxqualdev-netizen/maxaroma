@@ -511,9 +511,15 @@ class FreeSampleService
             'FreeSampleInsertProductValueOutofStock',
             $log
         );
-
+        /*
         Session::flash(
             'OutOfStockBundle',
+            'The Free bundle is out of stock and cannot be added to your order '
+            . $skuList
+        );
+        */
+        Session::put(
+            'cart_error_message',
             'The Free bundle is out of stock and cannot be added to your order '
             . $skuList
         );
@@ -533,6 +539,7 @@ class FreeSampleService
     ) {
         $outOfStockMessage = '';
 
+        Session::put('cart_success_message','Free Sample added to cart.');
         Session::put(
             'ShoppingCart.Cart',
             array_values(
@@ -725,32 +732,38 @@ public function getSampleProductsPopup(
             )
             ->first();
     }
-    $FindRange = [];
-    if($activeRules)
+    /*
+    Session::forget("ShoppingCart.SampleInfo");
+    if(config('Settings.FREESAMPLE_VALUE') == 'Yes')
     {
-        $CartTotal = (float)Session::get("ShoppingCart.SubTotal");
-        foreach($activeRules as $activeRule)
+        $FindRange = [];
+        if($activeRules)
         {
-            $Range = (float)($activeRule->price_start_range - $CartTotal);
-            if($Range > 0 && $CartTotal < $activeRule->price_start_range)
+            $CartTotal = (float)Session::get("ShoppingCart.SubTotal");
+            foreach($activeRules as $activeRule)
             {
-                $FindRange[] = [
-                    'start_price' => (float)$activeRule->price_start_range,
-                    'cart_value' => $CartTotal,
-                    'remain_amount' => $Range
-                ];
+                $Range = (float)($activeRule->price_start_range - $CartTotal);
+                if($Range > 0 && $CartTotal < $activeRule->price_start_range)
+                {
+                    $FindRange[] = [
+                        'start_price' => (float)$activeRule->price_start_range,
+                        'cart_value' => $CartTotal,
+                        'remain_amount' => $Range
+                    ];
+                }
             }
         }
-    }
 
-    if(count($FindRange)>0)
-    {
-        usort($FindRange, function ($a, $b) {
-            return $a['remain_amount'] <=> $b['remain_amount'];
-        });
+        if(count($FindRange)>0)
+        {
+            usort($FindRange, function ($a, $b) {
+                return $a['remain_amount'] <=> $b['remain_amount'];
+            });
 
-        Session::put("ShoppingCart.SampleInfo",$FindRange[0]);
+            Session::put("ShoppingCart.SampleInfo",$FindRange[0]);
+        }
     }
+    */
     /*
      * ---------------------------------------------------------
      * Rule debug.

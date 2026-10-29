@@ -51,7 +51,7 @@ class CheckoutAfterpayController extends Controller
 
         if ($this->afterpay->isCheckoutTokenExpired($expires)) {
             // Token expired — create a new checkout
-            return redirect('secure-checkout1');
+            return redirect('secure-checkout');
         }
 		if(isset($request->status) && $request->status == "2")
 		{
@@ -61,7 +61,7 @@ class CheckoutAfterpayController extends Controller
 					if($request->orderToken != Session::get('ShoppingCart.AfterPay.Checkout_Token')){
 						Session::flash('PlaceOrderError','Token Mismatch, Error in Processing Request. Please try again.');
 						Session::forget('ShoppingCart.AfterPay.Checkout_Token');
-						return redirect('secure-checkout1');
+						return redirect('secure-checkout');
 					}
 				}
                 $SetToken = $this->afterpay->setToken($request->orderToken);
@@ -114,7 +114,7 @@ class CheckoutAfterpayController extends Controller
 				Session::forget('ShoppingCart.AfterPay.Checkout_Token');
 				Session::flash('PlaceOrderError','Error in Processing Request, Please try again.');
 				$request->session()->forget('ShoppingCart.AfterPay.Checkout_Token');
-				return redirect('secure-checkout1');
+				return redirect('secure-checkout');
 			}
 		}
 		elseif(isset($request->status) && $request->status == "1") {
@@ -123,7 +123,7 @@ class CheckoutAfterpayController extends Controller
 				if(Session::has('ShoppingCart.AfterPay.Checkout_Token') && Session::get('ShoppingCart.AfterPay.Checkout_Token') != ""){
 					if($request->orderToken != Session::get('ShoppingCart.AfterPay.Checkout_Token')){
 						Session::flash('PlaceOrderError','Token Mismatch, Error in Processing Request. Please try again.');
-						return redirect('secure-checkout1');
+						return redirect('secure-checkout');
 					}
 				}
 
@@ -205,22 +205,22 @@ class CheckoutAfterpayController extends Controller
 							Session::put('ShoppingCart.ShippingAddress',$ShippingAddress);
 							Session::put('ShoppingCart.BillingAddress',$ShippingAddress);
 						}
-						return redirect('secure-checkout1/afterpay');
+						return redirect('secure-checkout/afterpay');
 					}else{
 						Session::flash('PlaceOrderError','Error in Processing Request, Please try again.');
-						return redirect('secure-checkout1');
+						return redirect('secure-checkout');
 					}
 
 				}
 			}else{
 				Session::forget('ShoppingCart.AfterPay.Checkout_Token');
 				Session::flash('PlaceOrderError','Error in Processing Request, Please try again.');
-				return redirect('secure-checkout1');
+				return redirect('secure-checkout');
 			}
 		}else{
 			Session::forget('ShoppingCart.AfterPay.Checkout_Token');
 			Session::flash('PlaceOrderError','Error in Processing Request, Please try again.');
-			return redirect('secure-checkout1');
+			return redirect('secure-checkout');
 		}
 	}
 
@@ -236,7 +236,7 @@ class CheckoutAfterpayController extends Controller
         }
         if (!$orderId) {
             Session::flash('PlaceOrderError', 'Invalid order.');
-            return redirect('secure-checkout1');
+            return redirect('secure-checkout');
         }
         $result = $this->afterpay->createCheckout(
             (int) $orderId,
@@ -250,7 +250,7 @@ class CheckoutAfterpayController extends Controller
         if (!$result['success']) {
             Order::where('orders_id', $orderId)->update(['status' => 'Declined', 'transaction_info' => $result['message'], 'payment_gateway_response' => json_encode($result),]);
             Session::flash('PlaceOrderError', $result['message']);
-            return redirect('secure-checkout1');
+            return redirect('secure-checkout');
         }
         Order::where('orders_id', $orderId)->update(['status' => 'Sent To AfterPay', 'payment_type' => 'PAYMENT_PAYWITHAFTERPAY', 'payment_method' => 'Pay With Afterpay',]);
         return redirect($result['redirect_url']);

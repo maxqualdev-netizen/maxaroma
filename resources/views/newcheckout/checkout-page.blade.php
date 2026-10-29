@@ -51,6 +51,13 @@ $checkoutSignature = $chargeValue('ShippingSignature');
 $checkoutGiftWrap = $chargeValue('GiftWrappingCharge');
 $checkoutNetTotal = (float) ($totals['NetTotal'] ?? 0);
 $NetTotal = (float) ($totals['NetTotal'] ?? 0);
+$CreditLimitDiscount = 0;
+$SubPaymentMethod = "";
+if(isset($discounts['CreditLimitDiscount']['discount']) && (float)$discounts['CreditLimitDiscount']['discount'] > 0)
+{
+  $CreditLimitDiscount = (float)$discounts['CreditLimitDiscount']['discount'];
+  $SubPaymentMethod = "PAYMENT_CL";
+}
 $CartAttr = $checkoutState['cartAttributes'];
 $CreditLimitDetails = $checkoutState['creditLimit'];
 $yotpoRewardCode = (string) Session::get(
@@ -397,9 +404,27 @@ is_string($image)
         transform: rotate(360deg);
       }
     }
-
+    .clsgreen{
+      color: green;
+      font-weight: 600;
+      font-size: 13px;
+      text-align: center;
+    }
+    .guest-note{
+      font-size:12px;
+      padding-top: 5px;
+      margin-bottom:0;
+    }
+    .stock_left {
+      font-weight: 600;
+      display: block;
+      padding-bottom: 5px;
+      color: #ec040f;
+      font-size: 11px;
+      line-height: 18px;
+    }
   </style>
-  <div class="checkout-page" id="checkout-app" data-method = "{{ $method }}">
+  <div class="checkout-page" id="checkout-app" data-method = "{{ $method }}" data-onlyGCPurchased = "{{ $onlyGCPurchased }}">
     @if($method != 'amazonpay')
       @include('newcheckout.google-address')
     @endif
@@ -453,7 +478,8 @@ is_string($image)
               {{$NetTotal}}
               @endif
             </div>
-            <div class="gpayapplepaybtn" id="payment-request-button-checkout" role="region" aria-label="GPay and ApplePay Button">
+
+            <div class="express-btn" id="payment-request-button-checkout" role="region" aria-label="GPay and ApplePay Button">
               <span class="payloader"></span>
             </div>
             <a href="javascript:void(0);" class="edit-btn btn btn-primary insuranceSignature" id="GpayBtnn" style="display:none;" role="button" aria-label="Pay with Gpay or ApplePay">Gpay/ApplePay</a>
@@ -507,6 +533,7 @@ is_string($image)
 
           <!-- Form body -->
           <div class="checkout-section-body" id="contact-form">
+            <input type="hidden" id="is_logged_user" value="{{ (Auth::guard('web')->user())?'Yes':'No' }}"/>
             {{--@if(Session::has('sess_icustomerid') && (int) Session::get('sess_icustomerid') > 0) --}}
             @if(Auth::guard('web')->user())
 
@@ -625,6 +652,7 @@ is_string($image)
                       </svg>
                       Please enter a valid email address
                     </span>
+                    <p class="guest-note">Don' t have an account? No problem — you can continue as a guest.</p>
                   </div>
                   {{--
                       <div class="fl-group pb-3">
@@ -689,10 +717,7 @@ is_string($image)
                 <input type="hidden" name="action" value="signin">
                 <input type="hidden" id="newsletter" name="newsletter" value="No">
 
-                <input
-                  type="hidden"
-                  name="fromcheckout"
-                  value="secure-checkout1">
+                <input type="hidden" name="fromcheckout" value="secure-checkout">
                 <div style="display:flex; flex-direction:column; gap: var(--space-4);">
                   <div class="fl-group">
                     <div class="input-inner">
@@ -766,32 +791,6 @@ is_string($image)
             <form method="post" name="frmcheckoutaddress" id="frmcheckoutaddress">
               <!-- Country -->
               <div style="display:flex; flex-direction:column; gap: var(--space-3);">
-                <div class="fl-group">
-                  <div class="input-inner">
-                    <select
-                      class="fl-input"
-                      id="shipping_country"
-                      name="shipping_country"
-                      autocomplete="shipping country"
-                      aria-label="Country"
-                      aria-required="true">
-                      <option value=""></option>
-
-                      @foreach($countries as $countryCode => $countryName)
-                      <option
-                        value="{{ $countryCode }}"
-                        {{ $selectedShippingCountry === $countryCode ? 'selected' : '' }}>
-                        {{ $countryName }}
-                      </option>
-                      @endforeach
-                    </select>
-
-                    <label class="fl-label" for="shipping_country">
-                      Country / Region
-                    </label>
-                  </div>
-                </div>
-
                 <!-- First / Last name -->
                 <div class="form-grid-2">
                   <div class="fl-group">
@@ -881,6 +880,32 @@ is_string($image)
                       value="{{ is_array($shippingAddress) ? ($shippingAddress['address2'] ?? '') : '' }}">
                     <label class="fl-label" for="shipping_address2">
                       Apt, suite, etc. (optional)
+                    </label>
+                  </div>
+                </div>
+
+                <div class="fl-group">
+                  <div class="input-inner">
+                    <select
+                      class="fl-input"
+                      id="shipping_country"
+                      name="shipping_country"
+                      autocomplete="shipping country"
+                      aria-label="Country"
+                      aria-required="true">
+                      <option value=""></option>
+
+                      @foreach($countries as $countryCode => $countryName)
+                      <option
+                        value="{{ $countryCode }}"
+                        {{ $selectedShippingCountry === $countryCode ? 'selected' : '' }}>
+                        {{ $countryName }}
+                      </option>
+                      @endforeach
+                    </select>
+
+                    <label class="fl-label" for="shipping_country">
+                      Country / Region
                     </label>
                   </div>
                 </div>
@@ -1021,32 +1046,6 @@ is_string($image)
               </label>
               <div id="divBillingAddr">
                 <div style="display:flex; flex-direction:column; gap: var(--space-3);">
-
-                  <div class="fl-group">
-                    <div class="input-inner">
-                      <select
-                        class="fl-input"
-                        id="billing_country"
-                        name="billing_country"
-                        aria-label="Country"
-                        aria-required="true">
-                        <option value=""></option>
-
-                        @foreach($countries as $countryCode => $countryName)
-                        <option
-                          value="{{ $countryCode }}"
-                          {{ $selectedBillingCountry === $countryCode ? 'selected' : '' }}>
-                          {{ $countryName }}
-                        </option>
-                        @endforeach
-                      </select>
-
-                      <label class="fl-label" for="billing_country">
-                        Country / Region
-                      </label>
-                    </div>
-                  </div>
-
                   <!-- First / Last name -->
                   <div class="form-grid-2">
                     <div class="fl-group">
@@ -1132,6 +1131,31 @@ is_string($image)
                         value="{{ is_array($billingAddress) ? ($billingAddress['address2'] ?? '') : '' }}">
                       <label class="fl-label" for="billing_address2">
                         Apt, suite, etc. (optional)
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="fl-group">
+                    <div class="input-inner">
+                      <select
+                        class="fl-input"
+                        id="billing_country"
+                        name="billing_country"
+                        aria-label="Country"
+                        aria-required="true">
+                        <option value=""></option>
+
+                        @foreach($countries as $countryCode => $countryName)
+                        <option
+                          value="{{ $countryCode }}"
+                          {{ $selectedBillingCountry === $countryCode ? 'selected' : '' }}>
+                          {{ $countryName }}
+                        </option>
+                        @endforeach
+                      </select>
+
+                      <label class="fl-label" for="billing_country">
+                        Country / Region
                       </label>
                     </div>
                   </div>
@@ -1293,7 +1317,11 @@ is_string($image)
                     <span class="addon-title">Protect My Order</span>
                     <span class="addon-desc">Covers damage, loss &amp; theft</span>
                   </span>
-                  <span class="addon-price" id="protection-addon-price">{{ $checkoutInsurance > 0 ? '+' . $money($checkoutInsurance) : 'Free' }}</span>
+               <span class="addon-price" id="protection-addon-price">
+    {{ ($insuranceDisplayCharge ?? 0) > 0
+        ? '+' . $money($insuranceDisplayCharge)
+        : 'Free' }}
+</span>
                   <span class="toggle-switch">
                     <input type="checkbox" id="protection" name="protection" {{ $checkoutInsurance > 0 ? 'checked' : '' }} onchange="handleProtectionToggle(this)">
                     <span class="toggle-track"><span class="toggle-thumb"></span></span>
@@ -1312,7 +1340,10 @@ is_string($image)
                     <span class="addon-title">Request Signature</span>
                     <span class="addon-desc">Signature required on delivery</span>
                   </span>
-                  <span class="addon-price" id="signature-addon-price">{{ $checkoutSignature > 0 ? '+' . $money($checkoutSignature) : 'Free' }}</span>
+
+                  <span class="addon-price" id="signature-addon-price">
+    {{ $signatureDisplayCharge > 0 ? '+' . $money($signatureDisplayCharge) : 'Free' }}
+</span>
                   <span class="toggle-switch">
                     <input type="checkbox" id="request-signature" name="request-signature" {{ $checkoutSignature > 0 ? 'checked' : '' }} onchange="handleSignatureToggle(this)">
                     <span class="toggle-track"><span class="toggle-thumb"></span></span>
@@ -1405,13 +1436,18 @@ is_string($image)
                 <div class="row" id="dropshipper_details"></div>
                 @endif
 
-                <!-- Accepted cards row -->
-                <div class="accepted-cards" aria-label="Accepted payment cards">
-                  <img class="card-logo" src="{{ url('images/checkout-new/visa.svg') }}" alt="Visa">
-                  <img class="card-logo" src="{{ url('images/checkout-new/mastercard.svg') }}" alt="Mastercard">
-                  <img class="card-logo" src="{{ url('images/checkout-new/american-express.svg') }}" alt="American Express">
-                  <img class="card-logo" src="{{ url('images/checkout-new/discover.svg') }}" alt="Discover">
-                  <img class="card-logo" src="{{ url('images/checkout-new/paypal.svg') }}" alt="PayPal">
+                <div class="checkout-paypal">
+                  <!-- Accepted cards row -->
+                  <div class="accepted-cards" aria-label="Accepted payment cards">
+                    <img class="card-logo" src="{{ url('images/checkout-new/visa.svg') }}" alt="Visa">
+                    <img class="card-logo" src="{{ url('images/checkout-new/mastercard.svg') }}" alt="Mastercard">
+                    <img class="card-logo" src="{{ url('images/checkout-new/american-express.svg') }}" alt="American Express">
+                    <img class="card-logo" src="{{ url('images/checkout-new/discover.svg') }}" alt="Discover">
+                    <img class="card-logo paypal-logo" src="{{ url('images/checkout-new/paypal.svg') }}" alt="PayPal">
+                  </div>
+                  <div class="strip-logodiv">
+                      <img src="{{ url('public/images/powered-by-strip-logo.png') }}" alt="Guaranteed safe &amp; secure checkout powered by stripe" class="">
+                  </div>
                 </div>
               </div>
             </div>
@@ -1473,6 +1509,7 @@ is_string($image)
   <!-- ══ 7. ORDER REVIEW + PLACE ORDER ════════════════════ -->
   <section class="place-order-section" aria-labelledby="review-heading" id="review-block">
     <input type="hidden" name="selectedPaymentMethod" id="selectedPaymentMethod" value="{{ $selectedPaymentMethod }}" />
+    <input type="hidden" name="selectedSubPaymentMethod" id="selectedSubPaymentMethod" value="{{ $SubPaymentMethod }}" />
     <h2 class="step-title" id="review-heading" style="margin-bottom: var(--space-5);">Review your order</h2>
     <div class="review-table" aria-label="Order review" style="margin-bottom: var(--space-5); padding-bottom: var(--space-5); border-bottom: 1px solid var(--color-border-default);">
       <div class="review-row" @if($checkoutEmail == "") style="visibility: hidden;" @else style="visibility: visible;" @endif>
@@ -1512,12 +1549,12 @@ is_string($image)
                 </div>
                 --}}
     </div>
-    <!-- Collapsible order summary (Shopify-style): the mobile sticky
+    {{-- Collapsible order summary (Shopify-style): the mobile sticky
                   footer hides itself once this section is in view, so this
                   keeps item thumbnails + the expandable breakdown reachable
                   right where the customer actually places the order. -->
 
-       {{--  <button type="button" class="review-summary-toggle" id="review-summary-toggle" aria-expanded="false" aria-controls="review-summary-panel" onclick="toggleReviewSummary()" aria-label="Show order summary">
+          <button type="button" class="review-summary-toggle" id="review-summary-toggle" aria-expanded="false" aria-controls="review-summary-panel" onclick="toggleReviewSummary()" aria-label="Show order summary">
 
               <div class="review-summary-thumb" aria-hidden="true">
                 <img src="{{ url('/images/noimage-lrg.jpg') }}" alt="">
@@ -1539,10 +1576,10 @@ is_string($image)
       </div>
       <div>
         <textarea class="fl-input" name="customer_comment" id="customer_comment" rows="5" style="height:auto;" placeholder="Special Request"></textarea>
-        <div class="review-summary-tax" id="review-summary-tax-value">This request and notes are optional. We'll do our best to accommodate your request, but it’s not guaranteed.</div>
+        <div class="review-summary-tax" id="review-summary-tax-value">This request and notes are optional. We'll do our best to accommodate your request, but it's not guaranteed.</div>
       </div>
-      {{--
-      @if(isset($CreditLimitDetails) && $method != 'amazonpay')
+
+      @if(Auth::guard('web')->user() && isset($CreditLimitDetails) && $method != 'amazonpay' && $test == '1')
         @if($CreditLimitDetails['CreditLimitFlag'] == 2)
           <div id="creditlimit_details">
             <label class="field-check">
@@ -1567,7 +1604,7 @@ is_string($image)
           </div>
         @endif
       @endif
-      --}}
+
       <div>
         <label class="field-check">
           <input type="checkbox" id="chkagree" name="chkagree" checked>
@@ -1578,6 +1615,9 @@ is_string($image)
             Your payment is processed securely. We never store your card details.
           </span>
         </label>
+        @if(Session::has('ShowStockLeftMessage') && Session::get('ShowStockLeftMessage') == 'Yes')
+        <div class="clsgreen pb-2 text-center">Your items are almost sold out - secure them now.</div>
+        @endif
       </div>
     </div>
     <!-- CTA -->
@@ -1596,20 +1636,27 @@ is_string($image)
       <button class="order-summary-toggle" aria-expanded="false" aria-controls="order-summary-body" onclick="toggleOrderSummary()" type="button">
         <div class="order-summary-toggle-left">
           <div class="summary-cart-icon-wrap" aria-hidden="true">
-            <svg width="18" height="18" viewBox="0 0 450.391 450.391">
-              <g>
+            <a href="{{ url('/shoppingcart') }}" area-label="View cart">
+              <svg width="18" height="18" viewBox="0 0 450.391 450.391">
                 <g>
                   <g>
-                    <path d="M143.673,350.322c-25.969,0-47.02,21.052-47.02,47.02c0,25.969,21.052,47.02,47.02,47.02 c25.969,0,47.02-21.052,47.02-47.02C190.694,371.374,169.642,350.322,143.673,350.322z M143.673,423.465 c-14.427,0-26.122-11.695-26.122-26.122c0-14.427,11.695-26.122,26.122-26.122c14.427,0,26.122,11.695,26.122,26.122 C169.796,411.77,158.1,423.465,143.673,423.465z" />
-                    <path d="M342.204,350.322c-25.969,0-47.02,21.052-47.02,47.02c0,25.969,21.052,47.02,47.02,47.02s47.02-21.052,47.02-47.02 C389.224,371.374,368.173,350.322,342.204,350.322z M342.204,423.465c-14.427,0-26.122-11.695-26.122-26.122 c0-14.427,11.695-26.122,26.122-26.122s26.122,11.695,26.122,26.122C368.327,411.77,356.631,423.465,342.204,423.465z" />
-                    <path d="M448.261,76.037c-2.176-2.377-5.153-3.865-8.359-4.18L99.788,67.155L90.384,38.42 C83.759,19.211,65.771,6.243,45.453,6.028H10.449C4.678,6.028,0,10.706,0,16.477s4.678,10.449,10.449,10.449h35.004 c11.361,0.251,21.365,7.546,25.078,18.286l66.351,200.098l-5.224,12.016c-5.827,15.026-4.077,31.938,4.702,45.453 c8.695,13.274,23.323,21.466,39.184,21.943h203.233c5.771,0,10.449-4.678,10.449-10.449c0-5.771-4.678-10.449-10.449-10.449 H175.543c-8.957-0.224-17.202-4.936-21.943-12.539c-4.688-7.51-5.651-16.762-2.612-25.078l4.18-9.404l219.951-22.988 c24.16-2.661,44.034-20.233,49.633-43.886l25.078-105.012C450.96,81.893,450.36,78.492,448.261,76.037z M404.376,185.228 c-3.392,15.226-16.319,26.457-31.869,27.69l-217.339,22.465L106.58,88.053l320.261,4.702L404.376,185.228z" />
+                    <g>
+                      <path d="M143.673,350.322c-25.969,0-47.02,21.052-47.02,47.02c0,25.969,21.052,47.02,47.02,47.02 c25.969,0,47.02-21.052,47.02-47.02C190.694,371.374,169.642,350.322,143.673,350.322z M143.673,423.465 c-14.427,0-26.122-11.695-26.122-26.122c0-14.427,11.695-26.122,26.122-26.122c14.427,0,26.122,11.695,26.122,26.122 C169.796,411.77,158.1,423.465,143.673,423.465z" />
+                      <path d="M342.204,350.322c-25.969,0-47.02,21.052-47.02,47.02c0,25.969,21.052,47.02,47.02,47.02s47.02-21.052,47.02-47.02 C389.224,371.374,368.173,350.322,342.204,350.322z M342.204,423.465c-14.427,0-26.122-11.695-26.122-26.122 c0-14.427,11.695-26.122,26.122-26.122s26.122,11.695,26.122,26.122C368.327,411.77,356.631,423.465,342.204,423.465z" />
+                      <path d="M448.261,76.037c-2.176-2.377-5.153-3.865-8.359-4.18L99.788,67.155L90.384,38.42 C83.759,19.211,65.771,6.243,45.453,6.028H10.449C4.678,6.028,0,10.706,0,16.477s4.678,10.449,10.449,10.449h35.004 c11.361,0.251,21.365,7.546,25.078,18.286l66.351,200.098l-5.224,12.016c-5.827,15.026-4.077,31.938,4.702,45.453 c8.695,13.274,23.323,21.466,39.184,21.943h203.233c5.771,0,10.449-4.678,10.449-10.449c0-5.771-4.678-10.449-10.449-10.449 H175.543c-8.957-0.224-17.202-4.936-21.943-12.539c-4.688-7.51-5.651-16.762-2.612-25.078l4.18-9.404l219.951-22.988 c24.16-2.661,44.034-20.233,49.633-43.886l25.078-105.012C450.96,81.893,450.36,78.492,448.261,76.037z M404.376,185.228 c-3.392,15.226-16.319,26.457-31.869,27.69l-217.339,22.465L106.58,88.053l320.261,4.702L404.376,185.228z" />
+                    </g>
                   </g>
                 </g>
-              </g>
-            </svg>
-            <span class="summary-cart-count" aria-label="{{ $cartItemCount }} items">{{ $cartItemCount }}</span>
+              </svg>
+              <span class="summary-cart-count" aria-label="{{ $cartItemCount }} items">{{ $cartItemCount }}</span>
+            </a>
           </div>
-          <span class="order-summary-toggle-title">Order summary</span>
+          <span class="order-summary-toggle-title">
+            Order summary
+            <span class="view-cart-link">
+              <a href="{{ url('/shoppingcart') }}">View Cart</a>
+            </span>
+          </span>
         </div>
         <div style="display:flex; align-items:center; gap: var(--space-2);">
           <span class="order-summary-toggle-amount" id="mobile-summary-amount" aria-label="Total {{ $money($checkoutNetTotal) }}">{{ $money($checkoutNetTotal) }}</span>
@@ -1619,7 +1666,7 @@ is_string($image)
         </div>
       </button>
 
-      <div class="free_shipping">
+      <div class="free_shipping mobile-hide">
         <div class="free_shipping_inner" id="promo-card" role="status" aria-live="polite">
           <!-- In-progress state -->
           <div class="free-gift-state free-gift-progress">
@@ -1654,70 +1701,64 @@ is_string($image)
                     Lets the client preview all 3 promo states (flat threshold, GWP
                     site-wide, GWP restricted) live, without touching code. Remove
                     this block once PROMO_CONFIG is wired to the real backend. -->
-            <div class="promo-demo-switcher compact" style="margin-bottom: var(--space-3);" aria-label="Promo mode preview, for review only">
-              <span class="promo-demo-label">🔧 PREVIEW MODE (for review only):</span>
-            </div>
+            <div id="checkout-offers" class="moblie-show">
+              <div class="purchase-threshold-promo" style="margin-bottom: var(--space-4);">
+                <div class="free-gift-card compact" id="promo-card" role="status" aria-live="polite">
 
-            <!-- ══ Purchase-threshold promo module (Free Samples OR Gift With Purchase) ══
-                    One module, two mutually exclusive modes. The active mode, threshold,
-                    eligibility scope and messaging are all driven by PROMO_CONFIG (backend). -->
-            <div class="purchase-threshold-promo" style="margin-bottom: var(--space-4);">
-              <div class="free-gift-card compact" id="promo-card" role="status" aria-live="polite">
-
-                <!-- In-progress state -->
-                <div class="free-gift-state free-gift-progress">
-                  <div class="free-gift-head">
-                    <div class="free-gift-icon" aria-hidden="true">
-                      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                        <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
-                        <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                      </svg>
-                    </div>
-                    <div class="free-gift-title" id="promo-heading"><span id="promo-title-text">Unlock your free samples</span></div>
-                    <span class="promo-info-wrap">
-                      <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
-                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                          <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
-                          <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
-                          <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                  <!-- In-progress state -->
+                  <div class="free-gift-state free-gift-progress">
+                    <div class="free-gift-head">
+                      <div class="free-gift-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                          <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                          <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
                         </svg>
-                      </button>
-                      <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
-                    </span>
-                  </div>
-                  <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
-                    <div class="free-gift-fill" id="promo-fill" style="width: 98.1%;"></div>
-                  </div>
-                  <p class="free-gift-remaining">
-                    You're <strong id="promo-amount">$3.26 away</strong> <span id="promo-remaining-suffix">from free samples!</span>
-                  </p>
-                </div>
-
-                <!-- Unlocked state -->
-                <div class="free-gift-state free-gift-unlocked">
-                  <div class="free-gift-unlocked-row">
-                    <div class="free-gift-icon" aria-hidden="true">
-                      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                        <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
-                        <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                        <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
-                      </svg>
+                      </div>
+                      <div class="free-gift-title" id="promo-heading"><a href="#" id="free_sample"><span id="promo-title-text">Unlock your free samples</span></a></div>
+                      <span class="promo-info-wrap">
+                        <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                            <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
+                            <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                            <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                          </svg>
+                        </button>
+                        <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
+                      </span>
                     </div>
-                    <div>
-                      <div class="free-gift-unlocked-title">🎉 Congratulations!</div>
-                      <div class="free-gift-unlocked-desc" id="promo-success-desc">You've unlocked your free samples!</div>
+                    <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
+                      <div class="free-gift-fill" id="promo-fill" style="width: 98.1%;"></div>
+                    </div>
+                    <p class="free-gift-remaining">
+                      You're <strong id="promo-amount">$3.26 away</strong> <span id="promo-remaining-suffix">from free samples!</span>
+                    </p>
+                  </div>
+
+                  <!-- Unlocked state -->
+                  <div class="free-gift-state free-gift-unlocked">
+                    <div class="free-gift-unlocked-row">
+                      <div class="free-gift-icon" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                          <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                          <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                          <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                        </svg>
+                      </div>
+                      <div>
+                        <div class="free-gift-unlocked-title">🎉 Congratulations!</div>
+                        <div class="free-gift-unlocked-desc" id="promo-success-desc">You've unlocked your free samples!</div>
+                      </div>
                     </div>
                   </div>
-                </div>
 
+                </div>
               </div>
             </div>
-
             <!-- Savings banner — DISABLED for now, keep markup for future re-enable
                 <div class="savings-banner">
                   <svg class="savings-banner-icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
@@ -1729,98 +1770,105 @@ is_string($image)
                 -->
 
             <!-- Products: first 2 always visible, remainder in scroll area -->
-            <div class="order-items-list" id="checkout-cart-items" aria-label="Items in cart">
+            <div class="order-items-list" id="checkout-cart-items" data-total-row="{{ count($cart) }}" aria-label="Items in cart">
+              @if(isset($cart_success_message) && !empty($cart_success_message))
+                <div class="alert alert-success">{{ $cart_success_message }}</div>
+              @endif
+              @if(isset($cart_error_message) && !empty($cart_error_message))
+                <div class="alert alert-danger">{{ $cart_error_message }}</div>
+              @endif
+
               @include('newcheckout.cart-loader')
-              @foreach(array_slice($cart, 0, 2, true) as $index => $item)
-              @php
-              $productName = $cartItemName($item);
-              $quantity = $cartItemQty($item);
-              $itemTotal = $cartItemTotal($item);
-              $image = $cartItemImage($item);
-              $brand = $cartItemBrand($item);
-              $sku = $cartItemSku($item);
-              $category = $cartItemCategory($item);
-              $productId = $cartItemProductId($item);
-              $isFreeGift =(!empty($item['IS_Free_Gift']) && strtolower((string) $item['IS_Free_Gift']) === 'yes') || (!empty($item['Is_Free_Gift']) && strtolower((string) $item['Is_Free_Gift']) === 'yes');
-              $isFreeSample = !empty($item['Is_Free_Sample']) && strtolower((string) $item['Is_Free_Sample']) === 'yes';
-              @endphp
-
-              <div class="order-item-row" data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-free-sample="{{ $isFreeSample ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
-                <div class="order-item-image">
-                  <img class="order-item-thumb" src="{{ $image ?: url('/images/noimage-lrg.jpg') }}" alt="{{ $productName }}" loading="lazy">
-                </div>
-                <div class="order-item-info">
-                  <div class="order-item-brand">{{ $brand }}</div>
-                  <div class="order-item-name">{{ $productName }}</div>
-                  <div class="order-item-variant"></div>
-                  <div class="order-item-sku">{{ $sku }}</div>
-                  @if(isset($item['FinalSale']) && $item['FinalSale'] != '')
-                  <div class="order-item-variant">
-                    {{ $item['FinalSale'] }}
-                  </div>
-                  @endif
-
-                  @if(Auth::guard('store')->check())
-                  <div class="order-item-variant">
-                    {{ (isset($item['OrderType']) && $item['OrderType'] == 'Store') ? 'Store Item' : 'Online Item' }}
-                  </div>
-                  @endif
-
-                  @if(isset($item['stock_left']) && $item['stock_left'] < 6)
-                    <div class="order-item-variant stock_left pt-1">
-                    Only {{ $item['stock_left'] }} left in stock
-                </div>
-                @endif
-
-                <div class="order-item-controls">
-                  @if($isFreeGift || $isFreeSample)
-
-                  <span>Qty :{{ $quantity }}</span>
-                  @if(
-                  $isFreeSample
-                  ||
-                  (
-                  $isFreeGift
-                  && (($item['FreeGiftCoupon'] ?? 'No') !== 'Yes')
-                  && (($item['FreeGiftRuleSkuCount'] ?? 1) > 1)
-                  )
-                  )
-
-                  <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
-                  @endif
-
-                  @else
-                  @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
-                  <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
-                    <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
-                    <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
-                    <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
-                  </div>
-
-                  @endif
-                  @if(($item['IsGiftCertificateItem'] ?? 'No') === 'Yes' )
-                  <span>Qty :{{ $quantity }}</span>
-                  @endif
-                  <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
-                  @endif
-                </div>
+              @php $CartIndex=0; @endphp
+              @foreach($cart as $index => $item)
                 @php
-                $bogoDiscountMessage =
-                $item['BogoDiscountMessage'] ?? '';
+                $productName = $cartItemName($item);
+                $quantity = $cartItemQty($item);
+                $itemTotal = $cartItemTotal($item);
+                $image = $cartItemImage($item);
+                $brand = $cartItemBrand($item);
+                $sku = $cartItemSku($item);
+                $category = $cartItemCategory($item);
+                $productId = $cartItemProductId($item);
+                $isFreeGift =(!empty($item['IS_Free_Gift']) && strtolower((string) $item['IS_Free_Gift']) === 'yes') || (!empty($item['Is_Free_Gift']) && strtolower((string) $item['Is_Free_Gift']) === 'yes');
+                $isFreeSample = !empty($item['Is_Free_Sample']) && strtolower((string) $item['Is_Free_Sample']) === 'yes';
                 @endphp
-                @if(!empty($bogoDiscountMessage))
-                <div class="order-item-bogo-message pt-2" id="OrderInfoDiv">
-                  {!! $bogoDiscountMessage !!}
-                </div>
-                @endif
-              </div>
-              <div class="order-item-price">
-                <div class="order-item-price-current">{{ $money($itemTotal) }}</div>
-              </div>
-            </div>
-            @endforeach
 
-            @if(count($cart) > 2)
+                <div class="order-item-row" {{ $CartIndex > 1 ? 'hidden=true' : '' }} data-cart-index="{{ $index }}" data-product-id="{{ $productId }}" data-cart-id="{{ $item['cart_id'] ?? $item['ProductID'] ?? $item['id'] ?? '' }}" data-free-gift="{{ $isFreeGift ? '1' : '0' }}" data-free-sample="{{ $isFreeSample ? '1' : '0' }}" data-brand="{{ $brand }}" data-category="{{ $category }}">
+                  <div class="order-item-image">
+                    <img class="order-item-thumb" src="{{ $image ?: url('/images/noimage-lrg.jpg') }}" alt="{{ $productName }}" loading="lazy">
+                  </div>
+                  <div class="order-item-info">
+                    <div class="order-item-brand">{{ $brand }}</div>
+                    <div class="order-item-name">{{ $productName }}</div>
+                    <div class="order-item-variant"></div>
+                    <div class="order-item-sku">{{ $sku }}</div>
+                    @if(isset($item['FinalSale']) && $item['FinalSale'] != '')
+                    <div class="order-item-variant">
+                      {{ $item['FinalSale'] }}
+                    </div>
+                    @endif
+
+                    @if(Auth::guard('store')->check())
+                    <div class="order-item-variant">
+                      {{ (isset($item['OrderType']) && $item['OrderType'] == 'Store') ? 'Store Item' : 'Online Item' }}
+                    </div>
+                    @endif
+
+                    @if(isset($item['stock_left']) && $item['stock_left'] < 6)
+                      <div class="order-item-variant stock_left pt-1">
+                      Only {{ $item['stock_left'] }} left in stock
+                  </div>
+                  @endif
+
+                  <div class="order-item-controls">
+                    @if($isFreeGift || $isFreeSample)
+
+                    <span>Qty: {{ $quantity }}</span>
+                    @if(
+                    $isFreeSample
+                    ||
+                    (
+                    $isFreeGift
+                    && (($item['FreeGiftCoupon'] ?? 'No') !== 'Yes')
+                    && (($item['FreeGiftRuleSkuCount'] ?? 1) > 1)
+                    )
+                    )
+
+                    <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
+                    @endif
+
+                    @else
+                    @if(($item['IsGiftCertificateItem'] ?? 'No') === 'No')
+                    <div class="qty-stepper" role="group" aria-label="Quantity for {{ $productName }}">
+                      <button class="qty-btn" type="button" aria-label="Decrease quantity" onclick="updateQty(this,-1)">−</button>
+                      <span class="qty-value" aria-live="polite">{{ $quantity }}</span>
+                      <button class="qty-btn" type="button" aria-label="Increase quantity" onclick="updateQty(this,1)">+</button>
+                    </div>
+
+                    @endif
+                    @if(($item['IsGiftCertificateItem'] ?? 'No') === 'Yes' )
+                    <span>Qty: {{ $quantity }}</span>
+                    @endif
+                    <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
+                    @endif
+                  </div>
+                  @php
+                  $bogoDiscountMessage =
+                  $item['BogoDiscountMessage'] ?? '';
+                  @endphp
+                  @if(!empty($bogoDiscountMessage))
+                  <div class="order-item-bogo-message pt-2" id="OrderInfoDiv">
+                    {!! $bogoDiscountMessage !!}
+                  </div>
+                  @endif
+                </div>
+                <div class="order-item-price">
+                  <div class="order-item-price-current">{{ $money($itemTotal) }}</div>
+                </div>
+                </div>
+                @php $CartIndex++; @endphp
+              @endforeach
             <!-- More items trigger (no nested scroll — opens drawer) -->
             <button type="button" class="view-all-items" onclick="openCartDrawer()" aria-haspopup="dialog" aria-controls="cart-drawer">
               <span class="view-all-stack" aria-hidden="true">
@@ -1829,12 +1877,12 @@ is_string($image)
                 </span>
                 <img class="view-all-thumb" src="{{ url('/images/noimage-lrg.jpg') }}" alt="">
               </span>
-              <span class="view-all-label"><strong id="more-items-count">+ {{ (count($cart) - 2) }} More Items</strong> in your order</span>
+              <span class="view-all-label"><strong id="more-items-count"></strong> in your order</span>
               <span class="view-all-cta">View All Items <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                   <path d="M3 8H13M13 8L9 4M13 8L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
                 </svg></span>
             </button>
-            @endif
+
           </div>
 
           <!-- Coupon Code / E-Gift Card / Shipping Rate Calculator
@@ -1867,15 +1915,15 @@ is_string($image)
                   data-yotpo-code="{{ $yotpoRewardCode }}">
                   @if ($promoCouponCode !== '')
                   <div
-                    class="coupon-applied animate-in"
+                    class="coupon-applied animate-in cuponcode-sec"
                     data-discount-kind="coupon"
                     data-discount-code="{{ $promoCouponCode }}"
                     role="status"
                     style="margin-top:12px;">
-                    <div>
+                    <div class="cuppon-applied-text">
                       <span class="coupon-applied-code">{{ $promoCouponCode }}</span>
-                      <span class="apply-code">Applied</span>
-                    </div>
+                   </div>
+                    <span class="apply-code">Applied</span>
                     <button
                       type="button"
                       id="maxaroma-remove-coupon"
@@ -1885,15 +1933,15 @@ is_string($image)
 
                   @if ($yotpoRewardCode !== '')
                   <div
-                    class="coupon-applied animate-in"
+                    class="coupon-applied animate-in cuponcode-sec"
                     data-discount-kind="reward"
                     data-discount-code="{{ $yotpoRewardCode }}"
                     role="status"
                     style="margin-top:12px;">
-                    <div>
+                    <div class="cuppon-applied-text">
                       <span class="coupon-applied-code">{{ $yotpoRewardCode }}</span>
-                      <span class="apply-code">Applied</span>
                     </div>
+                    <span class="apply-code">Applied</span>
                     <button
                       type="button"
                       id="maxaroma-remove-yotpo-reward"
@@ -1931,6 +1979,15 @@ is_string($image)
             </div>
             @endif
 
+            @if((!Session::has('ShoppingCart.YotpoRewardCode') || (Session::has('ShoppingCart.YotpoRewardCode') && trim(Session::get('ShoppingCart.YotpoRewardCode'))  == '')))
+            <script src="https://cdn-widgetsrepository.yotpo.com/v1/loader/uIl5V6C_LVeCr5BT4bhDLQ" async></script>
+            <div class="col-12" id="checkoutYotpoWidget">
+                @if(Session::has("sess_icustomerid"))
+                    <div class="yotpo-widget-instance" data-yotpo-instance-id="90560" role="region" aria-label="Yotpo Rewards"></div>
+                @endif
+            </div>
+            @endif
+
           </div>
           <!-- Totals -->
           <div class="summary-totals" style="margin-top: var(--space-4);">
@@ -1939,9 +1996,9 @@ is_string($image)
               <span class="summary-row-label">Subtotal ({{ $cartItemCount }} items)</span>
               <span class="summary-row-value" id="summary-subtotal-value">{{ $money($checkoutSubTotal) }}</span>
             </div>
-            <div class="summary-row savings">
+            <div class="summary-row savings" <?= ($checkoutDiscount <= 0) ? 'hidden="trur"' : '' ?> >
               <span class="summary-row-label">Savings</span>
-              <span class="summary-row-value" id="summary-savings-value">−{{ $money($checkoutDiscount) }}</span>
+              <span class="summary-row-value" id="summary-savings-value">-{{ $money($checkoutDiscount) }}</span>
             </div>
             @if(($onlyGCPurchased ?? 0) == 0)
             <div class="summary-row">
@@ -1998,6 +2055,90 @@ is_string($image)
     </div><!-- end .order-summary-body -->
     </div><!-- end .order-summary-card -->
 
+      <div class="free_shipping mobile-show">
+        <div class="free_shipping_inner" id="promo-card" role="status" aria-live="polite">
+          <!-- In-progress state -->
+          <div class="free-gift-state free-gift-progress">
+            <div class="free-gift-head">
+              <span class="promo-info-wrap">
+                <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
+                    <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                    <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                  </svg>
+                </button>
+                <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
+              </span>
+            </div>
+            <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
+              <div class="free-gift-fill free-shipping" id="promo-fill" style="width: 98.1%;"></div>
+            </div>
+            <p class="free-gift-remaining">
+              You're <strong id="promo-amount" class="free-shipping-amount">$3.26 away</strong>
+              <span id="promo-remaining-suffix">to unlock free shipping</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div id="checkout-offers" class="mobile-hide" style="margin-bottom: var(--space-4);">
+        <div class="purchase-threshold-promo" style="margin-bottom: var(--space-4);">
+          <div class="free-gift-card compact" id="promo-card" role="status" aria-live="polite">
+            <!-- In-progress state -->
+            <div class="free-gift-state free-gift-progress">
+              <div class="free-gift-head">
+                <div class="free-gift-icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                    <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                    <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                  </svg>
+                </div>
+                <div class="free-gift-title" id="promo-heading"><a href="#" id="free_sample"><span id="promo-title-text">Unlock your free samples</span></a></div>
+                <span class="promo-info-wrap">
+                  <button type="button" class="promo-info-btn" id="promo-info-btn" hidden="" aria-label="Which products qualify for this offer?" aria-expanded="false" aria-controls="promo-tooltip" onclick="togglePromoTooltip(event)">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.3"></circle>
+                      <path d="M8 7.2V11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
+                      <circle cx="8" cy="5" r="0.9" fill="currentColor"></circle>
+                    </svg>
+                  </button>
+                  <span class="promo-tooltip" id="promo-tooltip" role="tooltip"></span>
+                </span>
+              </div>
+              <div class="free-gift-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="98" id="promo-progressbar" aria-label="Progress toward your promotion">
+                <div class="free-gift-fill" id="promo-fill" style="width: 98.1%;"></div>
+              </div>
+              <p class="free-gift-remaining">
+                You're <strong id="promo-amount">$3.26 away</strong> <span id="promo-remaining-suffix">from free samples!</span>
+              </p>
+            </div>
+
+            <!-- Unlocked state -->
+            <div class="free-gift-state free-gift-unlocked">
+              <div class="free-gift-unlocked-row">
+                <div class="free-gift-icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+                    <path d="M3 8H19V19H3V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M2 8H20V11H2V8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M11 8V19" stroke="#16A34A" stroke-width="1.5"></path>
+                    <path d="M11 8C11 8 9 8 7.5 6.5C6.5 5.5 7.5 3.5 9 4.5C10.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                    <path d="M11 8C11 8 13 8 14.5 6.5C15.5 5.5 14.5 3.5 13 4.5C11.5 5.5 11 8 11 8Z" stroke="#16A34A" stroke-width="1.5" stroke-linejoin="round"></path>
+                  </svg>
+                </div>
+                <div>
+                  <div class="free-gift-unlocked-title">🎉 Congratulations!</div>
+                  <div class="free-gift-unlocked-desc" id="promo-success-desc">You've unlocked your free samples!</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
     <!-- Desktop Sticky Place Order Dock (Aligned with right-side Order Summary panel) -->
     <div class="order-summary-sticky-dock" id="order-summary-sticky-dock" role="region" aria-label="Desktop Sticky Place Order Action">
       <div class="order-summary-sticky-inner" id="order-summary-sticky-inner"></div>
@@ -2028,14 +2169,14 @@ is_string($image)
             <path d="M3 11L7 7L10 10L15 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path>
             <path d="M1 15H17" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path>
           </svg>
-          <span><strong style="font-weight:600;">Free Shipping</strong> on qualifying orders</span>
+          <span><strong style="font-weight:600;">Free Shipping</strong> on orders over $75</span>
         </div>
         <div class="reassurance-item">
           <svg class="reassurance-icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <circle cx="9" cy="9" r="7.5" stroke="currentColor" stroke-width="1.3"></circle>
             <path d="M5.5 9L8 11.5L12.5 6.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"></path>
           </svg>
-          <span><strong style="font-weight:600;">Free Returns</strong> — 30-day hassle-free policy</span>
+          <span><strong style="font-weight:600;">Free Returns & Exchanges</strong> - excludes final sale items</span>
         </div>
         <div class="reassurance-item">
           <svg class="reassurance-icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -2050,7 +2191,9 @@ is_string($image)
             <circle cx="4" cy="11.5" r="1.4" stroke="currentColor" stroke-width="1.3"></circle>
             <circle cx="13.5" cy="11.5" r="1.4" stroke="currentColor" stroke-width="1.3"></circle>
           </svg>
-          <span><strong style="font-weight:600;">Shipping Rate Calculator</strong> — estimate before you buy</span>
+          <span>
+            <a href="javascript:void(0);" class="shippingCalculate"><strong style="font-weight:600;">Shipping Rate Calculator</strong> — estimate before you buy</a>
+          </span>
         </div>
         <div class="reassurance-item">
           <svg class="reassurance-icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -2070,13 +2213,17 @@ is_string($image)
             <path d="M9 1.5C6.5 1.5 4.5 3.5 4.5 6C4.5 9 9 16.5 9 16.5S13.5 9 13.5 6C13.5 3.5 11.5 1.5 9 1.5Z" stroke="currentColor" stroke-width="1.3"></path>
             <circle cx="9" cy="6" r="1.5" stroke="currentColor" stroke-width="1.3"></circle>
           </svg>
-          <span><strong style="font-weight:600;">Free Samples Available</strong> with select orders</span>
+          <span><strong style="font-weight:600;">Free Samples & Gifts Available</strong> with select orders</span>
         </div>
         <div class="reassurance-item">
           <svg class="reassurance-icon" viewBox="0 0 18 18" fill="none" aria-hidden="true">
             <path d="M9 2L11 7H16L12 10.5L13.5 15.5L9 12.5L4.5 15.5L6 10.5L2 7H7L9 2Z" stroke="currentColor" stroke-width="1.3"></path>
           </svg>
-          <span><strong style="font-weight:600;">Aroma Club Rewards</strong> — earn points on every order</span>
+          <span>
+              <a href="{{ url('/reward-point-program.html') }}" target="_blank">
+                <strong style="font-weight:600;">Aroma Club Rewards</strong> — earn points on every order
+              </a>
+          </span>
         </div>
       </div>
     </div>
@@ -2245,7 +2392,7 @@ is_string($image)
       </svg>
     </div>
     <h2 class="protect-confirm-title" id="protect-confirm-title">Remove Protect My Order?</h2>
-    <p class="protect-confirm-body" id="protect-confirm-body">Without this protection, you're responsible for replacing your order if it's lost, stolen, or damaged in transit.</p>
+    <p class="protect-confirm-body" id="protect-confirm-body">Please note by turning Shipping Insurance OFF, you are agreeing to taking full responsibility for any loss, damages or theft. Maxaroma cannot take claim if the insurance is off, however you can submit a claim to the carrier directly.</p>
     <div class="protect-confirm-actions">
       <button
         type="button"
@@ -2271,11 +2418,30 @@ is_string($image)
       </svg>
     </div>
     <h2 class="protect-confirm-title" id="signature-confirm-title">Remove Request Signature?</h2>
-    <p class="protect-confirm-body" id="signature-confirm-body">For this order, we automatically add signature requirements free of charge. Opting out of signature requests will void any additional reassurances should your package show as delivered according to tracking.</p>
-    <div class="protect-confirm-actions">
-      <button type="button" class="btn btn-primary protect-confirm-keep" onclick="keepSignature()">Keep Signature · <span id="signature-confirm-keep-price">{{ $checkoutSignature > 0 ? $money($checkoutSignature) : 'Free' }}</span></button>
-      <button type="button" class="protect-confirm-remove" onclick="removeSignature()">No thanks, remove it</button>
-    </div>
+   <p class="protect-confirm-body" id="signature-confirm-body">
+  For this order, we automatically add signature requirements
+  <span id="signature-confirm-message-price">
+    {{ $checkoutSignature > 0 ? $money($checkoutSignature) : 'free of charge' }}
+  </span>.
+  Opting out of signature requests will void any additional reassurances should your package show as delivered according to tracking.
+</p>
+
+<div class="protect-confirm-actions">
+  <button type="button"
+          class="btn btn-primary protect-confirm-keep"
+          onclick="keepSignature()">
+    Keep Signature ·
+    <span id="signature-confirm-keep-price">
+      {{ $checkoutSignature > 0 ? $money($checkoutSignature) : 'Free' }}
+    </span>
+  </button>
+
+  <button type="button"
+          class="protect-confirm-remove"
+          onclick="removeSignature()">
+    No thanks, remove it
+  </button>
+</div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════
@@ -2354,7 +2520,7 @@ is_string($image)
         <div class="order-item-controls">
           @if($isFreeGift || $isFreeSample)
 
-          <span>Qty : {{ $quantity }}</span>
+          <span>Qty: {{ $quantity }}</span>
           @if(
           $isFreeSample
           ||
@@ -2377,7 +2543,7 @@ is_string($image)
           </div>
           @endif
           @if(($item['IsGiftCertificateItem'] ?? 'No') === 'Yes')
-          <span>Qty : {{ $quantity }}</span>
+          <span>Qty: {{ $quantity }}</span>
           @endif
           <button class="item-remove" type="button" aria-label="Remove {{ $productName }} from cart" onclick="removeItem(this)">Remove</button>
           @endif
@@ -2927,167 +3093,103 @@ is_string($image)
       }
     }
 
-    function handleProtectionToggle(checkbox) {
+function handleProtectionToggle(checkbox) {
 
-      /*
-       * =========================================================
-       * PROTECTION ON
-       * =========================================================
-       */
-      /*
-      if (checkbox.checked) {
+  /*
+   * PROTECTION ON:
+   * Apply insurance directly.
+   * Do not open the confirmation popup.
+   */
+  if (checkbox.checked) {
 
-        if (
-          window.MaxaromaOnePageCheckout &&
-          typeof window.MaxaromaOnePageCheckout
-          .setShippingInsurance === 'function'
-        ) {
-
-          window.MaxaromaOnePageCheckout
-            .setShippingInsurance('add');
-        }
-
-        syncAddonCard('protection');
-
-        return;
-      }
-      */
-      /*
-       * =========================================================
-       * PROTECTION OFF REQUEST
-       * =========================================================
-       *
-       * OFF is NOT confirmed yet.
-       *
-       * Keep Protection ON until the customer explicitly chooses
-       * "No thanks, remove it".
-       *
-       * This prevents the normal totals flow from immediately
-       * clearing Insurance and changing the popup price to $0.00.
-       */
-
-      const overlay =
-        document.getElementById(
-          'protect-confirm-overlay'
-        );
-
-      const modal =
-        document.getElementById(
-          'protect-confirm-modal'
-        );
-
-      if (!overlay || !modal) {
-
-        /*
-         * Confirmation modal is unavailable.
-         * Keep Protection ON safely.
-         */
-        checkbox.checked = true;
-
-        syncAddonCard('protection');
-
-        return;
-      }
-
-      /*
-       * =========================================================
-       * PRESERVE CURRENT INSURANCE AMOUNT
-       * =========================================================
-       *
-       * Read the amount BEFORE opening the confirmation.
-       *
-       * Example:
-       *
-       *     Insurance = $3.59
-       *
-       * Popup must show:
-       *
-       *     KEEP PROTECTION · $3.59
-       */
-
-      const $checkoutInsurance =
-        $('#checkout-insurance');
-
-      const $keepProtectionPrice =
-        $('#protect-confirm-keep-price');
-
-      if (
-        $checkoutInsurance.length &&
-        $keepProtectionPrice.length
-      ) {
-
-        const currentInsurance =
-          $checkoutInsurance
-          .text()
-          .trim();
-
-        if (
-          currentInsurance !== ''
-        ) {
-
-          $keepProtectionPrice.text(
-            currentInsurance
-          );
-        }
-      }
-
-      /*
-       * =========================================================
-       * KEEP PROTECTION ON WHILE CONFIRMATION IS OPEN
-       * =========================================================
-       *
-       * The actual remove action is handled only by:
-       *
-       *     removeProtection()
-       *
-       * after the customer clicks:
-       *
-       *     "No thanks, remove it"
-       */
-
-      checkbox.checked = true;
-
-      syncAddonCard('protection');
-
-      /*
-       * Preserve focus for modal close.
-       */
-      _protectConfirmLastFocus =
-        checkbox;
-
-      /*
-       * Open confirmation modal.
-       */
-      overlay.hidden =
-        false;
-
-      modal.hidden =
-        false;
-
-      document.body.style.overflow =
-        'hidden';
-
-      /*
-       * Focus Keep Protection button.
-       */
-      setTimeout(() => {
-
-        const button =
-          modal.querySelector(
-            '.protect-confirm-keep'
-          );
-
-        if (button) {
-          button.focus();
-        }
-
-      }, 50);
-
-      document.addEventListener(
-        'keydown',
-        _protectConfirmKeydown
-      );
+    if (
+      window.MaxaromaOnePageCheckout &&
+      typeof window.MaxaromaOnePageCheckout
+        .setShippingInsurance === 'function'
+    ) {
+      window.MaxaromaOnePageCheckout
+        .setShippingInsurance('add');
     }
+
+    syncAddonCard('protection');
+
+    return;
+  }
+
+  /*
+   * PROTECTION OFF:
+   * Keep the existing confirmation popup behavior.
+   */
+  const overlay = document.getElementById(
+    'protect-confirm-overlay'
+  );
+
+  const modal = document.getElementById(
+    'protect-confirm-modal'
+  );
+
+  if (!overlay || !modal) {
+
+    // If the confirmation UI is unavailable,
+    // restore the checkbox to ON safely.
+    checkbox.checked = true;
+
+    syncAddonCard('protection');
+
+    return;
+  }
+
+  /*
+   * Read the current insurance amount before
+   * opening the confirmation popup.
+   */
+  const $checkoutInsurance = $('#checkout-insurance');
+  const $keepProtectionPrice = $(
+    '#protect-confirm-keep-price'
+  );
+
+  if (
+    $checkoutInsurance.length &&
+    $keepProtectionPrice.length
+  ) {
+    const currentInsurance =
+      $checkoutInsurance.text().trim();
+
+    if (currentInsurance !== '') {
+      $keepProtectionPrice.text(currentInsurance);
+    }
+  }
+
+  /*
+   * Keep Protection ON until the customer confirms
+   * removal through the existing popup.
+   */
+  checkbox.checked = true;
+
+  syncAddonCard('protection');
+
+  _protectConfirmLastFocus = checkbox;
+
+  overlay.hidden = false;
+  modal.hidden = false;
+
+  document.body.style.overflow = 'hidden';
+
+  setTimeout(() => {
+    const button = modal.querySelector(
+      '.protect-confirm-keep'
+    );
+
+    if (button) {
+      button.focus();
+    }
+  }, 50);
+
+  document.addEventListener(
+    'keydown',
+    _protectConfirmKeydown
+  );
+}
 
     function closeProtectConfirm() {
       const overlay = document.getElementById('protect-confirm-overlay');
@@ -3224,137 +3326,99 @@ is_string($image)
       }
     }
 
-    function handleSignatureToggle(checkbox) {
-
-      /*
-       * =========================================================
-       * SIGNATURE ON
-       * =========================================================
-       */
-
-      if (checkbox.checked) {
-
+function handleSignatureToggle(checkbox) {
+    if (checkbox.checked) {
         if (
-          window.MaxaromaOnePageCheckout &&
-          typeof window.MaxaromaOnePageCheckout
-          .setShippingSignature ===
-          'function'
+            window.MaxaromaOnePageCheckout &&
+            typeof window.MaxaromaOnePageCheckout.setShippingSignature === 'function'
         ) {
-
-          window.MaxaromaOnePageCheckout
-            .setShippingSignature('add');
+            window.MaxaromaOnePageCheckout.setShippingSignature('add');
         }
 
-        syncAddonCard(
-          'request-signature'
-        );
-
+        syncAddonCard('request-signature');
         return;
-      }
+    }
 
-      /*
-       * =========================================================
-       * SIGNATURE OFF REQUEST
-       * =========================================================
-       *
-       * IMPORTANT:
-       *
-       * OFF is NOT confirmed yet.
-       *
-       * Customer has only clicked the toggle.
-       * The actual removal happens only after:
-       *
-       *     "No thanks, remove it"
-       *
-       * Therefore keep the real checkbox/state ON while the
-       * confirmation modal is open.
-       */
+    // OFF request: keep the checkbox ON until the customer confirms.
+    const overlay = document.getElementById('signature-confirm-overlay');
+    const modal = document.getElementById('signature-confirm-modal');
 
-      const overlay =
-        document.getElementById(
-          'signature-confirm-overlay'
-        );
-
-      const modal =
-        document.getElementById(
-          'signature-confirm-modal'
-        );
-
-      if (
-        !overlay ||
-        !modal
-      ) {
-
-        /*
-         * If confirmation UI is unavailable,
-         * fail safely and keep Signature ON.
-         */
+    if (!overlay || !modal) {
         checkbox.checked = true;
-
-        syncAddonCard(
-          'request-signature'
-        );
-
+        syncAddonCard('request-signature');
         return;
-      }
+    }
 
-      /*
-       * Restore ON immediately.
-       */
-      checkbox.checked = true;
+    checkbox.checked = true;
+    syncAddonCard('request-signature');
 
-      syncAddonCard(
-        'request-signature'
-      );
+    const state = window.MaxaromaCheckout?.totalsState || {};
+    const messagePrice = document.getElementById('signature-confirm-message-price');
+    const keepPrice = document.getElementById('signature-confirm-keep-price');
+    const addonPrice = document.getElementById('signature-addon-price');
 
-      /*
-       * Preserve the current Signature state/charge.
-       */
-      const state =
-        window.MaxaromaCheckout?.totalsState;
+    // Use the existing checkout signature display state.
+    let displayCharge = Number(state.signatureDisplayCharge);
+    let isFree = state.signatureIsFree;
 
-      if (state) {
+    // Fallback to the currently displayed add-on price if state is unavailable.
+    if (!Number.isFinite(displayCharge) || displayCharge < 0) {
+        const visiblePrice = addonPrice?.textContent?.trim() || '';
+        const match = visiblePrice.match(/(\d+(?:\.\d{1,2})?)/);
 
-        state.signatureApplied =
-          true;
-      }
+        displayCharge = match ? Number(match[1]) : 0;
+    }
 
-      /*
-       * Open confirmation modal.
-       */
-      _signatureConfirmLastFocus =
-        checkbox;
+    if (isFree === undefined || isFree === null) {
+        isFree = addonPrice
+            ? addonPrice.textContent.trim().toLowerCase() === 'free'
+            : displayCharge <= 0;
+    } else {
+        isFree =
+            isFree === true ||
+            String(isFree).toLowerCase() === 'true' ||
+            String(isFree).toLowerCase() === 'yes' ||
+            String(isFree) === '1';
+    }
 
-      overlay.hidden =
-        false;
+    const formattedPrice = isFree
+        ? 'Free'
+        : '$' + displayCharge.toFixed(2);
 
-      modal.hidden =
-        false;
+    if (messagePrice) {
+        messagePrice.textContent = isFree
+            ? 'free of charge'
+            : formattedPrice;
+    }
 
-      document.body.style.overflow =
-        'hidden';
+    if (keepPrice) {
+        keepPrice.textContent = formattedPrice;
+    }
 
-      /*
-       * Focus Keep Signature.
-       */
-      setTimeout(function() {
+    // Preserve the existing signature state while the confirmation is open.
+    const checkoutState = window.MaxaromaCheckout?.totalsState;
 
-        const button =
-          modal.querySelector(
-            '.protect-confirm-keep'
-          );
+    if (checkoutState) {
+        checkoutState.signatureApplied = true;
+    }
+
+    // Open the existing confirmation modal.
+    _signatureConfirmLastFocus = checkbox;
+
+    overlay.hidden = false;
+    modal.hidden = false;
+    document.body.style.overflow = 'hidden';
+
+    setTimeout(function () {
+        const button = modal.querySelector('.protect-confirm-keep');
 
         if (button) {
-          button.focus();
+            button.focus();
         }
+    }, 50);
 
-      }, 50);
-
-      document.addEventListener(
-        'keydown',
-        _signatureConfirmKeydown
-      );
-    }
+    document.addEventListener('keydown', _signatureConfirmKeydown);
+}
 
     function closeSignatureConfirm() {
       const overlay = document.getElementById('signature-confirm-overlay');
@@ -3544,10 +3608,44 @@ is_string($image)
 
         if (addonPrice) {
 
+          const displayChargeRaw =
+            checkoutState.signatureDisplayCharge ??
+            detail.signatureDisplayCharge ??
+            signature.display_charge ??
+            signature.displayCharge ??
+            charge;
+
+          let displayCharge =
+            parseFloat(displayChargeRaw);
+
+          if (
+            Number.isNaN(displayCharge) ||
+            displayCharge < 0
+          ) {
+            displayCharge = 0;
+          }
+
+          const displayFreeRaw =
+            checkoutState.signatureIsFree ??
+            detail.signatureDisplayIsFree ??
+            signature.is_free ??
+            signature.isFree;
+
+          const isGenuinelyFree =
+            displayFreeRaw !== undefined &&
+            displayFreeRaw !== null
+              ? (
+                  displayFreeRaw === true ||
+                  String(displayFreeRaw).toLowerCase() === 'true' ||
+                  String(displayFreeRaw).toLowerCase() === 'yes' ||
+                  String(displayFreeRaw) === '1'
+                )
+              : displayCharge <= 0;
+
           addonPrice.textContent =
-            applied && charge > 0 ?
-            '+' + signatureText :
-            'Free';
+            isGenuinelyFree
+              ? 'Free'
+              : '+$' + displayCharge.toFixed(2);
         }
 
         /*

@@ -384,3 +384,5 @@ window.StripeCard = {
             : '';
     }
 };
+
+//StripeCard.init(window.stripeinfo.stripekey);

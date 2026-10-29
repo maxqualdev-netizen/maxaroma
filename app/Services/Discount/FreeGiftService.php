@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
 use App\Services\Cart\CartStockService;
+use Illuminate\Support\Facades\Cache;
 class FreeGiftService
 {
 
@@ -27,7 +28,7 @@ class FreeGiftService
     public function __construct(
         protected CartStockService $cartStockService
     ) {
-    } 
+    }
     public function isEligibleCustomer(): bool
     {
         if (config('Settings.FREEGIFTFLAG') !== 'Yes') {
@@ -175,7 +176,7 @@ class FreeGiftService
      * - Out of stock message
      * - empty string when successfully added
      */
- 
+
 /**
  * Insert the Free Gift configured on the coupon record.
  *
@@ -608,8 +609,12 @@ public function insertWithCoupon(string $productValue): array
                 ' ' . $outOfStockSku;
         }
 
-        Session::flash(
-            'OutOfStockBundle',
+        // Session::flash(
+        //     'OutOfStockBundle',
+        //     $message
+        // );
+        Session::put(
+            'cart_error_message',
             $message
         );
 
@@ -939,11 +944,8 @@ public function insertWithCoupon(string $productValue): array
                 $autoAdded
             );
 
-        if (
-            $result['added']
-        ) {
-            $cart =
-                $result['cart'];
+        if ($result['added']) {
+            $cart =$result['cart'];
         } else {
             $skuList .=
                 $result['sku']
@@ -977,8 +979,13 @@ public function insertWithCoupon(string $productValue): array
             $log
         );
 
-        Session::flash(
-            'OutOfStockBundle',
+        // Session::put(
+        //     'OutOfStockBundle',
+        //     'The Free bundle is out of stock and cannot be added to your order '
+        //     . $skuList
+        // );
+        Session::put(
+            'cart_error_message',
             'The Free bundle is out of stock and cannot be added to your order '
             . $skuList
         );
@@ -1077,9 +1084,10 @@ public function insertWithCoupon(string $productValue): array
          * ND
          * ---------------------------------------------------------
          */
+
         if (
-            ($product->stock ?? '')
-            === 'Out'
+             (float) $product->current_stock  <=0
+
         ) {
             if (
                 !empty(
@@ -1106,6 +1114,7 @@ public function insertWithCoupon(string $productValue): array
                 $product->pca_current_stock
                     > 0
             ) {
+
                 $isPca =
                     'Yes';
 
@@ -1223,8 +1232,7 @@ public function insertWithCoupon(string $productValue): array
             [];
 
         if (
-            ($product->WebsiteStock ?? '')
-            === 'In'
+            $product->current_stock > 0
         ) {
             $item[
                 'IsMaxaromaTwoDelivery'
@@ -1332,8 +1340,7 @@ $item['FreeGiftAutoAdded'] =
 
         $item['freeproductsid'] =
             $freeProductsId;
-            
-            
+
         $freeGiftRuleSkuCount = 1;
 		$freeGiftAddCount = 1;
 
@@ -1382,7 +1389,7 @@ $item['FreeGiftAutoAdded'] =
 			max(1, $freeGiftRuleSkuCount);
 
 		$item['FreeGiftAddCount'] =
-			max(1, $freeGiftAddCount);    
+			max(1, $freeGiftAddCount);
 
         $item['VendorSKU'] =
             $vendorSku;
@@ -1464,6 +1471,8 @@ $item['FreeGiftAutoAdded'] =
          * Add to cart.
          * ---------------------------------------------------------
          */
+        Session::put('cart_success_message', 'Free Gift added to cart.');
+
         $cart[] =
             $item;
 
@@ -1913,7 +1922,6 @@ public function removeAutoAddedFreeGifts(): int
     return $removed;
 }
 
-
    /**
      * Resolve the legacy Free Gift rule for the current cart.
      *
@@ -1924,7 +1932,7 @@ public function removeAutoAddedFreeGifts(): int
      *
      * @return array
      */
-     
+
 public function resolveEligibleGifts(
     array $cart,
     float $totalValue,
@@ -1987,8 +1995,7 @@ public function resolveEligibleGifts(
             ($item['IS_Free_Gift'] ?? 'No') === 'Yes'
             ||
             ($item['Is_Free_Sample'] ?? 'No') === 'Yes'
-            ||
-            ($item['IsDealProducts'] ?? 'No') === 'Yes'
+
         ) {
             continue;
         }
@@ -2526,12 +2533,6 @@ public function resolveEligibleGifts(
                 /*
                  * Skip Deal Product.
                  */
-                if (
-                    ($item['IsDealProducts'] ?? 'No')
-                    === 'Yes'
-                ) {
-                    continue;
-                }
 
                 $lineTotal =
                     (float) (
@@ -3242,8 +3243,7 @@ public function resolveEligibleGifts(
             ($item['IS_Free_Gift'] ?? 'No') === 'Yes'
             ||
             ($item['Is_Free_Sample'] ?? 'No') === 'Yes'
-            ||
-            ($item['IsDealProducts'] ?? 'No') === 'Yes'
+
         ) {
             continue;
         }
@@ -3640,4 +3640,322 @@ public function removeAllFreeGifts(): int
 
     return $removed;
 }
+
+/**
+ * Calculate the next Free Gift threshold for checkout progress.
+ *
+ * This method is read-only. It does not add, remove, or modify cart items.
+ *
+ * @param array $cart Current checkout cart
+ * @param float $totalValue Discounted purchase total
+ *
+ * @return array|null
+ */
+    public function getFreeGiftProgress(
+        array $cart,
+        float $totalValue
+    ): ?array {
+        /*
+        * CUSTOMER / CHECKOUT ELIGIBILITY
+        */
+        if (
+            !$this->isEligibleCustomer()
+            || config('Settings.CHECKOUT_SHOIPPINGCART') !== 'Yes'
+            || $totalValue <= 0
+            || empty($cart)
+        ) {
+            return null;
+        }
+        $today = date('Y-m-d');
+        // if(Session::has('free_gift_cache_create_date'))
+        // {
+        //     if(Session::get('free_gift_cache_create_date') != $today)
+        //     {
+        //         Cache::forget('free_gift_active_rules');
+        //         Cache::forget('free_gift_brands');
+        //         Cache::forget('free_gift_category');
+        //         Cache::forget('free_gift_available_skus');
+        //     }
+        // }
+        // Session::put('free_gift_cache_create_date',$today);
+
+        /*
+        * CACHE ACTIVE FREE GIFT RULES FOR 5 MINUTES
+        */
+
+        $rules = Cache::remember(
+            'free_gift_active_rules',
+            86400,
+            function () use ($today,$totalValue) {
+                return DB::table('pu_free_gift_product')
+                    ->where('status', '1')
+                    ->whereDate('start_date', '<=', $today)
+                    ->whereDate('end_date', '>=', $today)
+                    ->whereIn(
+                        'flag_range',
+                        ['', 'Brand', 'Category', 'Brand,Category']
+                    )
+                    ->where('price_start_range','>=',$totalValue)
+                    ->orderBy(DB::raw('price_start_range - '.$totalValue),'ASC')
+                   //->orderBy('price_end_range')
+                    ->get();
+            }
+        );
+
+        if (!$rules || $rules->isEmpty()) {
+            return null;
+        }
+
+        /*
+        * CACHE BRAND / CATEGORY MAPPINGS FOR 10 MINUTES
+        */
+
+        $ruleIds = $rules
+            ->pluck('products_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        sort($ruleIds);
+
+        $ruleIdsHash = md5(implode(',', $ruleIds));
+
+        $brandMap = Cache::remember(
+            'free_gift_brands',
+            86400,
+            function () use ($ruleIds) {
+                return DB::table('pu_freegift_brand')
+                    ->whereIn('products_id', $ruleIds)
+                    ->get()
+                    ->groupBy('products_id');
+            }
+        );
+
+        $categoryMap = Cache::remember(
+            'free_gift_category',
+            86400,
+            function () use ($ruleIds) {
+                return DB::table('pu_freegift_category')
+                    ->whereIn('products_id', $ruleIds)
+                    ->get()
+                    ->groupBy('products_id');
+            }
+        );
+
+        /*
+        * COLLECT GIFT SKUS
+        */
+        $allGiftSkus = [];
+
+        foreach ($rules as $rule) {
+            $skuString = trim((string) ($rule->sku ?? ''));
+
+            if ($skuString === '') {
+                continue;
+            }
+
+            $skus = preg_split('/[# ,]+/', $skuString);
+
+            $skus = array_values(array_filter(
+                array_map('trim', $skus),
+                'strlen'
+            ));
+
+            $allGiftSkus = array_merge($allGiftSkus, $skus);
+        }
+
+        $allGiftSkus = array_values(array_unique($allGiftSkus));
+
+        if (empty($allGiftSkus)) {
+            return null;
+        }
+
+        /*
+        * CACHE AVAILABLE GIFT SKUS FOR 30 SECONDS
+        *
+        * Stock is cached briefly to reduce repeated product queries.
+        */
+        $sortedGiftSkus = $allGiftSkus;
+        sort($sortedGiftSkus);
+
+        $availableGiftSkus = Cache::remember(
+            'free_gift_available_skus',
+            86400,
+            function () use ($allGiftSkus) {
+                return Products::query()
+                    ->whereIn('sku', $allGiftSkus)
+                    ->where('is_free_gift_products', 'Yes')
+                    ->where('status', '1')
+                    ->get()
+                    ->filter(function ($product) {
+                        return $this->isStockValidForGift($product);
+                    })
+                    ->pluck('sku')
+                    ->map(function ($sku) {
+                        return trim((string) $sku);
+                    })
+                    ->filter(function ($sku) {
+                        return $sku !== '';
+                    })
+                    ->unique()
+                    ->values()
+                    ->all();
+            }
+        );
+
+        if (empty($availableGiftSkus)) {
+            return null;
+        }
+
+        /*
+        * RULE PRIORITY
+        */
+        $priority = [
+            'Brand,Category' => 4,
+            'Brand'          => 3,
+            'Category'       => 2,
+            ''               => 1,
+        ];
+
+        $bestProgress = null;
+
+        /*
+        * FIND THE NEXT QUALIFYING THRESHOLD
+        */
+        foreach ($rules as $rule) {
+            $flag = trim((string) ($rule->flag_range ?? ''));
+            $start = (float) ($rule->price_start_range ?? 0);
+
+            if ($start <= 0) {
+                continue;
+            }
+
+            $ruleBrands = $brandMap->get(
+                $rule->products_id,
+                collect()
+            );
+
+            $ruleCategories = $categoryMap->get(
+                $rule->products_id,
+                collect()
+            );
+
+            /*
+            * EXCLUDED SKUS
+            */
+            $excludeSkuString = trim(
+                (string) ($rule->exclude_sku ?? '')
+            );
+
+            $excludeSkus = $excludeSkuString !== ''
+                ? array_values(array_filter(
+                    array_map(
+                        'trim',
+                        preg_split('/[# ,]+/', $excludeSkuString)
+                    ),
+                    'strlen'
+                ))
+                : [];
+
+            /*
+            * POCKET PERFUME EXCLUSION
+            */
+            $excludePocket = trim(
+                (string) ($rule->exclude_pocketperfume ?? '')
+            ) === 'Yes';
+
+            /*
+            * CALCULATE RULE-SPECIFIC CART TOTAL
+            *
+            * Current cart progress is deliberately not cached.
+            */
+            $qualifyingTotal = $this->calculateRuleTotal(
+                $cart,
+                $flag,
+                $ruleBrands,
+                $ruleCategories,
+                $totalValue,
+                $excludeSkus,
+                $excludePocket
+            );
+
+            /*
+            * Skip Brand / Category rules with no qualifying products.
+            */
+            if ($flag !== '' && $qualifyingTotal <= 0) {
+                continue;
+            }
+
+            /*
+            * Only show thresholds that have not yet been reached.
+            */
+            if ($qualifyingTotal >= $start) {
+                continue;
+            }
+
+            /*
+            * CHECK THIS RULE HAS AN AVAILABLE GIFT
+            */
+            $ruleSkuString = trim((string) ($rule->sku ?? ''));
+
+            $ruleSkus = $ruleSkuString !== ''
+                ? array_values(array_filter(
+                    array_map(
+                        'trim',
+                        preg_split('/[# ,]+/', $ruleSkuString)
+                    ),
+                    'strlen'
+                ))
+                : [];
+
+            if (
+                empty(array_intersect($ruleSkus, $availableGiftSkus))
+            ) {
+                continue;
+            }
+
+            /*
+            * BUILD PROGRESS RESPONSE
+            */
+            $remaining = round(
+                max(0, $start - $qualifyingTotal),
+                2
+            );
+
+            $progress = [
+                'rule_id'       => (int) $rule->products_id,
+                'flag_range'    => $flag,
+                'start_price'   => round($start, 2),
+                'cart_value'    => round($qualifyingTotal, 2),
+                'remain_amount' => $remaining,
+                'percentage'    => min(
+                    100,
+                    max(
+                        0,
+                        round(($qualifyingTotal * 100) / $start, 2)
+                    )
+                ),
+                'title' => 'Unlock your free gift',
+            ];
+
+            /*
+            * Prefer the closest remaining threshold.
+            * If tied, use the existing rule-type priority.
+            */
+            if (
+                $bestProgress === null
+                || $remaining < $bestProgress['remain_amount']
+                || (
+                    $remaining == $bestProgress['remain_amount']
+                    && ($priority[$flag] ?? 0)
+                        > ($priority[$bestProgress['flag_range']] ?? 0)
+                )
+            ) {
+                $bestProgress = $progress;
+            }
+        }
+
+        return $bestProgress;
+    }
+
 }

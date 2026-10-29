@@ -341,4 +341,42 @@ Log::info(
 return (float) $netTotal;
     }
 
+
+
+/**
+ * Calculate Insurance price for display only.
+ * Does not change the Insurance preference or session charge.
+ */
+public function getDisplayCharge(): float
+{
+    if (
+        Session::get('ShoppingCart.OrderType') === 'Store'
+        || Session::get('ShoppingCart.Shipping.ShippingMethodID') == 46
+    ) {
+        return 0.0;
+    }
+
+    $subTotal =
+        $this->checkoutTotalsService->getSubTotal()
+        + $this->checkoutTotalsService->getAllCharges('ShippingCharge')
+        + $this->checkoutTotalsService->getAllCharges('GiftWrappingCharge')
+        + $this->checkoutTotalsService->getAllCharges('ShippingSignature');
+
+    $discounts = $this->discountService->getAll();
+
+    $netTotal = NumberFormat(
+        $subTotal - ($discounts['TotalDiscount'] ?? 0)
+    );
+
+    if ($netTotal <= 0) {
+        return 0.0;
+    }
+
+    $shippingInsurance = $netTotal <= 99
+        ? 1.55
+        : NumberFormat(($netTotal * 0.02) + 1.55);
+
+    return (float) $shippingInsurance;
+}
+
 }

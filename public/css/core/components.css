@@ -426,6 +426,12 @@ body {
   transition: background var(--transition-fast);
   min-height: var(--touch-target-min);
 }
+.field-check a{
+  text-decoration: underline;
+}
+.field-check a:hover{
+  text-decoration: none;
+}
 .field-check:hover { background: var(--color-bg-muted); }
 
 .field-check input[type="checkbox"],
@@ -824,7 +830,8 @@ body {
 }
 .summary-row-label { color: var(--color-text-secondary); }
 .summary-row-value { font-weight: var(--font-weight-medium); }
-.summary-row.savings .summary-row-value { color: var(--color-text-success); }
+.summary-row-value.discount-value{color: var(--color-text-success); font-weight: 600;}
+.summary-row.savings .summary-row-value { color: var(--color-text-success); font-weight: 600;}
 .summary-row.total {
   padding: var(--space-4) 0;
   border-top: 2px solid var(--color-border-default);
@@ -928,15 +935,23 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-3);
   background: var(--color-bg-success);
   border: 1px solid #86EFAC;
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
+  flex-wrap: wrap;
 }
+
+.cuponcode-sec.coupon-applied {gap: var(--space-0);}
+
+.coupon-applied .cuppon-applied-text{flex: 0 0 100%; }
+
 .coupon-applied-code { font-weight: var(--font-weight-semibold);  letter-spacing: var(--letter-spacing-wider); }
 .coupon-applied-remove { color: var(--color-text-error); font-size: var(--font-size-xs); cursor: pointer; text-decoration: underline; background: none; border: none; }
+
+
 
 @media(max-width:767px){
   .coupon-applied{
@@ -985,7 +1000,7 @@ body {
   font-weight: var(--font-weight-medium);
   color: var(--color-text-tertiary);
 }
-.security-bar-icon { width: 14px; height: 14px; color: var(--color-text-success); }
+.security-bar-icon { width: 14px; height: 16px; color: var(--color-text-success); }
 
 /* ── Delivery Confidence ─────────────────────────────────────── */
 .delivery-card {

@@ -17,11 +17,14 @@ use App\Models\Customer;
 use App\Models\NewsLetter;
 use App\Models\RewardPoint;
 use App\Models\ShippingRule;
+use App\Models\FreeVialSampleProduct;
 use App\Services\Checkout\ShippingService;
 use App\Services\Payment\PaypalService;
 use App\Services\Payment\AfterpayService;
 use App\Services\Payment\AmazonPayService;
 use App\Services\Checkout\CheckoutTotalsService;
+use App\Services\Discount\FreeGiftService;
+use Carbon\Carbon;
 
 class CheckoutController extends Controller
 {
@@ -34,7 +37,7 @@ class CheckoutController extends Controller
     protected AfterpayService $AfterpayService;
     protected AmazonPayService $AmazonPayService;
     protected CheckoutTotalsService $checkoutTotals;
-
+    protected FreeGiftService $freeGiftService;
     public function __construct(
         CheckoutService $checkoutService,
         StripePaymentService $StripePaymentService,
@@ -42,7 +45,8 @@ class CheckoutController extends Controller
         PaypalService $PaypalService,
         AfterpayService $AfterpayService,
         AmazonPayService $AmazonPayService,
-        CheckoutTotalsService $checkoutTotals
+        CheckoutTotalsService $checkoutTotals,
+        FreeGiftService $freeGiftService
     )
     {
         $this->checkoutService = $checkoutService;
@@ -52,6 +56,7 @@ class CheckoutController extends Controller
         $this->AfterpayService = $AfterpayService;
         $this->AmazonPayService = $AmazonPayService;
         $this->checkoutTotals = $checkoutTotals;
+        $this->freeGiftService = $freeGiftService;
     }
 
     /**
@@ -87,7 +92,18 @@ class CheckoutController extends Controller
         {
             $selectedPaymentMethod = "PAYMENT_PAYWITHAMAZON";
         }
+        if(Session::has('cart_success_message'))
+        {
+            $result['data']['cart_success_message'] = Session::get('cart_success_message');
+            Session::forget('cart_success_message');
+        }
+        if(Session::has('cart_error_message'))
+        {
+            $result['data']['cart_error_message'] = Session::get('cart_error_message');
+            Session::forget('cart_error_message');
+        }
 
+        $result['data']['test'] = $request->test??0;
         $result['data']['selectedPaymentMethod'] = $selectedPaymentMethod;
         return view('newcheckout.checkout-page')->with($result['data']);
     }
@@ -133,6 +149,20 @@ class CheckoutController extends Controller
                 //$Order->transaction_info = $result['message'];
                 //$Order->payment_gateway_response = json_encode($result);
                 $Order->save();
+
+                $customerName 	= '';
+                if(isset($Order->bill_first_name) && !empty($Order->bill_first_name))
+                {
+                    $customerName	= $Order->bill_first_name." ";
+                }
+
+                if(isset($Order->bill_last_name) && !empty($Order->bill_first_name))
+                {
+                    $customerName.= $Order->bill_last_name;
+                }
+                //$Order->bill_email = "tempchecknew@gmail.com";
+                $OrderData = ['toMail' => $Order->bill_email, 'orderno' => $Order->order_no, 'customer_name' => $customerName];
+                OmanisendRequest('63c113f03d897d0020e8b31e', $OrderData);
             }
             return response()->json(
                 $result
@@ -957,7 +987,7 @@ class CheckoutController extends Controller
             'gift_to'				=> $gift_to,
             'gift_message_customer'	=> $gift_message_customer,
             'cust_current_credit_limit' => $cust_current_credit_limit??0,
-            'apply_credit'          => (float)($Discounts['CreditDiscount']['discount']??0),
+            'apply_credit'          => (float)($Discounts['CreditLimitDiscount']['discount']??0),
             'remaining_credit'      => $remaining_credit??0,
             'use_credit_limit'      => $use_credit_limit??0,
             'is_dropship_order'     => $is_dropship_order,
@@ -1007,7 +1037,7 @@ class CheckoutController extends Controller
             $QuanityDiscount = (float)($Discounts['QuanityDiscount']['discount'] ?? 0);
             $YotpoRewardDiscount = (float)($Discounts['YotpoRewardDiscount']['discount'] ?? 0);
             $DogoDiscount = (float)($Discounts['DogoDiscount']['discount'] ?? 0);
-            $apply_credit = (float)($Discounts['CreditDiscount']['discount']??0);
+            $apply_credit = (float)($Discounts['CreditLimitDiscount']['discount']??0);
 
             $TotalTxShipping = 0;
             $couponPercentage = 0;
@@ -1209,6 +1239,20 @@ class CheckoutController extends Controller
                 $Order->paymentintentid = $payment_intent_id;
                 $Order->save();
 
+                $customerName 	= '';
+                if(isset($Order->bill_first_name) && !empty($Order->bill_first_name))
+                {
+                    $customerName	= $Order->bill_first_name." ";
+                }
+
+                if(isset($Order->bill_last_name) && !empty($Order->bill_first_name))
+                {
+                    $customerName.= $Order->bill_last_name;
+                }
+                $Order->bill_email = "tempchecknew@gmail.com";
+                $OrderData = ['toMail' => $Order->bill_email, 'orderno' => $Order->order_no, 'customer_name' => $customerName];
+                OmanisendRequest('63c113f03d897d0020e8b31e', $OrderData);
+
                 return response()->json([
                     'status' => false,
                     'message' =>
@@ -1272,6 +1316,20 @@ class CheckoutController extends Controller
                 $Order->save();
 
                 Session::flash('PlaceOrderError','Error in Processing Request, Please try again.');
+
+                $customerName 	= '';
+                if(isset($Order->bill_first_name) && !empty($Order->bill_first_name))
+                {
+                    $customerName	= $Order->bill_first_name." ";
+                }
+
+                if(isset($Order->bill_last_name) && !empty($Order->bill_first_name))
+                {
+                    $customerName.= $Order->bill_last_name;
+                }
+                //$Order->bill_email = "tempchecknew@gmail.com";
+                $OrderData = ['toMail' => $Order->bill_email, 'orderno' => $Order->order_no, 'customer_name' => $customerName];
+                OmanisendRequest('63c113f03d897d0020e8b31e', $OrderData);
 
                 return response()->json([
                     'status' => false,
@@ -1365,9 +1423,9 @@ class CheckoutController extends Controller
                 {
                     $customerName = $customerName.$sessionDetails['last_name'];
                 }
-
+                //$customerEmail = "tempchecknew@gmail.com";
                 $Data = ['toMail' => $customerEmail, 'orderno' => $orderNo, 'customer_name' => $customerName];
-                //OmanisendRequest('63c113f03d897d0020e8b31e',$Data);
+                OmanisendRequest('63c113f03d897d0020e8b31e',$Data);
 
                 Session::flash('PlaceOrderError',$msg);
                 return response()->json([
@@ -2058,23 +2116,121 @@ class CheckoutController extends Controller
             }
         }
 
-        if(Session::has("ShoppingCart.SampleInfo") && !empty(Session::get("ShoppingCart.SampleInfo")))
+        $cart = Session::get('ShoppingCart.Cart', []);
+        $FreeSampleCount = $FreeGiftCount = 0;
+        foreach($cart as $cartItem)
         {
-            $SampleInfo = Session::get("ShoppingCart.SampleInfo");
-            $Percentage = (number_format(($SubTotal * 100) / $SampleInfo['start_price'],2,'.',''));
-            $Badges[] = [
-                'id' => 'free_sample',
-                'label' => "Free Sample",
-                'remain_amount' => (float)$SampleInfo['remain_amount'],
-                'percentage' => (float)$Percentage,
-                'start_price' => (float)$SampleInfo['start_price'],
-                'cart_value' => (float)$SampleInfo['cart_value'],
-                'title' => "Unlock your free sample"
-            ];
+            if(isset($cartItem['Is_Free_Sample']) && $cartItem['Is_Free_Sample'] == 'Yes')
+            {
+                $FreeSampleCount++;
+            }
+            if(isset($cartItem['IS_Free_Gift']) && $cartItem['IS_Free_Gift'] == 'Yes')
+            {
+                $FreeGiftCount++;
+            }
         }
 
-        if(count($Badges) > 0)
+        if($FreeSampleCount < 1 && config('Settings.FREESAMPLE_VALUE') == 'Yes')
         {
+            $today = Carbon::today()->toDateString();
+            $activeRules = FreeVialSampleProduct::where('status','1')
+            ->where('start_date','<=',$today)
+            ->where('end_date','>=',$today)
+            ->orderBy('price_start_range','asc')
+            ->get([
+                'price_start_range',
+                'price_end_range',
+                'sku',
+                'customer_choice',
+                'total_samples',
+                'status',
+                'start_date',
+                'end_date',
+            ]);
+
+            if(config('Settings.FREESAMPLE_VALUE') == 'Yes')
+            {
+                $FindRange = [];
+                if($activeRules)
+                {
+                    foreach($activeRules as $activeRule)
+                    {
+                        $Range = (float)($activeRule->price_start_range - $SubTotal);
+                        if($Range > 0 && $SubTotal < $activeRule->price_start_range)
+                        {
+                            $FindRange[] = [
+                                'start_price' => (float)$activeRule->price_start_range,
+                                'cart_value' => $SubTotal,
+                                'remain_amount' => $Range
+                            ];
+                        }
+                    }
+                }
+
+                if(count($FindRange)>0)
+                {
+                    usort($FindRange, function ($a, $b) {
+                        return $a['remain_amount'] <=> $b['remain_amount'];
+                    });
+
+                    $Percentage = (number_format(($SubTotal * 100) / $FindRange[0]['start_price'],2,'.',''));
+                    $Badges[] = [
+                        'id' => 'free_sample',
+                        'label' => "Free Sample",
+                        'remain_amount' => (float)$FindRange[0]['remain_amount'],
+                        'percentage' => (float)$Percentage,
+                        'start_price' => (float)$FindRange[0]['start_price'],
+                        'cart_value' => (float)$FindRange[0]['cart_value'],
+                        'title' => "Unlock your free sample",
+                        'title_html' => '<a href="#" id="free_sample"><span id="promo-title-text">Unlock your free sample</span></a>',
+                        'remaining_text' => "You're <strong id='promo-amount'>$".(float)$FindRange[0]['remain_amount']." away</strong> from free sample!"
+                    ];
+                }
+            }
+        }
+
+        if($FreeGiftCount == 0 && (Session::has('FreeGiftPopupDecision') && Session::get('FreeGiftPopupDecision') == 'No'))
+        {
+            $giftProgress = $this->freeGiftService->getFreeGiftProgress($cart,(float) $SubTotal);
+
+            if($giftProgress)
+            {
+                $Badges[] = [
+                    'id' => 'free_gift',
+                    'label' => "Free Gift",
+                    'flag_range' =>  $giftProgress['flag_range'],
+                    'remain_amount' => (float)$giftProgress['remain_amount'],
+                    'percentage' => (float)$giftProgress['percentage'],
+                    'start_price' => (float)$giftProgress['start_price'],
+                    'cart_value' => (float)$giftProgress['cart_value'],
+                    'title' => "Unlock your free gift",
+                    'title_html' => '<a href="#" id="free_gift"><span id="promo-title-text">Unlock your free gift</span></a>',
+                    'remaining_text' => "You're <strong id='promo-amount'>$".(float)$giftProgress['remain_amount']." away</strong> from free gift!"
+                ];
+            }
+        }
+
+        if(count($FreeShipping) > 0 || count($Badges) > 0)
+        {
+            if(count($Badges) > 1)
+            {   $NewBadges = [];
+                if($Badges[0]['start_price'] == $Badges[1]['start_price'])
+                {
+                    foreach($Badges as $BadgeList)
+                    {
+                        if($BadgeList['id'] == 'free_gift')
+                        {
+                            $NewBadges[] = $BadgeList;
+                        }
+                    }
+                } elseif($Badges[0]['start_price'] < $Badges[1]['start_price'])
+                {
+                    $NewBadges[] = $Badges[0];
+                } else {
+                    $NewBadges[] = $Badges[1];
+                }
+                $Badges = $NewBadges;
+            }
             return response()->json([
                 'status' => true,
                 'subTotal' => $SubTotal,

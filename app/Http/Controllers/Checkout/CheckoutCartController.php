@@ -153,7 +153,7 @@ class CheckoutCartController extends Controller
     /**
      * Update existing cart item quantity.
      */
-    public function update(Request $request): JsonResponse
+    public function update_bk_22_10_2026(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'product_id' => ['required', 'integer', 'min:1'],
@@ -200,10 +200,98 @@ class CheckoutCartController extends Controller
         return response()->json($result);
     }
 
+   public function update(Request $request): JsonResponse
+{
+    $validated = $request->validate([
+        'product_id' => ['required', 'integer', 'min:1'],
+        'qty' => ['required', 'integer', 'min:1'],
+        'gift_wrap' => ['nullable', 'string'],
+    ]);
+
+    $result = $this->cartService->update(
+        (int) $validated['product_id'],
+        (int) $validated['qty'],
+        $validated['gift_wrap'] ?? 'No'
+    );
+
+    if (($result['success'] ?? false) === true) {
+        /*
+         * Refresh checkout after the cart quantity changes.
+         */
+        $result['checkout'] = $this->checkoutService
+            ->refresh('cart');
+
+        /*
+         * Revalidate the existing coupon and Free Gift.
+         */
+        $this->revalidateCouponFreeGiftAfterCartChange();
+
+        $result['freeGift'] = $this->resolveFreeGiftAfterCartChange();
+
+        /*
+         * Keep the existing response structure unchanged.
+         */
+        $result['freeGift'] = $this->attachFinalFreeGiftCart(
+            $result['freeGift']
+        );
+
+        /*
+         * Wholesaler minimum-order validation.
+         *
+         * Applies only to:
+         * - Wholesaler
+         * - NOT a Dropshipper
+         *
+         * Retailers and Wholesaler Dropshippers are excluded.
+         */
+        $normalUser = Auth::user();
+
+        if (Auth::guard('store')->check()) {
+            $normalUser = Auth::guard('web')->user();
+        }
+
+        $userType = strtolower(
+            trim((string) ($normalUser->eusertype ?? ''))
+        );
+
+        $isDropshipper = strtolower(
+            trim((string) ($normalUser->is_dropshipper ?? 'No'))
+        );
+
+        $isWholesalerNonDropshipper =
+            $normalUser !== null
+            && $userType === 'wholesaler'
+            && $isDropshipper !== 'yes';
+
+        if ($isWholesalerNonDropshipper) {
+            /*
+             * Read the subtotal AFTER checkout refresh.
+             */
+            $orderSubTotal = (float) Session::get(
+                'ShoppingCart.SubTotal',
+                0
+            );
+
+            $wholesalerMinimumOrder = (float) NumberFormat(
+                config('Settings.WHOLESALER_MIN_ORDER_AMOUNT')
+            );
+
+            if ($orderSubTotal < $wholesalerMinimumOrder) {
+                return response()->json([
+                    'success' => true,
+                    'status' => 'redirect',
+                    'redirect' => url('/shoppingcart'),
+                ]);
+            }
+        }
+    }
+
+    return response()->json($result);
+}
     /**
      * Remove by ShoppingCart.Cart array index.
      */
-    public function remove(Request $request): JsonResponse
+    public function remove_bk_22_10_2026(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'cart_id' => ['required', 'integer', 'min:0'],
@@ -252,7 +340,6 @@ class CheckoutCartController extends Controller
         }
     }
 
-
     /*
      * ---------------------------------------------------------
      * No regular product remains.
@@ -287,7 +374,6 @@ class CheckoutCartController extends Controller
         ]);
     }
 
-
     /*
      * ---------------------------------------------------------
      * Normal cart flow.
@@ -313,6 +399,141 @@ class CheckoutCartController extends Controller
 
         return response()->json($result);
     }
+
+/**
+ * Remove by ShoppingCart.Cart array index.
+ */
+public function remove(Request $request): JsonResponse
+{
+    $validated = $request->validate([
+        'cart_id' => ['required', 'integer', 'min:0'],
+    ]);
+
+    $result = $this->cartService->remove(
+        (int) $validated['cart_id']
+    );
+
+    if (($result['success'] ?? false) !== true) {
+        return response()->json($result);
+    }
+
+    /*
+     * Check the final cart after removing the requested item.
+     */
+    $cart = Session::get('ShoppingCart.Cart', []);
+
+    $hasRegularProduct = false;
+
+    foreach ($cart as $item) {
+        $isFreeGift =
+            ($item['IS_Free_Gift'] ?? 'No') === 'Yes';
+
+        $isFreeSample =
+            ($item['Is_Free_Sample'] ?? 'No') === 'Yes';
+
+        /*
+         * Free Gift and Free Sample do not count
+         * as regular products.
+         */
+        if (!$isFreeGift && !$isFreeSample) {
+            $hasRegularProduct = true;
+            break;
+        }
+    }
+
+    /*
+     * No regular product remains.
+     * Preserve the existing coupon Free Gift cleanup.
+     */
+    if (!$hasRegularProduct) {
+        $this->couponService->removeCoupon();
+
+        return response()->json([
+            'success' => true,
+            'status' => 'redirect',
+            'redirect' => url('/shoppingcart'),
+            'cart' => Session::get('ShoppingCart.Cart', []),
+        ]);
+    }
+
+    /*
+     * Recalculate checkout using the updated cart.
+     */
+    $result['checkout'] = $this->checkoutService->refresh('cart');
+
+    /*
+     * Preserve existing coupon and Free Gift logic.
+     */
+    $this->revalidateCouponFreeGiftAfterCartChange();
+
+    $result['freeGift'] =
+        $this->resolveFreeGiftAfterCartChange();
+
+    $result['freeGift'] =
+        $this->attachFinalFreeGiftCart(
+            $result['freeGift']
+        );
+
+    /*
+     * Wholesaler minimum-order validation.
+     * Applies only to Wholesaler non-Dropshipper customers.
+     */
+    $normalUser = Auth::user();
+
+    if (Auth::guard('store')->check()) {
+        $normalUser = Auth::guard('web')->user();
+    }
+
+    $userType = strtolower(
+        trim((string) ($normalUser->eusertype ?? ''))
+    );
+
+    $isDropshipper = strtolower(
+        trim((string) ($normalUser->is_dropshipper ?? 'No'))
+    );
+
+    $isWholesalerNonDropshipper =
+        $normalUser !== null
+        && $userType === 'wholesaler'
+        && $isDropshipper !== 'yes';
+
+    if ($isWholesalerNonDropshipper) {
+        /*
+         * Read subtotal only AFTER refreshing the cart.
+         */
+        $orderSubTotal = (float) Session::get(
+            'ShoppingCart.SubTotal',
+            0
+        );
+
+        $minimumSetting = NumberFormat(
+            config('Settings.WHOLESALER_MIN_ORDER_AMOUNT')
+        );
+
+        /*
+         * Handle a formatted setting such as "500.00"
+         * or "1,000.00".
+         */
+        $wholesalerMinimumOrder = (float) str_replace(
+            ',',
+            '',
+            (string) $minimumSetting
+        );
+
+        if ($orderSubTotal < $wholesalerMinimumOrder) {
+            return response()->json([
+                'success' => true,
+                'status' => 'redirect',
+                'redirect' => url('/shoppingcart'),
+            ]);
+        }
+    }
+
+    /*
+     * Keep the existing response structure unchanged.
+     */
+    return response()->json($result);
+}
 
     /**
      * Return the current checkout cart state.
@@ -1177,6 +1398,7 @@ public function resolveFreeGiftAfterCartChange(): array
      * POPUP
      * =========================================================
      */
+    Session::put('FreeGiftPopupDecision','No');
     if (
         ($decision['status'] ?? '') === 'popup'
         &&
@@ -1184,7 +1406,7 @@ public function resolveFreeGiftAfterCartChange(): array
             $decision['eligibleGifts']
         )
     ) {
-
+        Session::put('FreeGiftPopupDecision','Yes');
         /*
          * IMPORTANT:
          *
@@ -1996,7 +2218,6 @@ public function freeSamplePopup(Request $request)
         ]);
     }
 
-
     /*
      * =========================================================
      * Store users cannot get Free Samples
@@ -2011,7 +2232,6 @@ public function freeSamplePopup(Request $request)
         ]);
     }
 
-
     /*
      * =========================================================
      * Get current cart
@@ -2021,7 +2241,6 @@ public function freeSamplePopup(Request $request)
         'ShoppingCart.Cart',
         []
     );
-
 
     /*
      * =========================================================
@@ -2062,7 +2281,6 @@ public function freeSamplePopup(Request $request)
                 0
             );
 
-
         $freeGiftDecision =
             $this->freeGiftService
                 ->resolveEligibleGifts(
@@ -2072,11 +2290,9 @@ public function freeSamplePopup(Request $request)
                     0
                 );
 
-
         $eligibleFreeGifts =
             $freeGiftDecision['eligibleGifts']
             ?? [];
-
 
         if (
             !empty($eligibleFreeGifts)
@@ -2113,7 +2329,6 @@ public function freeSamplePopup(Request $request)
         }
     }
 
-
     /*
      * =========================================================
      * Free Gift conflict
@@ -2142,7 +2357,6 @@ public function freeSamplePopup(Request $request)
         }
     }
 
-
     /*
      * =========================================================
      * Calculate Free Sample eligibility value
@@ -2156,11 +2370,9 @@ public function freeSamplePopup(Request $request)
             )
         );
 
-
     $totalDiscount =
         (float) $this->checkoutTotalsService
             ->getTotal('discount');
-
 
     $giftCertiTotal =
         NumberFormat(
@@ -2169,7 +2381,6 @@ public function freeSamplePopup(Request $request)
                 0
             )
         );
-
 
     /*
      * DiscountService total contains GiftCoupon.
@@ -2185,7 +2396,6 @@ public function freeSamplePopup(Request $request)
             - $giftCertiTotal
         );
 
-
     /*
      * Free Sample eligibility amount.
      *
@@ -2200,7 +2410,6 @@ public function freeSamplePopup(Request $request)
 		0,
 		$subTotal
 	);
-
 
     Log::info(
         'FREE_SAMPLE_DEBUG',
@@ -2218,7 +2427,6 @@ public function freeSamplePopup(Request $request)
                 $totalValue,
         ]
     );
-
 
     /*
      * Detailed eligibility log.
@@ -2242,7 +2450,6 @@ public function freeSamplePopup(Request $request)
                 $totalValue,
         ]
     );
-
 
     /*
      * =========================================================
@@ -2273,7 +2480,6 @@ public function freeSamplePopup(Request $request)
             'html' => '',
         ]);
     }
-
 
     /*
      * =========================================================
@@ -2312,7 +2518,6 @@ public function freeSamplePopup(Request $request)
         ]);
     }
 
-
     /*
      * =========================================================
      * Current Free Sample count
@@ -2340,7 +2545,6 @@ public function freeSamplePopup(Request $request)
         }
     }
 
-
     /*
      * =========================================================
      * Get products for the applicable Free Sample rule
@@ -2352,7 +2556,6 @@ public function freeSamplePopup(Request $request)
                 $totalValue,
                 $totalFreeSampleItems
             );
-
 
     /*
      * =========================================================
@@ -2395,7 +2598,6 @@ public function freeSamplePopup(Request $request)
         ]);
     }
 
-
     /*
      * =========================================================
      * Current applicable Free Sample rule
@@ -2409,7 +2611,6 @@ public function freeSamplePopup(Request $request)
             ?? 0
         );
 
-
     $currentRuleEnd =
         (float) (
             $sampleProducts[0][
@@ -2417,7 +2618,6 @@ public function freeSamplePopup(Request $request)
             ]
             ?? 0
         );
-
 
     /*
      * =========================================================
@@ -2462,20 +2662,17 @@ public function freeSamplePopup(Request $request)
         }
     }
 
-
     $oldRuleStart =
         $existingFreeSample[
             'FreeSampleRuleStart'
         ]
         ?? null;
 
-
     $oldRuleEnd =
         $existingFreeSample[
             'FreeSampleRuleEnd'
         ]
         ?? null;
-
 
     $ruleChanged =
         $existingFreeSample !== null
@@ -2493,7 +2690,6 @@ public function freeSamplePopup(Request $request)
             (float) $oldRuleEnd !==
             $currentRuleEnd
         );
-
 
     Log::info(
         'FREE_SAMPLE_RULE_CHANGE_CHECK',
@@ -2517,7 +2713,6 @@ public function freeSamplePopup(Request $request)
                 $ruleChanged,
         ]
     );
-
 
     /*
      * =========================================================
@@ -2551,13 +2746,11 @@ public function freeSamplePopup(Request $request)
             ]
         );
 
-
         /*
          * Remove old Free Samples.
          */
         $this->freeSampleService
             ->removeSamples();
-
 
         /*
          * Store the new rule.
@@ -2576,13 +2769,11 @@ public function freeSamplePopup(Request $request)
             ]
         );
 
-
         /*
          * Old samples are now removed.
          */
         $totalFreeSampleItems = 0;
     }
-
 
     /*
      * =========================================================
@@ -2596,7 +2787,6 @@ public function freeSamplePopup(Request $request)
             ]
             ?? 0
         );
-
 
     Log::info(
         'FreeSamplePopupCustomerChoice',
@@ -2620,7 +2810,6 @@ public function freeSamplePopup(Request $request)
                 $ruleChanged,
         ]
     );
-
 
     /*
      * =========================================================
@@ -2656,7 +2845,6 @@ public function freeSamplePopup(Request $request)
             ]
         );
 
-
         $data = [
             'TotalListItems' =>
                 $customerChoice,
@@ -2665,20 +2853,17 @@ public function freeSamplePopup(Request $request)
                 $sampleProducts,
         ];
 
-
         $html =
             view(
                 'popup.freesample-popup',
                 $data
             )->render();
 
-
         return response()->json([
             'status' => 'success',
             'html' => $html,
         ]);
     }
-
 
     /*
      * =========================================================
@@ -2705,6 +2890,5 @@ public function freeSampleAdd(Request $request)
         'message' => $message,
     ]);
 }
-
 
 }

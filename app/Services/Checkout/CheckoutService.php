@@ -262,6 +262,42 @@ class CheckoutService
          */
         $checkout = $this->refresh('page');
 
+		/*
+		 * Calculate the Signature display price independently
+		 * from the currently applied Signature charge.
+		 *
+		 * Do not enable Signature just to obtain its display price.
+		 */
+		$signatureDisplayCharge = 0.0;
+
+		$cartAttributes = $this->cartAttributeService->getAttributes();
+
+		if (($cartAttributes['onlyGCPurchased'] ?? 0) != 1) {
+			$signatureWasApplied = Session::has(
+				'ShoppingCart.ShippingSignature'
+			);
+
+			try {
+				// Use the existing service's eligibility and charge rules.
+				$calculatedSignatureCharge =
+					(float) $this->shippingSignatureService->calculate('add');
+
+				$signatureDisplayCharge = max(0, $calculatedSignatureCharge);
+			} finally {
+				// Restore the customer's original ON/OFF selection.
+				if (!$signatureWasApplied) {
+					Session::forget('ShoppingCart.ShippingSignature');
+				}
+			}
+		}
+
+		// Actual applied charge remains separate from the display price.
+		$checkoutSignature = (float) Session::get(
+			'ShoppingCart.ShippingSignature',
+			0
+		);
+
+
         /*
          * The new Blade reads its display values directly from
          * the checkout session. Keep the controller/service
@@ -284,7 +320,7 @@ class CheckoutService
 
             'JSFILES' => [
                 //'checkout.js',
-                'checkout1.js',
+                'secure-checkout.js',
                 'paypal.js'
                 //'checkout-new.js'
             ],
@@ -302,6 +338,12 @@ class CheckoutService
                 $shippingAddress['country'] ?? 'US',
             'SelectedShippingState' =>
                 $shippingAddress['state'] ?? '',
+            'signatureDisplayCharge' => $signatureDisplayCharge,
+'checkoutSignature' => $checkoutSignature,
+'insuranceDisplayAmount' =>
+    ($cartAttributes['onlyGCPurchased'] ?? 0) == 1
+        ? 0.0
+        : $this->shippingInsuranceService->getDisplayCharge(),
         ];
 
         addLog('CheckoutPrepareEnd', [
@@ -1202,6 +1244,12 @@ public function setShippingSignature(
             $this->checkoutTotalsService
                 ->calculate();
 
+		$insuranceDisplayAmount =
+    ($attributes['onlyGCPurchased'] ?? 0) == 1
+        ? 0.0
+        : $this->shippingInsuranceService
+            ->getDisplayCharge();
+
         $paymentAvailability =
             $this->paymentAvailabilityService
                 ->getAvailability(
@@ -1272,6 +1320,7 @@ public function setShippingSignature(
                 $attributes[
                     'onlyGCPurchased'
                 ] ?? 0,
+            'insuranceDisplayAmount' => $insuranceDisplayAmount,
         ];
 
     } catch (\Throwable $e) {
@@ -1568,6 +1617,11 @@ public function setShippingInsurance(
             ]
         );
 
+		$insuranceDisplayAmount =
+    ($cartAttributes['onlyGCPurchased'] ?? 0) == 1
+        ? 0.0
+        : $this->shippingInsuranceService->getDisplayCharge();
+
         return [
             'status' => 'success',
 
@@ -1592,6 +1646,7 @@ public function setShippingInsurance(
                 $cartAttributes[
                     'onlyGCPurchased'
                 ] ?? 0,
+             'insuranceDisplayAmount' => $insuranceDisplayAmount,
         ];
 
     } catch (\Throwable $e) {
@@ -1903,6 +1958,32 @@ $insurance =
                     'No',
                     false
                 );
+    $insuranceDisplayAmount = $onlyGCPurchased === 1
+    ? 0.0
+    : $this->shippingInsuranceService->getDisplayCharge();
+
+			$signatureDisplayCharge = 0.0;
+
+		if (($cartAttributes['onlyGCPurchased'] ?? 0) != 1) {
+			$signatureWasApplied = Session::has(
+				'ShoppingCart.ShippingSignature'
+			);
+
+			try {
+				$signatureDisplayCharge = max(
+					0.0,
+					(float) $this->shippingSignatureService
+						->calculate('add')
+				);
+			} finally {
+				if (!$signatureWasApplied) {
+					Session::forget(
+						'ShoppingCart.ShippingSignature'
+					);
+				}
+			}
+		}
+
     /*
      * ---------------------------------------------------------
      * 9. Final totals.
@@ -1978,6 +2059,8 @@ $insurance =
 
         'estimatedDeliveryDate' =>
             $estimatedDeliveryDate,
+        'insuranceDisplayAmount' => $insuranceDisplayAmount,
+        'signatureDisplayCharge' => $signatureDisplayCharge,
     ];
 
     addLog(

@@ -2,6 +2,7 @@
 $(document).ready(function(){
     $("#btnpaypal").click(function(){
         $("#payment-request-button").hide();
+        $("#gpay_applepay_paypal").text("Paypal");
         $("#paypal-button-container-checkout").show();
         $('#ShippingSignInsu').modal('show');
     })
