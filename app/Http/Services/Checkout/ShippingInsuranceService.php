@@ -3,12 +3,15 @@
 namespace App\Services\Checkout;
 
 use Illuminate\Support\Facades\Session;
-
+use Illuminate\Support\Facades\Log;
+use App\Services\Discount\DiscountService;
 class ShippingInsuranceService
 {
     public function __construct(
-        protected CheckoutTotalsService $checkoutTotalsService
+        protected CheckoutTotalsService $checkoutTotalsService,
+       protected DiscountService $discountService
     ) {
+
     }
 
     /**
@@ -27,7 +30,8 @@ class ShippingInsuranceService
     public function calculate(
         string $action = 'add',
         float $netTotal = 0,
-        string $phoneOrder = 'No'
+        string $phoneOrder = 'No',
+        bool $persistPreference = true
     ) {
         addLog(
             'SetShippingInsuranceChargeStart',
@@ -42,13 +46,89 @@ class ShippingInsuranceService
                     $phoneOrder,
             ]
         );
+        Log::info($action."===>".$netTotal."===>".$phoneOrder);
+        /*
+         * ---------------------------------------------------------
+         * Persist the customer's explicit Insurance ON/OFF choice.
+         *
+         * This is the source of truth for checkout refreshes.
+         *
+         * add    => customer explicitly enabled Insurance
+         * remove => customer explicitly disabled Insurance
+         *
+         * A missing preference keeps the existing default behavior:
+         * Insurance is enabled.
+         * ---------------------------------------------------------
+         */
+        if ($action === 'remove') {
+            Session::put(
+                'ShoppingCart.ShippingInsuranceEnabled',
+                false
+            );
+
+            /*
+             * Removing Insurance must immediately remove the
+             * previously calculated charge.
+             */
+            if ($phoneOrder === 'No') {
+                Session::forget(
+                    'shipping_insurance_charge'
+                );
+            }
+
+            return 0;
+        }
+
+        if (
+            $action === 'add'
+            &&
+            $persistPreference
+        ) {
+            /*
+             * Only an explicit customer "add" request changes
+             * the persisted preference. Refresh/recalculation
+             * calls pass false so an OFF choice stays OFF.
+             */
+            Session::put(
+                'ShoppingCart.ShippingInsuranceEnabled',
+                true
+            );
+        }
+
+        /*
+         * ---------------------------------------------------------
+         * Refresh protection.
+         *
+         * CheckoutService / shipping refresh may call calculate('add')
+         * automatically. If the customer previously selected OFF,
+         * do NOT turn Insurance back on.
+         * ---------------------------------------------------------
+         */
+        $insuranceEnabled =
+            Session::get(
+                'ShoppingCart.ShippingInsuranceEnabled',
+                true
+            );
+
+        if (
+            $action === 'add' &&
+            $insuranceEnabled === false
+        ) {
+            if ($phoneOrder === 'No') {
+                Session::forget(
+                    'shipping_insurance_charge'
+                );
+            }
+
+            return 0;
+        }
 
         /*
          * ---------------------------------------------------------
          * Existing behavior:
          *
-         * Normal checkout always clears the old insurance
-         * before recalculating it.
+         * Normal checkout clears the old insurance before
+         * recalculating it.
          * ---------------------------------------------------------
          */
         if (
@@ -58,7 +138,12 @@ class ShippingInsuranceService
                 'shipping_insurance_charge'
             );
         }
-
+		$subTotal =  $this->checkoutTotalsService
+        ->getSubTotal() + $this->checkoutTotalsService->getAllCharges("ShippingCharge") + $this->checkoutTotalsService->getAllCharges("GiftWrappingCharge")  + $this->checkoutTotalsService->getAllCharges("ShippingSignature");
+		$discounts = $this->discountService->getAll();
+       $netTotal = NumberFormat(
+						$subTotal - ($discounts['TotalDiscount'] ?? 0)
+					);
         /*
          * ---------------------------------------------------------
          * Store order:
@@ -96,15 +181,10 @@ class ShippingInsuranceService
         }
 
         /*
-         * ---------------------------------------------------------
-         * Only calculate when action = add.
-         *
-         * Existing method does nothing for other actions.
-         * ---------------------------------------------------------
+         * Only the supported "add" action reaches the calculation.
+         * Unknown actions keep the existing no-op behavior.
          */
-        if (
-            $action !== 'add'
-        ) {
+        if ($action !== 'add') {
             return null;
         }
 
@@ -116,47 +196,6 @@ class ShippingInsuranceService
          * because insurance is calculated on the amount before tax.
          * ---------------------------------------------------------
          */
-        if (
-            $phoneOrder === 'No'
-        ) {
-            $taxAmount = 0;
-
-            if (
-                Session::has(
-                    'ShoppingCart.Tax'
-                )
-                &&
-                Session::get(
-                    'ShoppingCart.Tax'
-                ) > 0
-            ) {
-                $taxAmount =
-                    (float)
-                    Session::get(
-                        'ShoppingCart.Tax'
-                    );
-            }
-
-            /*
-             * IMPORTANT:
-             *
-             * This should use the existing CheckoutTotalsService
-             * once the complete checkout flow is connected.
-             *
-             * For now we read the existing session value if it
-             * exists, otherwise calculate from current checkout
-             * components.
-             */
-            $netTotal =
-                $this->getNetTotal();
-
-            if (
-                $taxAmount > 0
-            ) {
-                $netTotal -=
-                    $taxAmount;
-            }
-        }
 
         /*
          * ---------------------------------------------------------
@@ -248,11 +287,96 @@ class ShippingInsuranceService
          * CheckoutTotalsService owns the common subtotal/charges/
          * discount calculation, so do not duplicate that logic here.
          */
-        return $this->checkoutTotalsService
-            ->getNetTotalExcludingCharges([
-                'Tax',
-                'ShippingInsurance',
-            ]);
+        /*
+         * Legacy parity:
+         *
+         * CartTrait::SetShippingInsuranceCharge() first gets
+         * GetNetTotal(), then subtracts ShoppingCart.Tax once.
+         *
+         * Therefore this common total must NOT exclude Tax here.
+         * calculate() performs the single legacy Tax subtraction
+         * immediately after this call.
+         *
+         * Shipping Insurance itself must be excluded so the
+         * insurance charge is not included in its own calculation.
+         */
+        $netTotal =
+    $this->checkoutTotalsService
+        ->getNetTotalExcludingCharges([
+            'Tax',
+            'ShippingInsurance',
+        ]);
+
+Log::info(
+    'ShippingInsuranceNetTotalDebug',
+    [
+        'net_total' => $netTotal,
+        'subtotal' => Session::get(
+            'ShoppingCart.SubTotal',
+            0
+        ),
+        'coupon_discount' => Session::get(
+            'ShoppingCart.PromoCoupon.CouponDiscount',
+            0
+        ),
+        'first_coupon_discount' => Session::get(
+            'ShoppingCart.PromoCoupon.FirstCouponDiscount',
+            0
+        ),
+        'tax' => Session::get(
+            'ShoppingCart.Tax',
+            0
+        ),
+        'shipping' => Session::get(
+            'ShoppingCart.Shipping',
+            0
+        ),
+        'insurance' => Session::get(
+            'shipping_insurance_charge',
+            0
+        ),
+    ]
+);
+
+return (float) $netTotal;
     }
+
+
+
+/**
+ * Calculate Insurance price for display only.
+ * Does not change the Insurance preference or session charge.
+ */
+public function getDisplayCharge(): float
+{
+    if (
+        Session::get('ShoppingCart.OrderType') === 'Store'
+        || Session::get('ShoppingCart.Shipping.ShippingMethodID') == 46
+    ) {
+        return 0.0;
+    }
+
+    $subTotal =
+        $this->checkoutTotalsService->getSubTotal()
+        + $this->checkoutTotalsService->getAllCharges('ShippingCharge')
+        + $this->checkoutTotalsService->getAllCharges('GiftWrappingCharge')
+        + $this->checkoutTotalsService->getAllCharges('ShippingSignature');
+
+    $discounts = $this->discountService->getAll();
+
+    $netTotal = NumberFormat(
+        $subTotal - ($discounts['TotalDiscount'] ?? 0)
+    );
+
+    if ($netTotal <= 0) {
+        return 0.0;
+    }
+
+    $shippingInsurance = $netTotal <= 99
+        ? 1.55
+        : NumberFormat(($netTotal * 0.02) + 1.55);
+
+    return (float) $shippingInsurance;
+}
 
 }

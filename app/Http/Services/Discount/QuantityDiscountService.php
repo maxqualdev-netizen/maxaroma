@@ -577,47 +577,23 @@ class QuantityDiscountService
              * -----------------------------------------------------
              * orders == ''
              *
-             * IMPORTANT: Legacy behavior does NOT process the
-             * complete QtyRS collection for normal SKU rules.
+             * Generic rule:
+             * when SKU is blank, apply the rule to all eligible
+             * cart items. This preserves the Old Checkout behavior
+             * for generic Quantity Discount rules.
              *
-             * It separately selects the FIRST active normal
-             * quantity rule ordered by quantity_discount_id ASC.
+             * Otherwise process the rule as a normal SKU rule.
              * -----------------------------------------------------
              */
-            $normalRule =
-                QuantityDiscount::where(
-                    'status',
-                    '1'
-                )
-                ->where(
-                    'start_date',
-                    '<=',
-                    $today
-                )
-                ->where(
-                    'end_date',
-                    '>=',
-                    $today
-                )
-                ->where(
-                    'quantity',
-                    '<=',
-                    $totalItem
-                )
-                ->where(
-                    'orders',
-                    ''
-                )
-                ->orderBy(
-                    'quantity_discount_id'
-                )
-                ->first();
-
-            if ($normalRule) {
-
+            if (
+                trim(
+                    (string)
+                    $rule->sku
+                ) === ''
+            ) {
                 $result =
-                    $this->applyNormalRule(
-                        $normalRule,
+                    $this->applyGenericRule(
+                        $rule,
                         $cartItems,
                         $excludeSkuList
                     );
@@ -626,17 +602,54 @@ class QuantityDiscountService
                     $result['matched']
                 ) {
                     $quantityDiscountFlag =
-                        $normalRule->discount_coupon_flag;
+                        $rule->discount_coupon_flag;
 
                     $quantityDiscount =
                         $this->selectHigherDiscount(
                             $quantityDiscount,
                             $result['discount']
                         );
+
+                    /*
+                     * Generic rule does not populate SKU remove
+                     * list because it applies to the eligible cart
+                     * as a whole.
+                     */
+                    break;
                 }
 
+                continue;
+            }
+
+            $result =
+                $this->applySkuRule(
+                    $rule,
+                    $cartItems,
+                    $excludeSkuList,
+                    $skuRemoveArr,
+                    $subTotal
+                );
+
+            if (
+                $result['matched']
+            ) {
+                $quantityDiscountFlag =
+                    $rule->discount_coupon_flag;
+
+                $quantityDiscount =
+                    $this->selectHigherDiscount(
+                        $quantityDiscount,
+                        $result['discount']
+                    );
+
+                $skuRemoveArr =
+                    $result[
+                        'skuRemoveArr'
+                    ];
+
                 /*
-                 * Legacy normal-rule branch is a single rule.
+                 * Existing normal-rule behavior:
+                 * once matching rule is found, stop.
                  */
                 break;
             }
@@ -674,71 +687,53 @@ class QuantityDiscountService
     }
 
     /**
-     * Normal SKU quantity-discount rule.
+     * Generic quantity-discount rule.
      *
-     * Existing logic:
-     * - pocket perfume exclusion
-     * - free gift exclusion
-     * - free sample exclusion
-     * - deal product exclusion
-     * - excluded SKU
-     * - SKURemoveArrNew
-     * - quantity threshold
-     */
-    /**
-     * Normal quantity-discount rule.
+     * Old Checkout behavior for a Quantity Discount rule with
+     * orders = '' and a blank SKU: apply the rule to all eligible
+     * cart items.
      *
-     * Exact legacy behavior for orders = '':
-     * - one ASC rule only
-     * - Pocket Perfume exclusion controlled by rule flag
-     * - Deal / Free Gift / Free Sample / excluded SKU excluded
-     * - count all remaining eligible item quantities
-     * - percentage item-wise discount stored on cart item
-     * - final percentage discount uses Matched_Item_Total
-     * - fixed discount uses quantity_discount_amount
+     * Excluded:
+     * - Deal products
+     * - Free gifts
+     * - Free samples
+     * - Explicitly excluded SKUs
+     * - Pocket perfume when configured
      */
-    protected function applyNormalRule(
+    protected function applyGenericRule(
         $rule,
         array $cart,
         array $excludeSkuList
     ): array {
-        $isAnyMatched = 0;
+        $matched = false;
         $totalQty = 0;
         $totalAmount = 0;
-        $matchedItemTotal = 0;
 
         foreach (
             $cart as $index => $item
         ) {
             if (
-                trim(
-                    (string)
-                    $rule->exclude_pocketperfume
-                ) === 'Yes' &&
-                isset(
-                    $item['CategoryID']
-                ) &&
-                (int) $item['CategoryID'] > 0 &&
-                $this->isPocketPerfume(
-                    $item['CategoryID']
-                )
+                ($item['IsDealProducts'] ?? '') ===
+                'Yes'
             ) {
                 continue;
             }
 
-            $isFreeGift =
-                $item['IS_Free_Gift'] ?? '';
-
-            $isFreeSample =
-                $item['Is_Free_Sample'] ?? '';
-
-            $isDeal =
-                $item['IsDealProducts'] ?? '';
+            if (
+                ($item['IS_Free_Gift'] ?? '') ===
+                'Yes'
+            ) {
+                continue;
+            }
 
             if (
-                $isDeal === 'Yes' ||
-                $isFreeGift === 'Yes' ||
-                $isFreeSample === 'Yes' ||
+                ($item['Is_Free_Sample'] ?? '') ===
+                'Yes'
+            ) {
+                continue;
+            }
+
+            if (
                 in_array(
                     $item['SKU'] ?? '',
                     $excludeSkuList,
@@ -748,7 +743,17 @@ class QuantityDiscountService
                 continue;
             }
 
-            $isAnyMatched++;
+            if (
+                $rule->exclude_pocketperfume ===
+                    'Yes' &&
+                $this->isPocketPerfume(
+                    $item['CategoryID'] ?? 0
+                )
+            ) {
+                continue;
+            }
+
+            $matched = true;
 
             $qty =
                 (int)
@@ -756,30 +761,107 @@ class QuantityDiscountService
                     $item['Qty'] ?? 0
                 );
 
-            $lineTotal =
+            $lineAmount =
                 (float)
                 (
                     $item['TotPrice'] ?? 0
                 );
 
-            $linePriceQty =
-                (float)
-                (
-                    $item['Price'] ?? 0
-                ) * $qty;
-
             $totalQty += $qty;
-            $totalAmount += $lineTotal;
-            $matchedItemTotal += $linePriceQty;
+            $totalAmount += $lineAmount;
+        }
+
+        if (
+            !$matched ||
+            $totalQty <
+                (int)
+                $rule->quantity
+        ) {
+            return [
+                'matched' => false,
+                'discount' => 0,
+                'skuRemoveArr' => '',
+            ];
+        }
+
+        /*
+         * Percentage discount is calculated only from the
+         * eligible generic-rule amount.
+         */
+        if (
+            (int)
+            $rule->type === 1
+        ) {
+            $discount =
+                $totalAmount *
+                (
+                    (float)
+                    $rule->quantity_discount_amount
+                    / 100
+                );
 
             /*
-             * Legacy percentage item-wise discount.
+             * Preserve item-wise discount used by checkout.
              */
-            if (
-                (int) $rule->type === 1
+            foreach (
+                $cart as $index => $item
             ) {
+                if (
+                    ($item['IsDealProducts'] ?? '') ===
+                    'Yes'
+                ) {
+                    continue;
+                }
+
+                if (
+                    ($item['IS_Free_Gift'] ?? '') ===
+                    'Yes'
+                ) {
+                    continue;
+                }
+
+                if (
+                    ($item['Is_Free_Sample'] ?? '') ===
+                    'Yes'
+                ) {
+                    continue;
+                }
+
+                if (
+                    in_array(
+                        $item['SKU'] ?? '',
+                        $excludeSkuList,
+                        true
+                    )
+                ) {
+                    continue;
+                }
+
+                if (
+                    $rule->exclude_pocketperfume ===
+                        'Yes' &&
+                    $this->isPocketPerfume(
+                        $item['CategoryID'] ?? 0
+                    )
+                ) {
+                    continue;
+                }
+
                 $itemDiscount =
-                    $linePriceQty *
+                    (
+                        (float)
+                        (
+                            $item['Price'] ?? 0
+                        )
+                        *
+                        (
+                            (int)
+                            (
+                                $item['Qty'] ?? 0
+                            )
+                        )
+                    )
+                    *
                     (
                         (float)
                         $rule->quantity_discount_amount
@@ -793,30 +875,10 @@ class QuantityDiscountService
                     $itemDiscount
                 );
             }
-        }
-
-        if (
-            $isAnyMatched <= 0 ||
-            $totalQty <
-                (int) $rule->quantity
-        ) {
-            return [
-                'matched' => false,
-                'discount' => 0,
-            ];
-        }
-
-        if (
-            (int) $rule->type === 1
-        ) {
-            $discount =
-                $matchedItemTotal *
-                (
-                    (float)
-                    $rule->quantity_discount_amount
-                    / 100
-                );
         } else {
+            /*
+             * Fixed generic discount.
+             */
             $discount =
                 (float)
                 $rule->quantity_discount_amount;
@@ -825,9 +887,242 @@ class QuantityDiscountService
         return [
             'matched' => true,
             'discount' =>
+                NumberFormat($discount),
+            'skuRemoveArr' => '',
+        ];
+    }
+
+    /**
+     * Normal SKU quantity-discount rule.
+     *
+     * Existing logic:
+     * - pocket perfume exclusion
+     * - free gift exclusion
+     * - free sample exclusion
+     * - deal product exclusion
+     * - excluded SKU
+     * - SKURemoveArrNew
+     * - quantity threshold
+     */
+    protected function applySkuRule(
+        $rule,
+        array $cart,
+        array $excludeSkuList,
+        string $skuRemoveArr,
+        float $subTotal
+    ): array {
+        $matched = false;
+
+        $totalQty = 0;
+        $matchedItemTotal = 0;
+        $totalAmount = 0;
+
+        $skuList =
+            $this->csvToArray(
+                $rule->sku
+            );
+
+        $skuRemoveArrNew =
+            $this->csvToArray(
+                $skuRemoveArr
+            );
+
+        foreach (
+            $cart as $index => $item
+        ) {
+            $sku =
+                $item['SKU'] ?? '';
+
+            if (
+                !in_array(
+                    $sku,
+                    $skuList,
+                    true
+                )
+            ) {
+                continue;
+            }
+
+            if (
+                $this->isExcludedItem(
+                    $item,
+                    $rule,
+                    $excludeSkuList,
+                    $skuRemoveArrNew
+                )
+            ) {
+                continue;
+            }
+
+            $qty =
+                (int)
+                (
+                    $item['Qty'] ?? 0
+                );
+
+            $lineTotal =
+                (float)
+                (
+                    $item['TotPrice'] ?? 0
+                );
+
+            $totalQty += $qty;
+            $totalAmount += $lineTotal;
+
+            /*
+             * Existing matched item total uses:
+             * Price * Qty
+             */
+            $matchedItemTotal +=
+                (
+                    (float)
+                    (
+                        $item['Price'] ?? 0
+                    )
+                    *
+                    $qty
+                );
+
+            if (
+                $qty >=
+                    (int)
+                    $rule->quantity
+                ||
+                $totalQty >=
+                    (int)
+                    $rule->quantity
+            ) {
+                $matched = true;
+
+                $skuRemoveArr .=
+                    $sku . ',';
+            }
+        }
+
+        if (
+            !$matched ||
+            $totalQty <
+                (int)
+                $rule->quantity
+        ) {
+            return [
+                'matched' => false,
+                'discount' => 0,
+                'skuRemoveArr' =>
+                    $skuRemoveArr,
+            ];
+        }
+
+        /*
+         * Percentage.
+         */
+        if (
+            (int)
+            $rule->type === 1
+        ) {
+            $discount =
+                $matchedItemTotal
+                *
+                (
+                    (float)
+                    $rule->quantity_discount_amount
+                    / 100
+                );
+        }
+
+        /*
+         * Fixed amount.
+         */
+        else {
+            $discount =
+                (float)
+                $rule->quantity_discount_amount;
+        }
+
+        /*
+         * Existing item-wise percentage discount.
+         */
+        if (
+            (int)
+            $rule->type === 1
+        ) {
+            foreach (
+                $cart as $index => $item
+            ) {
+                $sku =
+                    $item['SKU'] ?? '';
+
+                if (
+                    !in_array(
+                        $sku,
+                        $skuList,
+                        true
+                    )
+                ) {
+                    continue;
+                }
+
+                if (
+                    $this->isExcludedItem(
+                        $item,
+                        $rule,
+                        $excludeSkuList,
+                        $this->csvToArray(
+                            $skuRemoveArr
+                        )
+                    )
+                ) {
+                    continue;
+                }
+
+                if (
+                    $totalQty >=
+                    (int)
+                    $rule->quantity
+                ) {
+                    $itemDiscount =
+                        (
+                            (float)
+                            (
+                                $item['Price']
+                                ?? 0
+                            )
+                            *
+                            (
+                                (int)
+                                (
+                                    $item['Qty']
+                                    ?? 0
+                                )
+                            )
+                        )
+                        *
+                        (
+                            (float)
+                            $rule->quantity_discount_amount
+                            / 100
+                        );
+
+                    Session::put(
+                        'ShoppingCart.Cart.'
+                        . $index
+                        . '.QuantityItemWiseDiscout',
+                        $itemDiscount
+                    );
+                }
+            }
+        }
+
+        return [
+            'matched' => true,
+
+            'discount' =>
                 NumberFormat(
                     $discount
                 ),
+
+            'skuRemoveArr' =>
+                $skuRemoveArr,
         ];
     }
 
@@ -1443,7 +1738,11 @@ class QuantityDiscountService
         }
 
         /*
-         * Exact legacy ProductsCategory pivot query.
+         * Category membership is stored in the existing
+         * pu_products_category mapping table.
+         *
+         * Do not query category_id from pu_products:
+         * that column does not exist on the Products table.
          */
         return ProductsCategory::whereIn(
             'category_id',

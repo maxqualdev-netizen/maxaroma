@@ -175,16 +175,29 @@ class ProductNormalizationService
         object $product,
         string $orderType = 'Website'
     ): array {
+        /*
+         * IMPORTANT:
+         * Preserve the exact VendorTrait priority:
+         *
+         * 1. Store pricing for Store orders.
+         * 2. Website own-stock pricing FIRST when
+         *    current_stock > minimum_stock.
+         * 3. Only when own website stock is NOT available,
+         *    select the cheapest eligible vendor.
+         * 4. If no vendor is eligible, fall back to the
+         *    existing Maxaroma own pricing.
+         *
+         * Do not move vendor selection before the own-stock
+         * check. That would change the existing price behavior.
+         */
         $isWholesaler =
+            Session::get('eusertype')
+            &&
             strtolower(
-                (string) Session::get(
-                    'eusertype',
-                    ''
-                )
+                (string) Session::get('eusertype')
             ) === 'wholesaler';
 
         if ($orderType === 'Store') {
-            $price = 0;
 
             if (
                 ($product->sale_price ?? 0) > 0
@@ -193,17 +206,39 @@ class ProductNormalizationService
                 <
                 ($product->our_price ?? 0)
             ) {
-                $price =
-                    (float) $product->sale_price;
-            } elseif (
+                return [
+                    'price' =>
+                        (float) $product->sale_price,
+                    'retail_price' =>
+                        (float) (
+                            $product->retail_price ?? 0
+                        ),
+                    'current_stock' =>
+                        (float) (
+                            $product->current_stock ?? 0
+                        ),
+                ];
+            }
+
+            if (
                 ($product->our_price ?? 0) > 0
             ) {
-                $price =
-                    (float) $product->our_price;
+                return [
+                    'price' =>
+                        (float) $product->our_price,
+                    'retail_price' =>
+                        (float) (
+                            $product->retail_price ?? 0
+                        ),
+                    'current_stock' =>
+                        (float) (
+                            $product->current_stock ?? 0
+                        ),
+                ];
             }
 
             return [
-                'price' => $price,
+                'price' => 0,
                 'retail_price' =>
                     (float) (
                         $product->retail_price ?? 0
@@ -216,7 +251,101 @@ class ProductNormalizationService
         }
 
         /*
-         * Vendor prices from the existing VendorTrait.
+         * EXACT OLD BEHAVIOR:
+         * If Maxaroma website stock is available,
+         * vendor price must NOT override it.
+         */
+        if (
+            (float) ($product->current_stock ?? 0)
+            >
+            (float) ($product->minimum_stock ?? 0)
+        ) {
+
+            if ($isWholesaler) {
+
+                if (
+                    ($product->wholesale_price ?? 0) > 0
+                ) {
+                    return [
+                        'price' =>
+                            (float) $product->wholesale_price,
+                        'retail_price' =>
+                            (float) (
+                                $product->retail_price ?? 0
+                            ),
+                        'current_stock' =>
+                            (float) (
+                                $product->current_stock ?? 0
+                            ),
+                    ];
+                }
+
+                if (
+                    ($product->our_price ?? 0) > 0
+                ) {
+                    return [
+                        'price' =>
+                            (float) $product->our_price,
+                        'retail_price' =>
+                            (float) (
+                                $product->retail_price ?? 0
+                            ),
+                        'current_stock' =>
+                            (float) (
+                                $product->current_stock ?? 0
+                            ),
+                    ];
+                }
+
+            } else {
+
+                if (
+                    ($product->sale_price ?? 0) > 0
+                    &&
+                    ($product->sale_price ?? 0)
+                    <
+                    ($product->our_price ?? 0)
+                ) {
+                    return [
+                        'price' =>
+                            (float) $product->sale_price,
+                        'retail_price' =>
+                            (float) (
+                                $product->retail_price ?? 0
+                            ),
+                        'current_stock' =>
+                            (float) (
+                                $product->current_stock ?? 0
+                            ),
+                    ];
+                }
+
+                if (
+                    ($product->our_price ?? 0) > 0
+                ) {
+                    return [
+                        'price' =>
+                            (float) $product->our_price,
+                        'retail_price' =>
+                            (float) (
+                                $product->retail_price ?? 0
+                            ),
+                        'current_stock' =>
+                            (float) (
+                                $product->current_stock ?? 0
+                            ),
+                    ];
+                }
+            }
+        }
+
+        /*
+         * Own website stock is not available.
+         * Now use eligible vendor pricing.
+         *
+         * Vendor order is kept the same as VendorTrait.
+         * Selection is by LOWEST eligible price, not by
+         * vendor-name priority.
          */
         $vendors = [
             'cosmo' => [
@@ -226,23 +355,18 @@ class ProductNormalizationService
                     $product->cosmo_current_stock ?? 0,
                 'price' =>
                     $isWholesaler
-                        ? ($product->cosmo_wholesale_price ?? 0)
-                        : ($product->cosmo_our_price ?? 0),
+                        ? (
+                            $product->cosmo_wholesale_price
+                            ?? 0
+                        )
+                        : (
+                            $product->cosmo_our_price
+                            ?? 0
+                        ),
                 'retail_price' =>
                     $product->cosmo_retail_price ?? 0,
             ],
-            'nandansons' => [
-                'sku' =>
-                    $product->nandansons_sku ?? '',
-                'stock' =>
-                    $product->nandansons_current_stock ?? 0,
-                'price' =>
-                    $isWholesaler
-                        ? ($product->nandansons_wholesale_price ?? 0)
-                        : ($product->nandansons_our_price ?? 0),
-                'retail_price' =>
-                    $product->nandansons_retail_price ?? 0,
-            ],
+
             'pca' => [
                 'sku' =>
                     $product->pca_sku ?? '',
@@ -250,11 +374,66 @@ class ProductNormalizationService
                     $product->pca_current_stock ?? 0,
                 'price' =>
                     $isWholesaler
-                        ? ($product->pca_wholesale_price ?? 0)
-                        : ($product->pca_our_price ?? 0),
+                        ? (
+                            $product->pca_wholesale_price
+                            ?? 0
+                        )
+                        : (
+                            $product->pca_our_price
+                            ?? 0
+                        ),
+
+                /*
+                 * VendorTrait uses the main product retail_price
+                 * for PCA. Preserve that exact behavior.
+                 */
                 'retail_price' =>
-                    $product->pca_retail_price ?? 0,
+                    $product->retail_price ?? 0,
             ],
+
+            'nandansons' => [
+                'sku' =>
+                    $product->nandansons_sku ?? '',
+                'stock' =>
+                    $product->nandansons_current_stock ?? 0,
+                'price' =>
+                    $isWholesaler
+                        ? (
+                            $product->nandansons_wholesale_price
+                            ?? 0
+                        )
+                        : (
+                            $product->nandansons_our_price
+                            ?? 0
+                        ),
+
+                /*
+                 * VendorTrait uses the main product retail_price
+                 * for Nandansons. Preserve that exact behavior.
+                 */
+                'retail_price' =>
+                    $product->retail_price ?? 0,
+            ],
+
+            'nd' => [
+                'sku' =>
+                    $product->nd_sku ?? '',
+                'stock' =>
+                    $product->nd_current_stock ?? 0,
+                'price' =>
+                    $isWholesaler
+                        ? (
+                            $product->nd_wholesale_price
+                            ?? 0
+                        )
+                        : (
+                            $product->nd_our_price
+                            ?? 0
+                        ),
+                'retail_price' =>
+                    $product->nd_retail_price ?? 0,
+            ],
+
             'perfumeworldwide' => [
                 'sku' =>
                     $product->perfumeworldwide_sku
@@ -264,39 +443,35 @@ class ProductNormalizationService
                     ?? 0,
                 'price' =>
                     $isWholesaler
-                        ? ($product->perfumeworldwide_wholesale_price ?? 0)
-                        : ($product->perfumeworldwide_our_price ?? 0),
+                        ? (
+                            $product->perfumeworldwide_wholesale_price
+                            ?? 0
+                        )
+                        : (
+                            $product->perfumeworldwide_our_price
+                            ?? 0
+                        ),
                 'retail_price' =>
                     $product->perfumeworldwide_retail_price
                     ?? 0,
             ],
-            'nd' => [
-                'sku' =>
-                    $product->nd_sku ?? '',
-                'stock' =>
-                    $product->nd_current_stock ?? 0,
-                'price' =>
-                    $isWholesaler
-                        ? ($product->nd_wholesale_price ?? 0)
-                        : ($product->nd_our_price ?? 0),
-                'retail_price' =>
-                    $product->nd_retail_price ?? 0,
-            ],
         ];
 
-        $availableVendors = array_filter(
-            $vendors,
-            static function (array $vendor): bool {
-                return
-                    $vendor['sku'] !== ''
-                    &&
-                    (float) $vendor['stock'] > 0
-                    &&
-                    (float) $vendor['price'] > 0;
-            }
-        );
+        $availableVendors =
+            array_filter(
+                $vendors,
+                static function (array $vendor): bool {
+                    return
+                        $vendor['sku'] !== ''
+                        &&
+                        (float) $vendor['stock'] > 0
+                        &&
+                        (float) $vendor['price'] > 0;
+                }
+            );
 
         if (!empty($availableVendors)) {
+
             uasort(
                 $availableVendors,
                 static function (
@@ -324,9 +499,13 @@ class ProductNormalizationService
         }
 
         /*
-         * Fallback to Maxaroma's own pricing.
+         * EXACT OLD FALLBACK:
+         * If no eligible vendor is found, use Maxaroma
+         * own pricing even though website stock is not
+         * currently above minimum.
          */
         if ($isWholesaler) {
+
             if (
                 ($product->wholesale_price ?? 0) > 0
             ) {
@@ -360,7 +539,9 @@ class ProductNormalizationService
                         ),
                 ];
             }
+
         } else {
+
             if (
                 ($product->sale_price ?? 0) > 0
                 &&

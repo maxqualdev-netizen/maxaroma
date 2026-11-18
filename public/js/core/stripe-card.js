@@ -40,7 +40,7 @@ window.StripeCard = {
             !expiryElement ||
             !cvcElement
         ) {
-            console.warn('Stripe card elements are not available.');
+            //console.warn('Stripe card elements are not available.');
             return;
         }
 
@@ -149,7 +149,7 @@ window.StripeCard = {
         );
     },
 
-    async createPaymentMethod() {
+    async createPaymentMethod(BillingData) {
 
         if (!this.initialized) {
             throw new Error(
@@ -169,6 +169,25 @@ window.StripeCard = {
                 'Stripe Card is still loading. Please wait.'
             );
         }
+        var CustName = BillingData.billing_first_name;
+        if($.trim(BillingData.billing_last_name) != '')
+        {
+            CustName+=' '+BillingData.billing_last_name;
+        }
+        var BillingAddress = {
+            name: CustName,
+            email: BillingData.email,
+            phone: BillingData.billing_phone,
+
+            address: {
+                line1: BillingData.billing_address1,
+                line2: BillingData.billing_address2,
+                city: BillingData.billing_city,
+                state: BillingData.billing_state,
+                postal_code: BillingData.billing_zip,
+                country: BillingData.billing_country
+            }
+        };
 
         /*
          * IMPORTANT:
@@ -179,7 +198,8 @@ window.StripeCard = {
             await this.stripe
                 .createPaymentMethod({
                     type: 'card',
-                    card: this.cardNumber
+                    card: this.cardNumber,
+                    billing_details: BillingAddress
                 });
 
         if (result.error) {
@@ -203,7 +223,7 @@ window.StripeCard = {
          * Make sure Stripe is ready.
          */
         const paymentMethod =
-            await this.createPaymentMethod();
+            await this.createPaymentMethod(payload.BillData);
 
         /*
          * Only the PaymentMethod ID goes
@@ -385,4 +405,4 @@ window.StripeCard = {
     }
 };
 
-//StripeCard.init(window.stripeinfo.stripekey);
+StripeCard.init(window.stripeinfo.stripekey);

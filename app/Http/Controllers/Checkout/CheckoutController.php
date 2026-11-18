@@ -8,6 +8,7 @@ use App\Services\Payment\StripePaymentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Traits\AfterpayTrait;
 use App\Http\Controllers\Traits\CommonTrait;
 
@@ -24,6 +25,8 @@ use App\Services\Payment\AfterpayService;
 use App\Services\Payment\AmazonPayService;
 use App\Services\Checkout\CheckoutTotalsService;
 use App\Services\Discount\FreeGiftService;
+use App\Services\Discount\FreeSampleService;
+use App\Services\Checkout\GiftWrappingService;
 use Carbon\Carbon;
 
 class CheckoutController extends Controller
@@ -38,6 +41,8 @@ class CheckoutController extends Controller
     protected AmazonPayService $AmazonPayService;
     protected CheckoutTotalsService $checkoutTotals;
     protected FreeGiftService $freeGiftService;
+    protected FreeSampleService $freeSampleService;
+    protected GiftWrappingService $giftWrappingService;
     public function __construct(
         CheckoutService $checkoutService,
         StripePaymentService $StripePaymentService,
@@ -46,7 +51,9 @@ class CheckoutController extends Controller
         AfterpayService $AfterpayService,
         AmazonPayService $AmazonPayService,
         CheckoutTotalsService $checkoutTotals,
-        FreeGiftService $freeGiftService
+        FreeGiftService $freeGiftService,
+        FreeSampleService $freeSampleService,
+        GiftWrappingService $giftWrappingService
     )
     {
         $this->checkoutService = $checkoutService;
@@ -57,6 +64,8 @@ class CheckoutController extends Controller
         $this->AmazonPayService = $AmazonPayService;
         $this->checkoutTotals = $checkoutTotals;
         $this->freeGiftService = $freeGiftService;
+        $this->freeSampleService = $freeSampleService;
+        $this->giftWrappingService = $giftWrappingService;
     }
 
     /**
@@ -64,6 +73,30 @@ class CheckoutController extends Controller
      */
     public function index(Request $request)
     {
+        $AccessRight = 0;
+        if(Session::has("SecureCheckoutToken") && Session::get("SecureCheckoutToken") === env('SECURE_CHECKOUT_TOKEN'))
+        {
+            $AccessRight = 1;
+        }else if($request->has('token') || ($request->token === env('SECURE_CHECKOUT_TOKEN')))
+        {
+            $AccessRight = 1;
+            Session::put("SecureCheckoutToken",$request->token);
+        }
+        if($AccessRight == 0)
+        {
+            return redirect('/');
+        }
+
+        if(Auth::check() &&
+            (
+                strtolower(trim((string) Session::get('eusertype', ''))) === 'wholesaler' ||
+                trim((string) Session::get('is_dropshipper', '')) === 'Yes'
+            )
+        ){
+            $this->freeGiftService->removeAllFreeGifts();
+            $this->freeSampleService->removeSamples();
+            Session::forget('ShoppingCart.FreeSamplePendingRule');
+        }
 
         $result = $this->checkoutService->prepareCheckout($request);
 
@@ -77,9 +110,21 @@ class CheckoutController extends Controller
         if (isset($result['redirect'])) {
             return $result['redirect'];
         }
-        //dd($result['data']);
-        $result['data']['token_js_url'] = "https://portal.sandbox.afterpay.com/afterpay.js";
+
         $method = $request->route('method') ?? '';
+        if($method == 'afterpay' && (!Session::has('ShoppingCart.AfterPay.Checkout_Token') || empty(Session::get('ShoppingCart.AfterPay.Checkout_Token'))))
+        {
+           return redirect()->route('checkout-new');
+        }
+        /*
+        if($method == 'amazonpay' && !$this->AmazonPayService->isAccessTokenExpired())
+        {
+           return redirect()->route('checkout-new');
+        }
+        */
+        //dd($result['data']);
+        //$result['data']['token_js_url'] = "https://portal.sandbox.afterpay.com/afterpay.js";
+        $result['data']['token_js_url'] = $this->AfterpayService->tokenJsUrl;
         $result['data']['method'] = $method;
         $selectedPaymentMethod = "PAYMENT_STRIPE";
         if(Auth::user() && Auth::user()->is_dropshipper == 'Yes')
@@ -105,6 +150,34 @@ class CheckoutController extends Controller
 
         $result['data']['test'] = $request->test??0;
         $result['data']['selectedPaymentMethod'] = $selectedPaymentMethod;
+        $result['data']['stripe_publishable_key'] = $this->StripePaymentService->publishable_key??'';
+        $result['data']['JS_SERVER_URL'] = $this->AmazonPayService->JS_SERVER_URL??'';
+        $result['data']['paypal_client_id'] = $this->PaypalService->client_id??'';
+
+        $result['data']['amazon_client_id'] = $this->AmazonPayService->CLIENT_ID??'';
+        $result['data']['amazon_merchant_id'] = $this->AmazonPayService->MERCHANT_ID??'';
+        $CheckoutTotals = $result['data']['checkout']['totals']??null;
+        $NetTotal = 0;
+        if($CheckoutTotals)
+        {
+            $NetTotal = (float) ($CheckoutTotals['NetTotal'] ?? 0);
+        }
+        $CartInfo = Session::get('ShoppingCart.Cart');
+
+        $CouponID = "";
+        if(Session::has('ShoppingCart.PromoCoupon.CouponCode') && Session::get('ShoppingCart.PromoCoupon.CouponCode') != '')
+			$CouponID = Session::get('ShoppingCart.PromoCoupon.CouponCode');
+
+        $GA4 = googleAnalyticsGA4("BeginCheckout",$CartInfo,$NetTotal,$CouponID);
+        $result['data']['GA4'] = $GA4;
+
+        $GALogin4= "";
+		if(Session::has('MyAccountGA4') && Session::get('MyAccountGA4')!='')
+		{
+            $GALogin4= googleAnalyticsGA4("LoginPage");
+            Session::forget("MyAccountGA4");
+		}
+		$result['data']['GALogin4'] = $GALogin4;
         return view('newcheckout.checkout-page')->with($result['data']);
     }
 
@@ -225,7 +298,7 @@ class CheckoutController extends Controller
 
         if (!$paymentIntentId) {
             return redirect()
-                ->route('checkout');
+                ->route('checkout-new');
         }
 
         try {
@@ -246,7 +319,7 @@ class CheckoutController extends Controller
                  */
                 return redirect()
                     ->route(
-                        'checkout'
+                        'checkout-new'
                     )
                     ->with(
                         'payment_success',
@@ -260,7 +333,7 @@ class CheckoutController extends Controller
         }
 
         return redirect()
-            ->route('checkout')
+            ->route('checkout-new')
             ->with(
                 'payment_error',
                 'Payment could not be completed.'
@@ -299,6 +372,7 @@ class CheckoutController extends Controller
 		$ShopCart = Session::get('ShoppingCart.Cart');
 		$ItemsArr = array();
 		$data = array();
+
 		if(is_array($ShopCart) && $ShopCart)
         {
 			foreach ($ShopCart as $key => $CartItem)
@@ -402,6 +476,17 @@ class CheckoutController extends Controller
                 $shippingAddressArr['name']['full_name'] = $shipping_nm;
                 $data["purchase_units"][0]["shipping"] = $shippingAddressArr;
             }
+
+            // $shippingPhone = Session::get('ShoppingCart.ShippingAddress.phone');
+            // $shippingCountryCode = '1'; // Replace with the actual international calling code.
+
+            // if ($shippingPhone !== '') {
+            //     $data['purchase_units'][0]['shipping']['phone_number'] = [
+            //         'country_code' => $shippingCountryCode,
+            //         'national_number' => $shippingPhone,
+            //     ];
+            // }
+
 		}
 		return response()->json($data);
     }
@@ -842,6 +927,11 @@ class CheckoutController extends Controller
                 Session::put("ShoppingCart.BillingAddress",$Address);
             }
         }
+        if($PaymentType == 'STRIPE_APPLEPAY' || $PaymentType == 'STRIPE_GOOGLEPAY')
+        {
+            $this->SetBillingShippingForStripeButton($request);
+            //Log::info("GooglePay Address: ".json_encode(Session::get("ShoppingCart.ShippingAddress"))."###".json_encode(Session::get("ShoppingCart.BillingAddress")));
+        }
         if(!Auth::user() && config('global.IS_GUEST_CHECKOUT') == 'Yes')
         {
             $this->SetGuestCustomer($request,$PaypalOrder);
@@ -1012,6 +1102,27 @@ class CheckoutController extends Controller
 		{
 			$CurrOrder = Order::find($OrderID);
 			$updateOrder = array ('orders_no'	 => "OR".$OrderID );
+            //UPDATE PHONE IF PHONE NUMBER NOT AVAILABLE FOR PAYPAL
+            if($PaymentType == 'PAYMENT_PAYPALEC')
+            {
+                if(isset($Billing['phone']) && empty(trim($Billing['phone'])))
+                {
+                    $CustomerInfo = Customer::find($customer_id);
+                    if($CustomerInfo)
+                    {
+                        $updateOrder['bill_phone'] = $CustomerInfo->phone;
+                    }
+                }
+                if(isset($Shipping['phone']) && empty(trim($Shipping['phone'])))
+                {
+                    $CustomerInfo = Customer::find($customer_id);
+                    if($CustomerInfo)
+                    {
+                        $updateOrder['ship_phone'] = $CustomerInfo->phone;
+                    }
+                }
+            }
+            //UPDATE PHONE IF PHONE NUMBER NOT AVAILABLE FOR PAYPAL
 			$CurrOrder->update($updateOrder);
 		}
 
@@ -1020,10 +1131,10 @@ class CheckoutController extends Controller
 
 		$IsVender = "No";
 		$IsAmazOR = 'No';
-		// if(isset($arrPaymentDetail['Payment_Type']) && $arrPaymentDetail['Payment_Type'] == 'PAYMENT_PAYWITHAMAZON')
-		// {
-		// 	$IsAmazOR = 'Yes';
-		// }
+		if(isset($PaymentType) && $PaymentType == 'PAYMENT_PAYWITHAMAZON')
+		{
+			$IsAmazOR = 'Yes';
+		}
 
 		$IsPerfumePWVendor = "No";
 
@@ -1036,6 +1147,7 @@ class CheckoutController extends Controller
             $AutoDiscount = (float)($Discounts['AutoDiscount']['discount'] ?? 0);
             $QuanityDiscount = (float)($Discounts['QuanityDiscount']['discount'] ?? 0);
             $YotpoRewardDiscount = (float)($Discounts['YotpoRewardDiscount']['discount'] ?? 0);
+            $GiftCoupon = (float)($Discounts['GiftCoupon']['discount'] ?? 0);
             $DogoDiscount = (float)($Discounts['DogoDiscount']['discount'] ?? 0);
             $apply_credit = (float)($Discounts['CreditLimitDiscount']['discount']??0);
 
@@ -1051,21 +1163,25 @@ class CheckoutController extends Controller
                 if($TaxValueNew > 0)
                 {
                     $ItemWiseTaxVal = (($tempCart[$i]['TotPrice'] * $TaxValueNew) / $SubTotal);
+                    $ItemWiseTaxVal = NumberFormat($ItemWiseTaxVal);
                 }
                 $allocatedDiscount  = 0;
                 if (isset($couponCode) && $couponCode != '' && $CouponDiscount > 0 && Session::has('ShoppingCart.CountShipTax') &&  Session::get('ShoppingCart.CountShipTax')=='1' && Session::has('ShoppingCart.CouponPercentage'))
                 {
+                    $ShippingChargeItemWise = ($ShipMethodCharge > 0  && $SubTotal > 0)
+                        ? NumberFormat(($tempCart[$i]["TotPrice"] * $ShipMethodCharge) / $SubTotal)
+                        : 0;
+                    $ItemWiseTaxShipping = NumberFormat($ItemWiseTaxVal + $ShippingChargeItemWise);
+                    $allocatedDiscount      = $ItemWiseTaxShipping * ($couponPercentage / 100);
 
-                $ShippingChargeItemWise = ($ShipMethodCharge > 0  && $SubTotal > 0)
-                    ? NumberFormat(($tempCart[$i]["TotPrice"] * $ShipMethodCharge) / $SubTotal)
-                    : 0;
-                $ItemWiseTaxShipping = NumberFormat($ItemWiseTaxVal + $ShippingChargeItemWise);
-                $allocatedDiscount      = $ItemWiseTaxShipping * ($couponPercentage / 100);
+                    $allocatedDiscount      = NumberFormat($allocatedDiscount);
+                }
 
-                $allocatedDiscount      = NumberFormat($allocatedDiscount);
+                if(!empty($tempCart[$i]['CouponDisItemWiseDiscout']) && $tempCart[$i]['CouponDisItemWiseDiscout'] > 0 && !empty($couponPercentage) && $couponPercentage==100)
+                {
+                    $allocatedDiscount = $allocatedDiscount."###".$tempCart[$i]['CouponDisItemWiseDiscout'];
                 }
                 $tempCart[$i]['TaxShippingItemWiseDiscount'] = $allocatedDiscount;
-
                 if($CouponDiscount <= 0)
                 {
                     $tempCart[$i]['CouponDisItemWiseDiscout'] = 0;
@@ -1087,11 +1203,11 @@ class CheckoutController extends Controller
                     $tempCart[$i]['BogoItemWiseDiscout'] = 0;
                 }
 
-                $tempCart[$i]['GiftCertificateItemWiseDiscout'] = 0;
-                // if(empty($this->GetAllDiscounts('GiftCoupon')) || $this->GetAllDiscounts('GiftCoupon') <= 0)
-                // {
-                //     $tempCart[$i]['GiftCertificateItemWiseDiscout'] = 0;
-                // }
+                //$tempCart[$i]['GiftCertificateItemWiseDiscout'] = 0;
+                if($GiftCoupon <= 0)
+                {
+                    $tempCart[$i]['GiftCertificateItemWiseDiscout'] = 0;
+                }
                 if(empty($apply_credit) && $apply_credit<=0)
                 {
                     $tempCart[$i]['CreditLimitItemWiseDiscout'] = 0;
@@ -1180,11 +1296,11 @@ class CheckoutController extends Controller
                     'sf_orderitemid'		=> $tempCart[$i]['TaxShippingItemWiseDiscount'] ?? 0
                 );
 
-                Log::info('OrderDetailInsert -- '.json_encode($OrderDetailInsert));
+                //Log::info('OrderDetailInsert -- '.json_encode($OrderDetailInsert));
                 $log['OrderDetailInsert'] = json_encode($OrderDetailInsert);
                 addLog("PlaceOrder",$log);
                 $OrdDetail = OrderDetail::create($OrderDetailInsert);
-                Log::info('OrdDetail -- '.json_encode($OrdDetail));
+                //Log::info('OrdDetail -- '.json_encode($OrdDetail));
                 $OrderDetailID = $OrdDetail->orders_detail_id;
                 if(($tempCart[$i]['IsCosmo']=="Yes" || $tempCart[$i]['IsNandansons']=='Yes' || $tempCart[$i]['IsPerfumePW']=='Yes' || $tempCart[$i]['IsPCA']=="Yes" || $tempCart[$i]['IsND']=="Yes") && $tempCart[$i]['VendorSKU']!='' )
                 {
@@ -1211,6 +1327,130 @@ class CheckoutController extends Controller
             'order_id' => $OrderID,
         ]);
     }
+    public function SetBillingShippingForStripeButton(Request $request)
+	{
+		Log::channel('newcheckout')->info("GPay Request:".json_encode($request->all()));
+		$log['ajax_request'] = json_encode($request->all());
+		addLog('GetClientSecretStart', $log);
+		//if(isset($request->emailAddress) && $request->emailAddress!='')
+		if (isset($request->allDetailsVal) && $request->allDetailsVal != '')
+		{
+			$payerEmail = "";
+			$payerPhone = "";
+			$allDetailsVal = $request->allDetailsVal;
+
+			if (is_string($allDetailsVal)) {
+				$allDetailsVal = json_decode($allDetailsVal, true);
+                $payerEmail = $allDetailsVal['billingDetails']['email'];
+                $payerPhone = $allDetailsVal['billingDetails']['phone'];
+                /*
+				$payerEmail = $allDetailsVal['payerEmail'] ?? '';
+				$payerPhone = $allDetailsVal['payerPhone'] ?? '';
+                */
+			}
+
+			if ($payerPhone == '') {
+				Session::flash('PlaceOrderError', "Please enter phone no.");
+				return false;
+			}
+
+			if ($payerEmail != '') {
+				//if(checkBlockedUser($request->emailAddress,0,'ClientSecret')==true)
+				if (checkBlockedUser($payerEmail, 0, 'ClientSecret') == true) {
+					Session::flash('PlaceOrderError', config('message.Register.Blocked'));
+					return false;
+				}
+			}
+		}
+
+		if (isset($request->allDetailsVal) && $request->allDetailsVal != '')
+        {
+            $Billing = json_decode($request->allDetailsVal, true);
+            //$log['billing_details'] = json_encode($Billing);
+            $log['billing_details'] = json_encode($Billing['billingDetails']);
+            addLog('GetClientSecretFirstStepGetBilling', $log);
+
+            $frsname = '';
+            $lrsname = '';
+            if (isset($Billing['billingDetails']["name"]) && $Billing['billingDetails']["name"] != '') {
+                $fnameArr = explode(" ", $Billing['billingDetails']["name"]);
+
+                if (isset($fnameArr[0]) && $fnameArr[0] != '')
+                    $frsname = $fnameArr[0];
+
+                if (isset($fnameArr[1]) && $fnameArr[1] != '')
+                    $lrsname = $fnameArr[1];
+            }
+            $AddressLine1 = '';
+            if (isset($Billing['shippingAddress']['address']['address']['line1']) && $Billing['shippingAddress']['address']['address']['line1'] != '') {
+                $AddressLine1 = $Billing['shippingAddress']['address']['address']['line1'];
+            }
+            $AddressLine2 = '';
+            if (isset($Billing['shippingAddress']['address']['address']['line2']) && $Billing['shippingAddress']['address']['address']['line2'] != '') {
+                $AddressLine2 = $Billing['shippingAddress']['address']['addressLine'][1];
+            }
+
+            $CustomerEmail = '';
+
+            if (isset($Billing['billingDetails']['email']) && $Billing['billingDetails']['email'] != '') {
+                $CustomerEmail =  $Billing['billingDetails']['email'];
+            } else if (Session::has('sess_icustomerid') && Session::get('sess_icustomerid') > 0) {
+                $CustomerEmail =  Session::get('sess_useremail');
+            }
+
+            $newrequest = [
+                'country' 		=> (isset($Billing['billingDetails']['address']['country']) ? $Billing['billingDetails']['address']['country'] : ''),
+                'first_name' 		=> $frsname,
+                'last_name'		=> $lrsname,
+                'address1' 	=> (isset($Billing['billingDetails']['address']['line1']) ? $Billing['billingDetails']['address']['line1'] : ''),
+                'address2' 	=> (isset($Billing['billingDetails']['address']['line2']) ? $Billing['billingDetails']['address']['line2'] : ''),
+                'city' 		=> (isset($Billing['billingDetails']['address']['city']) ? $Billing['billingDetails']['address']['city'] : ''),
+                'state' 		=> (isset($Billing['billingDetails']['address']['state']) ? $Billing['billingDetails']['address']['state'] : ''),
+                'zip' 			=> (isset($Billing['billingDetails']['address']['postal_code']) ? $Billing['billingDetails']['address']['postal_code'] : ''),
+                'phone' 		=> (isset($Billing['billingDetails']['address']['phone']) ? $Billing['billingDetails']['address']['phone'] : ''),
+                'email' 		=> $CustomerEmail,
+                'cemail' 		=> $CustomerEmail,
+                'sameasbill' 		=> 'Yes'
+            ];
+            $log['newrequest'] = json_encode($newrequest);
+            addLog('GetClientSecretFirstStepSetBilling', $log);
+            Session::put('ShoppingCart.BillingAddress',$newrequest);
+
+            $newrequestShip = [
+                'country' 			=> (isset($Billing['shippingAddress']['address']['country']) ? $Billing['shippingAddress']['address']['country'] : ''),
+                'first_name' 			=> $frsname,
+                'last_name'				=> $lrsname,
+                'company'			=> '',
+                'address1' 			=> $AddressLine1,
+                'address2' 			=> $AddressLine2,
+                'city' 				=> (isset($Billing['shippingAddress']['address']['city']) ? $Billing['shippingAddress']['address']['city'] : ''),
+                'state' 			=> (isset($Billing['shippingAddress']['address']['region']) ? $Billing['shippingAddress']['address']['region'] : ''),
+                'zip' 				=> (isset($Billing['shippingAddress']['address']['postalCode']) ? $Billing['shippingAddress']['address']['postalCode'] : ''),
+                'phone' 			=> (isset($Billing['shippingAddress']['address']['phone']) ? $Billing['shippingAddress']['address']['phone'] : ''),
+                'email' 			=> $CustomerEmail,
+                'sameasbill' 		=> 'Yes'
+            ];
+
+            $Wallet = '';
+            if (isset($Billing['expressPaymentType']) && $Billing['expressPaymentType'] != '') {
+                $Wallet = $Billing['expressPaymentType'];
+
+                if ($Wallet == 'google_pay') {
+                    $Wallet = 'Google Pay';
+                }
+                if ($Wallet == 'apple_pay') {
+                    $Wallet = 'Apple Pay';
+                }
+            }
+
+            Session::put('StripePaymentType', $Wallet);
+            Session::put('PayMethodRes', serialize(json_encode($Billing)));
+
+            $log['newrequestShip'] = json_encode($newrequestShip);
+            addLog('GetClientSecretFirstStepSetShipping', $log);
+            Session::put('ShoppingCart.ShippingAddress',$newrequestShip);
+        }
+	}
     public function UpdateOrder(Request $request)
     {
         if($request->has('isPaypalOrder') && $request->isPaypalOrder == 'Yes')
@@ -1220,10 +1460,40 @@ class CheckoutController extends Controller
                 'status' => $res['status'],
                 'message' => $res['message'],
             ]);
-        } elseif($request->has('PayMethod') && $request->PayMethod == 'PAYMENT_STRIPE') {
+        } elseif($request->has('PayMethod') && ($request->PayMethod == 'PAYMENT_STRIPE' || $request->PayMethod == 'STRIPE_APPLEPAY' || $request->PayMethod == 'STRIPE_GOOGLEPAY')) {
             $payment_intent_id = $request->payment_intent_id??'';
             $order_id = $request->order_id??'';
+            /*
+            $Order = Order::find($order_id);
+            $customerName 	= '';
+            if(isset($Order->bill_first_name) && !empty($Order->bill_first_name))
+            {
+                $customerName	= $Order->bill_first_name." ";
+            }
 
+            if(isset($Order->bill_last_name) && !empty($Order->bill_first_name))
+            {
+                $customerName.= $Order->bill_last_name;
+            }
+
+            $UpdateIntent['payment_method_data'] = [
+                'billing_details' => [
+                    'name' => $customerName ?? null,
+                    'email' => $Order->bill_email ?? null,
+                    'phone' => $Order->bill_phone ?? null,
+                    'address' => [
+                        'line1' => $Order->bill_address1 ?? null,
+                        'line2' => $Order->bill_address2 ?? null,
+                        'city' => $Order->bill_city ?? null,
+                        'state' => $Order->bill_state ?? null,
+                        'postal_code' => $Order->bill_postal_code ?? null,
+                        'country' => $Order->bill_country ?? null,
+                    ],
+                ],
+            ];
+            $IntentAmount = ($Order->order_total * 100);
+            $this->StripePaymentService->updatePaymentIntent($payment_intent_id,$IntentAmount,$UpdateIntent);
+            */
             /*
             * Verify Stripe payment.
             */
@@ -1249,6 +1519,7 @@ class CheckoutController extends Controller
                 {
                     $customerName.= $Order->bill_last_name;
                 }
+
                 $Order->bill_email = "tempchecknew@gmail.com";
                 $OrderData = ['toMail' => $Order->bill_email, 'orderno' => $Order->order_no, 'customer_name' => $customerName];
                 OmanisendRequest('63c113f03d897d0020e8b31e', $OrderData);
@@ -1268,6 +1539,7 @@ class CheckoutController extends Controller
             $Order->transaction_info = json_encode($TransactionResponse);
             //$Order->payment_gateway_response = json_encode($TransactionResponse);
             $Order->save();
+
             return response()->json([
                 'status' => true,
                 'message' => 'Payment has been completed.',
@@ -1464,6 +1736,7 @@ class CheckoutController extends Controller
 				'first_name'		=> stripslashes($Billing['first_name']),
 				'last_name' 		=> stripslashes($Billing['last_name']),
 				'address1' 			=> stripslashes($Billing['address1']),
+                'address2' 			=> stripslashes($Billing['address2']),
 				'city' 				=> stripslashes($Billing['city']),
 				'state' 			=> $state,
 				'country' 			=> $Billing['country'],
@@ -2096,6 +2369,13 @@ class CheckoutController extends Controller
 
     public function GetCheckoutOffers(Request $request)
     {
+        $user_type = Session::get('eusertype')??'Retailer';
+        if($user_type != 'Retailer')
+        {
+            return response()->json([
+                'status' => false
+            ]);
+        }
         $Badges = [];
         $FreeShipping = [];
         $Totals = ($this->checkoutTotals->calculate());
@@ -2198,6 +2478,9 @@ class CheckoutController extends Controller
                 $Badges[] = [
                     'id' => 'free_gift',
                     'label' => "Free Gift",
+                    'rule_id' => $giftProgress['rule_id'],
+                    'category_name' => $giftProgress['category_name'],
+                    'brand_name' => $giftProgress['brand_name'],
                     'flag_range' =>  $giftProgress['flag_range'],
                     'remain_amount' => (float)$giftProgress['remain_amount'],
                     'percentage' => (float)$giftProgress['percentage'],
@@ -2242,4 +2525,36 @@ class CheckoutController extends Controller
             'status' => false
         ]);
     }
+
+    public function CheckWholesaleMember(Request $request)
+	{
+		if ($request->ajax()) {
+            $Email = $request->email;
+            $Result = Customer::where(DB::raw('trim(email)'), '=', $Email)->where('registration_type', '=', 'M')->get();
+            $success = 0;
+            if($Result && $Result->count() > 0 )
+            {
+                if($Result[0]->eusertype != 'Retailer')
+                {
+                    return response()->json([
+                        "status" => false,
+                        "message" => "You are a ".$Result[0]->eusertype." Member. Please sign in to continue."
+                    ]);
+                } else {
+                    $success=1;
+                }
+            }
+            if($success == 1)
+            {
+                return response()->json([
+                    "status" => true
+                ]);
+            } else {
+                return response()->json([
+                    "status" => false,
+                    "message" => "Email not found. Please contact to administrator."
+                ]);
+            }
+		}
+	}
 }

@@ -255,6 +255,7 @@ async function shippingOptionsChange(data, actions, btnAction) {
 }
 
 async function approve(data, actions) {
+    routenmnew = 'secure-checkout';
     addPayPalLog("onApprove",data,actions,routenmnew);
     var payer_email = "";
     var payer_address1 = "";
@@ -267,7 +268,7 @@ async function approve(data, actions) {
     console.log(paypalApprovalHandled);
 
     if (paypalApprovalHandled) {
-        window.location.href = site_url + 'shoppingcart/view';
+        window.location.href = site_url + 'shoppingcart';
         return false;
     }
     paypalApprovalHandled = true;
@@ -282,6 +283,7 @@ async function approve(data, actions) {
         payer_postcode = details.purchase_units[0].shipping.address.postal_code; //postal code
 
         payer_email = details.payer.email_address;
+
         //if(routenmnew == 'billing'){
         //UpdateDetails(data.orderID,state,zip,country,payer_email,city);
         //}
@@ -410,7 +412,6 @@ if($("#paypal-button-container-checkout-pg").length > 0){
 */
 if($("#paypal-button-container-checkout").length > 0)
 {
-    console.log("IN");
     renderPayPalButton("#paypal-button-container-checkout");
 }
 

@@ -1,6 +1,11 @@
 (function ($) {
   "use strict";
   const checkout = window.MaxaromaCheckout || {};
+  window.MaxaromaCheckout.afterpay = {
+    refreshTimer: null,
+    refreshing: false,
+    widgetRequest: null
+  };
   const urls = checkout.urls || {};
   //console.log("AT CHECKOUT JS LOAD:", window.MaxaromaCheckout);
   //console.log("AT CHECKOUT JS URLS:", urls);
@@ -10,6 +15,8 @@
   let shippingRequest = null;
   let shippingMethodRequest = null;
   let shippingInsuranceRequest = null;
+  let giftWrappingRequest = null;
+  let currentGiftWrappingValue = null;
   let shippingSignatureRequest = null;
   let shippingTimer = null;
 
@@ -22,12 +29,65 @@
   let checkoutOffersTimer = null;
   let checkoutOffersRequest = null;
 
-  function scheduleCheckoutOffersRefresh() {
-      clearTimeout(checkoutOffersTimer);
+  let updateTotalTimer = null;
 
-      checkoutOffersTimer = setTimeout(function () {
-          GetCheckoutOffers();
-      }, 100);
+  var checkData = setInterval(function () {
+    if ($('.yotpo-button-style-active').length) {
+      $(this).on('click', function () {
+        //$("#page-spinner").show();
+        setTimeout(checkCoupontoRedeem, 2000);
+      });
+      clearInterval(checkData);
+    }
+  }, 1000);
+
+  var checkYotpoWidgetError = setInterval(function () {
+    if ($('.yotpo-point-balance-error-message').length) {
+      $('.yotpo-widget-checkout-redemptions-widget').hide();
+      clearInterval(checkYotpoWidgetError);
+    }
+  }, 1000);
+
+  function scheduleCheckoutOffersRefresh() {
+    clearTimeout(checkoutOffersTimer);
+
+    checkoutOffersTimer = setTimeout(function () {
+      GetCheckoutOffers();
+    }, 100);
+  }
+
+  function scheduleTotalRefresh() {
+    clearTimeout(updateTotalTimer);
+
+    updateTotalTimer = setTimeout(function () {
+      updateViewAll();
+    }, 100);
+  }
+  var chkYotopoCouuponCode = "";
+  function checkCoupontoRedeem() {
+    $.ajax({
+      type: 'POST',
+      url: site_url + 'checkcoupontoredeem',
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      datatype: 'JSON',
+      data: {
+        check: 'coupon'
+      },
+      success: function (data) {
+        if (data) {
+          if (data.coupon_number != '') {
+            chkYotopoCouuponCode = data.coupon_number;
+            $("#promo-code").val(data.coupon_number);
+            applyPromo();
+          } else {
+            $("#page-spinner").hide();
+          }
+
+        }
+      }
+    });
   }
 
   function showLoader(show) {
@@ -117,14 +177,14 @@
       messages: {
         email: {
           required: "Please enter email.",
-          email: "Please enter valid email.",
+          email: "Please enter a valid email address.",
         },
         password: { required: "Please enter password." },
       },
       highlight: function (element, errorClass, validClass) {
         // Leave empty so no class is added to the input element
       },
-      errorPlacement: function(error, element) {
+      errorPlacement: function (error, element) {
         // Appends all error messages into a single specific container
         error.appendTo(element.parent().parent());
       }
@@ -151,7 +211,7 @@
       highlight: function (element, errorClass, validClass) {
         // Leave empty so no class is added to the input element
       },
-      errorPlacement: function(error, element) {
+      errorPlacement: function (error, element) {
         // Appends all error messages into a single specific container
         error.appendTo(element.parent().parent());
       },
@@ -192,7 +252,7 @@
       highlight: function (element, errorClass, validClass) {
         // Leave empty so no class is added to the input element
       },
-      errorPlacement: function(error, element) {
+      errorPlacement: function (error, element) {
         // Appends all error messages into a single specific container
         error.appendTo(element.parent().parent());
       },
@@ -212,60 +272,60 @@
       },
     });
     $("#checkout-guest-form").validate({
-        rules: {
-          email: { required: true, email: true }
-        },
-        messages: {
-          email: {
-            required: "Please enter email.",
-            email: "Please enter valid email.",
-          }
-        },
-        highlight: function (element, errorClass, validClass) {
-          // Leave empty so no class is added to the input element
-        },
-        errorPlacement: function(error, element) {
-          // Appends all error messages into a single specific container
-          error.appendTo(element.parent().parent());
-        },
-        invalidHandler: function (event, validator) {
-          if (validator.errorList.length) {
-            var firstErrorElement = validator.errorList[0].element;
-            $("html, body").animate(
-              {
-                scrollTop: $(firstErrorElement).offset().top - 100, // Offset by 40px for spacing/fixed headers
-              },
-              500,
-              function () {
-                $(firstErrorElement).focus();
-              },
-            );
-          }
-        },
+      rules: {
+        email: { required: true, email: true }
+      },
+      messages: {
+        email: {
+          required: "Please enter email.",
+          email: "Please enter a valid email address.",
+        }
+      },
+      highlight: function (element, errorClass, validClass) {
+        // Leave empty so no class is added to the input element
+      },
+      errorPlacement: function (error, element) {
+        // Appends all error messages into a single specific container
+        error.appendTo(element.parent().parent());
+      },
+      invalidHandler: function (event, validator) {
+        if (validator.errorList.length) {
+          var firstErrorElement = validator.errorList[0].element;
+          $("html, body").animate(
+            {
+              scrollTop: $(firstErrorElement).offset().top - 100, // Offset by 40px for spacing/fixed headers
+            },
+            500,
+            function () {
+              $(firstErrorElement).focus();
+            },
+          );
+        }
+      },
     });
   }
 
-  async function processCardPayment(payment_method_id, OrderID, PayMethod) {
+  async function processCardPayment(payment_method_id, OrderID, PayMethod, BillData) {
     try {
       var payload = {
         payment_method_id: payment_method_id,
         order_id: OrderID,
+        BillData: BillData
       }
 
       const payment = await StripeCard.pay(payload);
-      //console.log(payment);
-      if(payment.success === true)
-      {
+
+      if (payment.success === true) {
         //alert("Payment Successfull");
         await setOrderStatus(payment.paymentIntentId, OrderID, PayMethod);
       } else {
-        window.location=site_url+'secure-checkout';
+        window.location = site_url + 'secure-checkout';
         return false;
       }
     } catch (error) {
-      //console.error(error);
+      console.error(error);
       //alert(error.message);
-      window.location=site_url+'secure-checkout';
+      //window.location = site_url + 'secure-checkout';
       return false;
     } finally {
     }
@@ -278,160 +338,176 @@
       var payload = {};
       var ShippingData = $("#frmcheckoutaddress").serializeArray();
       var customer_comment = $("#customer_comment").val();
-      if(isGuestCustomer == 'Y')
-      {
+      var cust_email = "";
+      if (isGuestCustomer == 'Y') {
         payload['guest_email'] = $("#checkout-guest-form #email").val();
         payload['newsletter'] = 'No';
-        if($("#checkout-guest-form #guest_newsletter").prop('checked'))
-        {
+        if ($("#checkout-guest-form #guest_newsletter").prop('checked')) {
           payload['newsletter'] = 'Yes';
         }
+        cust_email = $("#checkout-guest-form #email").val();
+      } else {
+        cust_email = $("#contact-logged-in #email").val();
       }
-      $.each(ShippingData, function(index, field) {
+      $.each(ShippingData, function (index, field) {
         payload[field.name] = field.value;
       });
-
-      if($("#chksamebill").prop('checked'))
-      {
+      var BillingData = $("#frmbillingaddress").serializeArray();
+      var BillData = {};
+      $.each(BillingData, function (index, field) {
+          BillData[field.name] = field.value;
+      });
+      BillData.email = cust_email;
+      if ($("#chksamebill").prop('checked')) {
         payload['BillingAsShipping'] = 'Yes'
       } else {
         payload['BillingAsShipping'] = 'No';
-        var BillingData = $("#frmbillingaddress").serializeArray();
-        $.each(BillingData, function(index, field) {
+
+        $.each(BillingData, function (index, field) {
           payload[field.name] = field.value;
         });
       }
-      if($.trim(customer_comment) != '')
-      {
+      if ($.trim(customer_comment) != '') {
         payload['customer_comment'] = customer_comment;
       }
       //payload['shippingAddress'] = $("#frmcheckoutaddress").serializeArray();
-      if(PayMethod == 'PAYMENT_STRIPE')
-      {
+      if (PayMethod == 'PAYMENT_STRIPE') {
         payload['payment_type'] = PayMethod;
-        payload['payment_method'] =  'Credit Card';
-        const paymentMethod = await StripeCard.createPaymentMethod();
+        payload['payment_method'] = 'Credit Card';
+        const paymentMethod = await StripeCard.createPaymentMethod(BillData);
 
-        if (paymentMethod)
-        {
+        if (paymentMethod) {
           showFullPageLoader(true);
           const response = await PlaceOrder(payload);
           const result = await response.json();
+
           if (!response.ok) {
-            throw new Error(result.message || "Unable to create order.");
+              window.location.href='/secure-checkout';
+              return false;
+            //throw new Error(result.message || "Unable to create order.");
           }
           if (result.status === true) {
             var order_id = result.order_id;
-            processCardPayment(paymentMethod.id, order_id, PayMethod);
+            processCardPayment(paymentMethod.id, order_id, PayMethod, BillData);
+          } else {
+            window.location.href='/secure-checkout';
+            return false;
           }
         }
+        // else {
+        //   showFullPageLoader(false);
+        //   $("#stripe_error").text("We couldn't complete your order due to a temporary server error. Please try again.");
+        // }
       } else {
         showFullPageLoader(true);
-        if(PayMethod == 'PAYMENT_DS')
-        {
+        if (PayMethod == 'PAYMENT_DS') {
           payload['payment_type'] = PayMethod;
-          payload['payment_method'] =  'Dropshipper Fund';
+          payload['payment_method'] = 'Dropshipper Fund';
         }
-        if(PayMethod == 'PAYMENT_PAYWITHAFTERPAY')
-        {
+        if (PayMethod == 'PAYMENT_PAYWITHAFTERPAY') {
           payload['payment_type'] = PayMethod;
-          payload['payment_method'] =  'Pay With Afterpay';
+          payload['payment_method'] = 'Pay With Afterpay';
           payload['pschecksum'] = pschecksum;
         }
-        if(PayMethod == 'PAYMENT_PAYWITHAMAZON')
-        {
+        if (PayMethod == 'PAYMENT_PAYWITHAMAZON') {
           payload['payment_type'] = PayMethod;
-          payload['payment_method'] =  'Pay With Amazon';
+          payload['payment_method'] = 'Pay With Amazon';
         }
 
         const response = await PlaceOrder(payload);
         const result = await response.json();
 
         if (!response.ok) {
-          throw new Error(result.message || "Unable to create order.");
-        }
-        if(result.status === true)
-        {
-          var order_id = result.order_id;
-          await setOrderStatus('', order_id,PayMethod, pschecksum);
-        }
-      }
-
-        /*
-        const response = await fetch(window.checkoutUrls.createOrder, {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            "X-CSRF-TOKEN": csrfToken,
-          },
-          body: JSON.stringify({
-            //payment_method_id: paymentMethod.id,
-            payment_type: "PAYMENT_STRIPE",
-            payment_method: "Credit Card",
-          }),
-        });
-
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.message || "Unable to create order.");
+          window.location.href='/secure-checkout';
+          return false;
         }
         if (result.status === true) {
           var order_id = result.order_id;
-          processCardPayment(paymentMethod.id, order_id);
+          await setOrderStatus('', order_id, PayMethod, pschecksum);
+        } else {
+          window.location.href='/secure-checkout';
+          return false;
         }
-        return result;
-      }*/
+      }
+
+      /*
+      const response = await fetch(window.checkoutUrls.createOrder, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-CSRF-TOKEN": csrfToken,
+        },
+        body: JSON.stringify({
+          //payment_method_id: paymentMethod.id,
+          payment_type: "PAYMENT_STRIPE",
+          payment_method: "Credit Card",
+        }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.message || "Unable to create order.");
+      }
+      if (result.status === true) {
+        var order_id = result.order_id;
+        processCardPayment(paymentMethod.id, order_id);
+      }
+      return result;
+    }*/
     } catch (error) {
+      window.location.href='/secure-checkout';
+      return false;
       console.error(error);
       //alert(error.message);
     } finally {
     }
   }
-  async function CheckGuestCustomer(email)
-  {
+  async function CheckGuestCustomer(email) {
     $("#error_guest_email").hide();
     $("#error_guest_email").html('');
     $("#error_already_exist_email").remove();
+    //$("#contGuest").hide();
     $.ajax({
-      type:'POST',
-      url:site_url+'checkmember',
+      type: 'POST',
+      url: site_url + 'checkmember',
       headers: {
         'X-CSRF-TOKEN': csrfToken
       },
       datatype: 'JSON',
-      data:{
+      data: {
         //action : 'chkmember',
-        action : 'chkmember_billing',
-        email : email
+        action: 'chkmember_billing',
+        email: email
       },
-      success:function(data) {
-        if(data != ''){
+      success: function (data) {
+        if (data != '') {
           var chkArr = data.split("~");
-          if(chkArr[0]=="0")
-          {
+          if (chkArr[0] == "0") {
             var message = 'You already have an account with us. Please sign in to continue.' + chkArr[1];
             //$("#error_guest_email").html(message);
             //$("#error_guest_email").show();
             $("#checkout-login-form").prepend("<div class='alert alert-danger text-center' id='error_already_exist_email'>" + message + "</div>");
             $("#checkout-login-form #checkout-login-email").val(email);
             $("#tab-signin").trigger("click");
+            //$("#contGuest").show();
             return false;
-          } else if(chkArr[0]=="1"){
+          } else if (chkArr[0] == "1") {
             var message = 'You already have an account with us. Please sign in to continue.';
             // $("#error_guest_email").html(message);
             // $("#error_guest_email").show();
             $("#checkout-login-form").prepend("<div class='alert alert-danger text-center' id='error_already_exist_email'>" + message + "</div>");
             $("#checkout-login-form #checkout-login-email").val(email);
             $("#tab-signin").trigger("click");
+            //$("#contGuest").show();
             return false;
-          } else if(chkArr[0] == "2"){
+          } else if (chkArr[0] == "2") {
             var message = chkArr[1];
             $("#error_guest_email").html(message);
             $("#error_guest_email").show();
             return false;
-          } else if(chkArr[0] == "4"){
+          } else if (chkArr[0] == "4") {
             var message = chkArr[1];
             $("#error_guest_email").html(message);
             $("#error_guest_email").show();
@@ -441,36 +517,73 @@
       }
     });
   }
-  async function PlaceOrder(payload)
-  {
-    return await fetch(window.checkoutUrls.createOrder, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          "X-CSRF-TOKEN": csrfToken,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const result = await response.json();
-      /*
-      if (!response.ok) {
-        throw new Error(result.message || "Unable to create order.");
+  async function CheckWholesalerCustomer(email) {
+    $("#error_guest_email").hide();
+    $("#error_guest_email").html('');
+    $("#error_already_exist_email").remove();
+    //$("#contGuest").hide();
+    $.ajax({
+      type: 'POST',
+      url: site_url + 'check-wholesale-member',
+      headers: {
+        'X-CSRF-TOKEN': csrfToken
+      },
+      datatype: 'JSON',
+      data: {
+        //action : 'chkmember',
+        action: 'check_wholesaler',
+        email: email
+      },
+      success: function (data) {
+        if(!data.status)
+        {
+            var message = data.message;
+            $("#checkout-login-form").prepend("<div class='alert alert-danger text-center' id='error_already_exist_email'>" + message + "</div>");
+            $("#checkout-login-form #checkout-login-email").val(email);
+            $("#tab-signin").trigger("click");
+            $("html, body").animate(
+            {
+              scrollTop: $("#checkout-login-form").offset().top - 200, // Offset by 40px for spacing/fixed headers
+            },
+            500,
+            function () {
+              $("#checkout-login-form").focus();
+            },
+          );
+            return false;
+        }
+        return true;
       }
-      if (result.status === true) {
-        var order_id = result.order_id;
-        processCardPayment(paymentMethod.id, order_id);
-      }
-      */
-      return result;
+    });
   }
-  async function setOrderStatus(payment_intent_id='', order_id, PayMethod='',pschecksum = '') {
+  async function PlaceOrder(payload) {
+    return await fetch(window.checkoutUrls.createOrder, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "X-CSRF-TOKEN": csrfToken,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const result = await response.json();
+    /*
+    if (!response.ok) {
+      throw new Error(result.message || "Unable to create order.");
+    }
+    if (result.status === true) {
+      var order_id = result.order_id;
+      processCardPayment(paymentMethod.id, order_id);
+    }
+    */
+    return result;
+  }
+  async function setOrderStatus(payment_intent_id = '', order_id, PayMethod = '', pschecksum = '') {
     try {
       let payload = {};
-      if(PayMethod == 'PAYMENT_STRIPE')
-      {
+      if (PayMethod == 'PAYMENT_STRIPE' || PayMethod == 'STRIPE_APPLEPAY' || PayMethod == 'STRIPE_GOOGLEPAY') {
         payload = {
           payment_intent_id: payment_intent_id,
           order_id: order_id,
@@ -502,10 +615,8 @@
       }
 
       if (result.status === true) {
-        console.log(window.checkoutUrls.orderReceipt);
         window.location.href = window.checkoutUrls.orderReceipt;
       }
-      console.log(window.checkoutUrls.orderReceipt);
       return result;
     } catch (error) {
       console.error(error);
@@ -521,99 +632,99 @@
     var PayMethod = $("#selectedPaymentMethod").val();
     const btn = document.getElementById("place-order-btn");
     if (!btn) return;
+    var validationError = 0;
     var is_logged_user = $("#is_logged_user").val();
-    if(is_logged_user == "No")
-    {
-      if($("#checkout-guest-form").valid())
-      {
+    if (is_logged_user == "No") {
+      if ($("#checkout-guest-form").valid()) {
         var guest_email = $("#checkout-guest-form #email").val();
-        //CheckGuestCustomer(guest_email);
+        if(!CheckWholesalerCustomer(guest_email));
+        {
+          validationError = 1;
+        }
         isGuestCustomer = 'Y';
       }
     }
-    var validationError = 0;
-    if($("#frmcheckoutaddress").length > 0 && !$("#frmcheckoutaddress").valid())
-    {
-      validationError=1;
+
+    if ($("#frmcheckoutaddress").length > 0 && !$("#frmcheckoutaddress").valid()) {
+      validationError = 1;
     }
-    if($("#frmbillingaddress").length > 0 && !$("#chksamebill").prop('checked') && !$("#frmbillingaddress").valid())
-    {
-      validationError=1;
+    if ($("#frmbillingaddress").length > 0 && !$("#chksamebill").prop('checked') && !$("#frmbillingaddress").valid()) {
+      validationError = 1;
     }
     $("#error_ship_method").hide();
     $("#error_ship_method").empty();
-    if($('input[name="shipping"]:checked').length == 0)
-    {
-        $("#error_ship_method").html("Please select shipping method.")
-        $("#error_ship_method").show();
-        $("html, body").animate(
-          {
-            scrollTop: $("#error_ship_method").offset().top - 100, // Offset by 40px for spacing/fixed headers
-          },
-          500,
-          function () {
-            $("#error_ship_method").focus();
-          },
-        );
+    if ($('input[name="shipping"]:checked').length == 0) {
+      $("#error_ship_method").html("Please select shipping method.")
+      $("#error_ship_method").show();
+      $("html, body").animate(
+        {
+          scrollTop: $("#error_ship_method").offset().top - 100, // Offset by 40px for spacing/fixed headers
+        },
+        500,
+        function () {
+          $("#error_ship_method").focus();
+        },
+      );
     }
-    if(!$("#chkagree").prop('checked'))
-    {
+    if (!$("#chkagree").prop('checked')) {
       alert("Please indicate that you have read and agree to the Terms and Conditions");
       return false;
     }
-    if(validationError == 0)
-    {
-        btn.classList.add("btn-loading");
-        btn.setAttribute("aria-busy", "true");
-        btn.setAttribute("aria-label", "Processing your order…");
-        btn.disabled = true;
+    if (validationError == 0) {
+      btn.classList.add("btn-loading");
+      btn.setAttribute("aria-busy", "true");
+      btn.setAttribute("aria-label", "Processing your order…");
+      btn.disabled = true;
 
-        // Simulate processing
-        setTimeout(() => {
-          btn.classList.remove("btn-loading");
-          btn.disabled = false;
-          // In real implementation: redirect to confirmation page
-        }, 2000);
+      // Simulate processing
+      setTimeout(() => {
+        btn.classList.remove("btn-loading");
+        btn.disabled = false;
+        // In real implementation: redirect to confirmation page
+      }, 2000);
 
-        createCheckoutOrder();
+      createCheckoutOrder();
     }
 
   });
 
-function refreshAfterpayWidget()
-{
-    var netTotal = parseFloat($("#summary-total-value").attr("data-value"));
-    if (!window.afterpayWidget) {
-        console.warn("Afterpay widget is not initialized yet.");
-        return;
-    }
+  function refreshAfterpayWidget() {
+    if ($("#afterpay-widget").length > 0) {
+      const afterpay = window.MaxaromaCheckout.afterpay;
+      clearTimeout(afterpay.refreshTimer);
+      afterpay.refreshTimer = setTimeout(() => {
+        var netTotal = parseFloat($("#summary-total-value").attr("data-value"));
+        if (!window.afterpayWidget) {
+          console.warn("Afterpay widget is not initialized yet.");
+          return;
+        }
 
-    // Clear the previous checksum until a new valid one is received.
-    $("#pschecksum").val("");
+        // Clear the previous checksum until a new valid one is received.
+        //$("#pschecksum").val("");
 
-    if ($("#ap_psChecksum").length > 0) {
-        $("#ap_psChecksum").val("");
-    }
+        // if ($("#ap_psChecksum").length > 0) {
+        //   $("#ap_psChecksum").val("");
+        // }
 
-    window.afterpayWidget.update({
-        amount: {
+        window.afterpayWidget.update({
+          amount: {
             amount: Number(netTotal).toFixed(2),
             currency: "USD"
-        }
-    });
+          }
+        });
+      }, 500);
+  }
 }
 
-  function GetAfterpayWidget()
-  {
+  function GetAfterpayWidget() {
     $.ajax({
-      type:'POST',
-      url:site_url+'afterpay-widget',
+      type: 'POST',
+      url: site_url + 'afterpay-widget',
       headers: {
         'X-CSRF-TOKEN': csrfToken
       },
-      success:function(data) {
-        if(data != '')
-        {
+      success: function (data) {
+        if (data != '') {
           $("#afterpay-widget").html(data);
           setTimeout(() => {
             refreshAfterpayWidget();
@@ -734,40 +845,48 @@ function refreshAfterpayWidget()
     if (!methods.length) {
       $list.html(
         '<div class="shipping-empty">' +
-          "No shipping methods are available for this address." +
-          "</div>",
+        "No shipping methods are available for this address." +
+        "</div>",
       );
       $("#section-delivery").hide();
-	  $("#place-order-btn").hide();
-    $("#place-order-mobile").hide();
-    $("#order-summary-sticky-dock").hide();
-	  $("#review-block").hide();
+      $("#place-order-btn").hide();
+      $("#place-order-mobile").hide();
+      $("#order-summary-sticky-dock").hide();
+      $("#review-block").hide();
       showShipMethodLoader(false);
 
       return;
     }
-	$("#section-delivery").show();
-	$("#place-order-btn").show();
-  $("#place-order-mobile").show();
-  $("#order-summary-sticky-dock").show();
-	$("#review-block").show();
-    const selectedId = parseInt(
+    $("#section-delivery").show();
+    $("#place-order-btn").show();
+    $("#place-order-mobile").show();
+    $("#order-summary-sticky-dock").show();
+    $("#review-block").show();
+    let selectedId = parseInt(
       response.selectedShippingMethodId ||
-        response.selected_shipping_method_id ||
-        checkout.selectedShippingMethodId ||
-        0,
+      response.selected_shipping_method_id ||
+      checkout.selectedShippingMethodId ||
+      0,
       10,
     );
 
     let html = "";
+    let CheckFirstInstore = 0;
+    if(selectedId == 46 && methods.length > 1)
+    {
+      selectedId = parseInt(methods[1].shipping_mode_id);
+    }
 
-    methods.forEach(function (method) {
+    methods.forEach(function (method,index) {
       const methodId = parseInt(method.shipping_mode_id || 0, 10);
 
       if (!methodId) {
         return;
       }
-
+      if(methodId == 46 && index == 0)
+      {
+        CheckFirstInstore = 1;
+      }
       const methodName = method.method_name || "Shipping Method";
 
       const charge = parseFloat(method.chargewithoutformat || 0);
@@ -775,11 +894,11 @@ function refreshAfterpayWidget()
       const chargeText =
         method.charge_str || (charge > 0 ? formatMoney(charge) : "FREE");
 
-		let shipmsg = "Estimated";
+      let shipmsg = "Estimated";
 
-		if (methodId == "33" || methodId == "34") {
-			shipmsg = "Guaranteed";
-		}
+      if (methodId == "33" || methodId == "34") {
+        shipmsg = "Guaranteed";
+      }
 
       const eta = method.display_date
         ? shipmsg + " Arrives " + method.display_date
@@ -813,10 +932,10 @@ function refreshAfterpayWidget()
         ">" +
         '<div class="shipping-option-info">' +
         '<div class="shipping-option-name">' +
-        methodName +
+        eta +
         "</div>" +
         '<div class="shipping-option-eta">' +
-        eta +
+        methodName +
         "</div>" +
         "</div>" +
         '<div class="shipping-option-price' +
@@ -832,8 +951,7 @@ function refreshAfterpayWidget()
     if (Array.isArray(shippingMessages) && shippingMessages.length) {
       shippingMessageHtml = shippingMessages
         .map(function (message) {
-          console.log("message_success = " + message_success);
-          if(message_success === 1)
+          if (message_success === 1)
             return '<div class="shipping-method-message alert alert-success">' + message + "</div>";
           else
             return '<div class="shipping-method-message alert alert-danger">' + message + "</div>";
@@ -856,11 +974,11 @@ function refreshAfterpayWidget()
 
     $list.html(
       '<legend class="visually-hidden">' +
-        "Select shipping method" +
-        "</legend>" +
-        shippingCutoffHtml +
-        shippingMessageHtml +
-        html,
+      "Select shipping method" +
+      "</legend>" +
+      shippingCutoffHtml +
+      shippingMessageHtml +
+      html,
     );
 
     const $checked = $list.find('input[name="shipping"]:checked');
@@ -899,21 +1017,23 @@ function refreshAfterpayWidget()
     if (!$selected.length) {
       return;
     }
-
-    $selected
-      .closest(".shipping-option")
-      .find(".shipping-option-info")
-      .append(
-        '<div class="shipping-option-confidence">' +
+    if($selected.val() != '46')
+    {
+      $selected
+        .closest(".shipping-option")
+        .find(".shipping-option-info")
+        .append(
+          '<div class="shipping-option-confidence">' +
           '<svg width="13" height="13" viewBox="0 0 14 14" fill="none" aria-hidden="true">' +
           '<path d="M7 1.5L9 5.5H13L9.5 8L11 12L7 9.5L3 12L4.5 8L1 5.5H5L7 1.5Z" fill="currentColor"></path>' +
           "</svg>" +
           "98% on-time delivery rate" +
           "</div>",
-      );
+        );
+    }
   }
 
-function updateTotals(response) {
+  function updateTotals(response) {
     response = response || {};
 
     updateCheckoutReviewContact();
@@ -921,7 +1041,7 @@ function updateTotals(response) {
 
     window.MaxaromaCheckout = window.MaxaromaCheckout || {};
     window.MaxaromaCheckout.totalsState =
-        window.MaxaromaCheckout.totalsState || {};
+      window.MaxaromaCheckout.totalsState || {};
 
     const state = window.MaxaromaCheckout.totalsState;
     const totals = response.totals || response.Totals || {};
@@ -935,87 +1055,87 @@ function updateTotals(response) {
      * SHIPPING
      */
     const shipping =
-        totals.shipping ??
-        totals.Shipping ??
-        totals.shipping_charge ??
-        totals.ShippingCharge ??
-        charges?.ShippingCharge?.charge ??
-        response.shipping_charge ??
-        response.shippingCharge ??
-        (typeof shippingResponse === "number"
-            ? shippingResponse
-            : (
-                shippingResponse?.shipping_charge ??
-                shippingResponse?.charge ??
-                shippingResponse?.amount ??
-                shippingResponse?.ShippingCharge ??
-                0
-            ));
+      totals.shipping ??
+      totals.Shipping ??
+      totals.shipping_charge ??
+      totals.ShippingCharge ??
+      charges?.ShippingCharge?.charge ??
+      response.shipping_charge ??
+      response.shippingCharge ??
+      (typeof shippingResponse === "number"
+        ? shippingResponse
+        : (
+          shippingResponse?.shipping_charge ??
+          shippingResponse?.charge ??
+          shippingResponse?.amount ??
+          shippingResponse?.ShippingCharge ??
+          0
+        ));
 
     /*
      * TAX
      */
     const tax =
-        totals.tax ??
-        totals.Tax ??
-        totals.tax_amount ??
-        totals.TaxAmount ??
-        response.tax_amount ??
-        response.taxAmount ??
-        charges?.Tax?.charge ??
-        charges?.tax?.charge ??
-        (typeof taxResponse === "number"
-            ? taxResponse
-            : (
-                taxResponse?.tax ??
-                taxResponse?.tax_amount ??
-                taxResponse?.Tax ??
-                taxResponse?.amount ??
-                taxResponse?.charge ??
-                0
-            ));
+      totals.tax ??
+      totals.Tax ??
+      totals.tax_amount ??
+      totals.TaxAmount ??
+      response.tax_amount ??
+      response.taxAmount ??
+      charges?.Tax?.charge ??
+      charges?.tax?.charge ??
+      (typeof taxResponse === "number"
+        ? taxResponse
+        : (
+          taxResponse?.tax ??
+          taxResponse?.tax_amount ??
+          taxResponse?.Tax ??
+          taxResponse?.amount ??
+          taxResponse?.charge ??
+          0
+        ));
 
     /*
      * SHIPPING INSURANCE - ACTUAL CHARGE
      */
     const insuranceChargeFromTotals =
-        charges?.ShippingInsurance?.charge ??
-        charges?.shipping_insurance?.charge ??
-        totals?.ShippingInsurance?.charge ??
-        totals?.shipping_insurance?.charge;
+      charges?.ShippingInsurance?.charge ??
+      charges?.shipping_insurance?.charge ??
+      totals?.ShippingInsurance?.charge ??
+      totals?.shipping_insurance?.charge;
 
     let insuranceValue =
-        totals.insurance ??
-        totals.Insurance ??
-        totals.shipping_insurance ??
-        totals.shipping_insurance_charge ??
-        totals.ShippingInsurance?.charge ??
-        insuranceChargeFromTotals ??
-        response.shipping_insurance_charge ??
-        response.shippingInsuranceCharge ??
-        (
-            typeof insuranceResponse === "number"
-                ? insuranceResponse
-                : (
-                    insuranceResponse?.charge ??
-                    insuranceResponse?.shipping_insurance_charge ??
-                    insuranceResponse?.amount ??
-                    null
-                )
-        );
+      totals.insurance ??
+      totals.Insurance ??
+      totals.shipping_insurance ??
+      totals.shipping_insurance_charge ??
+      totals.ShippingInsurance?.charge ??
+      insuranceChargeFromTotals ??
+      response.shipping_insurance_charge ??
+      response.shippingInsuranceCharge ??
+      (
+        typeof insuranceResponse === "number"
+          ? insuranceResponse
+          : (
+            insuranceResponse?.charge ??
+            insuranceResponse?.shipping_insurance_charge ??
+            insuranceResponse?.amount ??
+            null
+          )
+      );
 
     /*
      * Preserve the last actual Insurance value when the response
      * does not contain an Insurance charge.
      */
     if (
-        (insuranceValue === null ||
-            insuranceValue === undefined ||
-            insuranceValue === "") &&
-        state.insurance !== undefined &&
-        state.insurance !== null
+      (insuranceValue === null ||
+        insuranceValue === undefined ||
+        insuranceValue === "") &&
+      state.insurance !== undefined &&
+      state.insurance !== null
     ) {
-        insuranceValue = state.insurance;
+      insuranceValue = state.insurance;
     }
 
     let insurance = parseFloat(insuranceValue || 0);
@@ -1027,34 +1147,34 @@ function updateTotals(response) {
      * It should remain available when Insurance is OFF.
      */
     const insuranceDisplayRaw =
-        response.insuranceDisplayAmount ??
-        response.insuranceDisplayCharge ??
-        response.shippingInsuranceDisplayAmount ??
-        response.shipping_insurance_display_amount ??
-        totals.insuranceDisplayAmount ??
-        totals.insuranceDisplayCharge ??
-        state.insuranceDisplayAmount ??
-        state.insuranceDisplayCharge ??
-        null;
+      response.insuranceDisplayAmount ??
+      response.insuranceDisplayCharge ??
+      response.shippingInsuranceDisplayAmount ??
+      response.shipping_insurance_display_amount ??
+      totals.insuranceDisplayAmount ??
+      totals.insuranceDisplayCharge ??
+      state.insuranceDisplayAmount ??
+      state.insuranceDisplayCharge ??
+      null;
 
     if (
-        insuranceDisplayRaw !== null &&
-        insuranceDisplayRaw !== undefined &&
-        insuranceDisplayRaw !== ""
+      insuranceDisplayRaw !== null &&
+      insuranceDisplayRaw !== undefined &&
+      insuranceDisplayRaw !== ""
     ) {
-        const parsedDisplayAmount = Number(insuranceDisplayRaw);
+      const parsedDisplayAmount = Number(insuranceDisplayRaw);
 
-        if (
-            Number.isFinite(parsedDisplayAmount) &&
-            parsedDisplayAmount >= 0
-        ) {
-            state.insuranceDisplayAmount = parsedDisplayAmount;
-        }
+      if (
+        Number.isFinite(parsedDisplayAmount) &&
+        parsedDisplayAmount >= 0
+      ) {
+        state.insuranceDisplayAmount = parsedDisplayAmount;
+      }
     } else if (
-        insurance > 0 &&
-        state.insuranceApplied !== false
+      insurance > 0 &&
+      state.insuranceApplied !== false
     ) {
-        state.insuranceDisplayAmount = insurance;
+      state.insuranceDisplayAmount = insurance;
     }
 
     /*
@@ -1063,44 +1183,44 @@ function updateTotals(response) {
     let explicitInsuranceApplied = null;
 
     if (response.insurance_applied !== undefined) {
-        explicitInsuranceApplied = isAppliedFlag(
-            response.insurance_applied
-        );
+      explicitInsuranceApplied = isAppliedFlag(
+        response.insurance_applied
+      );
     } else if (response.insuranceApplied !== undefined) {
-        explicitInsuranceApplied = isAppliedFlag(
-            response.insuranceApplied
-        );
+      explicitInsuranceApplied = isAppliedFlag(
+        response.insuranceApplied
+      );
     } else if (response.shippingInsuranceApplied !== undefined) {
-        explicitInsuranceApplied = isAppliedFlag(
-            response.shippingInsuranceApplied
-        );
+      explicitInsuranceApplied = isAppliedFlag(
+        response.shippingInsuranceApplied
+      );
     } else if (
-        insuranceResponse &&
-        typeof insuranceResponse === "object" &&
-        insuranceResponse.applied !== undefined
+      insuranceResponse &&
+      typeof insuranceResponse === "object" &&
+      insuranceResponse.applied !== undefined
     ) {
-        explicitInsuranceApplied = isAppliedFlag(
-            insuranceResponse.applied
-        );
+      explicitInsuranceApplied = isAppliedFlag(
+        insuranceResponse.applied
+      );
     }
 
     if (explicitInsuranceApplied !== null) {
-        state.insuranceApplied = explicitInsuranceApplied;
+      state.insuranceApplied = explicitInsuranceApplied;
     } else if (state.insuranceApplied === undefined) {
-        const $protection = $("#protection");
+      const $protection = $("#protection");
 
-        state.insuranceApplied = $protection.length
-            ? $protection.is(":checked")
-            : insurance > 0;
+      state.insuranceApplied = $protection.length
+        ? $protection.is(":checked")
+        : insurance > 0;
     }
 
     const selectedShippingMethodId = parseInt(
-        response.selectedShippingMethodId ??
-        response.selected_shipping_method_id ??
-        window.MaxaromaCheckout.selectedShippingMethodId ??
-        checkout.selectedShippingMethodId ??
-        0,
-        10
+      response.selectedShippingMethodId ??
+      response.selected_shipping_method_id ??
+      window.MaxaromaCheckout.selectedShippingMethodId ??
+      checkout.selectedShippingMethodId ??
+      0,
+      10
     );
 
     const isPickupShippingMethod = selectedShippingMethodId === 46;
@@ -1109,23 +1229,23 @@ function updateTotals(response) {
      * PICKUP INSURANCE STATE
      */
     if (isPickupShippingMethod) {
-        if (state.insuranceBeforePickup === undefined) {
-            state.insuranceBeforePickup =
-                state.insuranceApplied === true;
-        }
+      if (state.insuranceBeforePickup === undefined) {
+        state.insuranceBeforePickup =
+          state.insuranceApplied === true;
+      }
 
-        state.insuranceApplied = false;
-        state.insurance = 0;
-        insurance = 0;
+      state.insuranceApplied = false;
+      state.insurance = 0;
+      insurance = 0;
     } else if (state.insuranceBeforePickup !== undefined) {
-        state.insuranceApplied =
-            state.insuranceBeforePickup === true;
+      state.insuranceApplied =
+        state.insuranceBeforePickup === true;
 
-        if (state.insuranceApplied === true) {
-            state.insurance = 0;
-        }
+      if (state.insuranceApplied === true) {
+        state.insurance = 0;
+      }
 
-        delete state.insuranceBeforePickup;
+      delete state.insuranceBeforePickup;
     }
 
     const insuranceApplied = state.insuranceApplied === true;
@@ -1134,37 +1254,37 @@ function updateTotals(response) {
      * Keep the display amount separate from the actual charge.
      */
     if (
-        insuranceApplied === true &&
-        insurance <= 0 &&
-        state.insurance !== undefined &&
-        state.insurance !== null &&
-        parseFloat(state.insurance) > 0
+      insuranceApplied === true &&
+      insurance <= 0 &&
+      state.insurance !== undefined &&
+      state.insurance !== null &&
+      parseFloat(state.insurance) > 0
     ) {
-        insurance = parseFloat(state.insurance);
+      insurance = parseFloat(state.insurance);
     }
 
     if (insurance > 0) {
-        state.insuranceDisplayAmount = insurance;
+      state.insuranceDisplayAmount = insurance;
     }
 
     if (
-        state.insuranceDisplayAmount === undefined ||
-        state.insuranceDisplayAmount === null
+      state.insuranceDisplayAmount === undefined ||
+      state.insuranceDisplayAmount === null
     ) {
-        state.insuranceDisplayAmount = 0;
+      state.insuranceDisplayAmount = 0;
     }
 
     state.insurance = insurance;
 
     const insuranceDisplayAmount = parseFloat(
-        state.insuranceDisplayAmount || 0
+      state.insuranceDisplayAmount || 0
     );
 
     /*
      * SHIPPING SIGNATURE
      */
     let signatureCharge = parseFloat(
-        state.signatureCharge || 0
+      state.signatureCharge || 0
     );
 
     const previousSignatureCharge = signatureCharge;
@@ -1173,97 +1293,97 @@ function updateTotals(response) {
     let signatureChargeFromResponse = null;
 
     const signatureResponse =
-        response.shippingSignature ||
-        response.shipping_signature ||
-        response.ShippingSignature ||
-        null;
+      response.shippingSignature ||
+      response.shipping_signature ||
+      response.ShippingSignature ||
+      null;
 
     if (
-        signatureResponse &&
-        typeof signatureResponse === "object"
+      signatureResponse &&
+      typeof signatureResponse === "object"
     ) {
+      if (
+        signatureResponse.charge !== undefined &&
+        signatureResponse.charge !== null
+      ) {
+        const responseSignatureCharge =
+          parseFloat(signatureResponse.charge) || 0;
+
         if (
-            signatureResponse.charge !== undefined &&
-            signatureResponse.charge !== null
+          responseSignatureCharge <= 0 &&
+          state.signatureApplied === true &&
+          previousSignatureCharge > 0
         ) {
-            const responseSignatureCharge =
-                parseFloat(signatureResponse.charge) || 0;
-
-            if (
-                responseSignatureCharge <= 0 &&
-                state.signatureApplied === true &&
-                previousSignatureCharge > 0
-            ) {
-                signatureChargeFromResponse =
-                    previousSignatureCharge;
-            } else {
-                signatureChargeFromResponse =
-                    responseSignatureCharge;
-            }
+          signatureChargeFromResponse =
+            previousSignatureCharge;
+        } else {
+          signatureChargeFromResponse =
+            responseSignatureCharge;
         }
+      }
 
-        if (signatureResponse.applied !== undefined) {
-            explicitSignatureApplied = isAppliedFlag(
-                signatureResponse.applied
-            );
-        }
+      if (signatureResponse.applied !== undefined) {
+        explicitSignatureApplied = isAppliedFlag(
+          signatureResponse.applied
+        );
+      }
     }
 
     /*
      * SIGNATURE CHARGE FROM TOTALS
      */
     if (
-        signatureChargeFromResponse === null &&
-        charges?.ShippingSignature?.charge !== undefined &&
-        charges?.ShippingSignature?.charge !== null
+      signatureChargeFromResponse === null &&
+      charges?.ShippingSignature?.charge !== undefined &&
+      charges?.ShippingSignature?.charge !== null
     ) {
-        const totalsSignatureCharge = parseFloat(
-            charges.ShippingSignature.charge
-        );
+      const totalsSignatureCharge = parseFloat(
+        charges.ShippingSignature.charge
+      );
 
-        if (!Number.isNaN(totalsSignatureCharge)) {
-            if (
-                totalsSignatureCharge <= 0 &&
-                state.signatureApplied === true &&
-                parseFloat(state.signatureCharge || 0) > 0
-            ) {
-                signatureChargeFromResponse =
-                    parseFloat(state.signatureCharge);
-            } else {
-                signatureChargeFromResponse =
-                    totalsSignatureCharge;
-            }
+      if (!Number.isNaN(totalsSignatureCharge)) {
+        if (
+          totalsSignatureCharge <= 0 &&
+          state.signatureApplied === true &&
+          parseFloat(state.signatureCharge || 0) > 0
+        ) {
+          signatureChargeFromResponse =
+            parseFloat(state.signatureCharge);
+        } else {
+          signatureChargeFromResponse =
+            totalsSignatureCharge;
         }
+      }
     }
 
     if (signatureChargeFromResponse !== null) {
-        signatureCharge =
-            parseFloat(signatureChargeFromResponse) || 0;
+      signatureCharge =
+        parseFloat(signatureChargeFromResponse) || 0;
     } else if (state.signatureApplied !== true) {
-        signatureCharge = 0;
+      signatureCharge = 0;
     }
 
     /*
      * SIGNATURE APPLIED STATE
      */
     if (explicitSignatureApplied !== null) {
-        state.signatureApplied = explicitSignatureApplied;
+      state.signatureApplied = explicitSignatureApplied;
     } else if (state.signatureApplied === undefined) {
-        const $signature = $("#request-signature");
+      const $signature = $("#request-signature");
 
-        state.signatureApplied = $signature.length
-            ? $signature.is(":checked")
-            : false;
+      state.signatureApplied = $signature.length
+        ? $signature.is(":checked")
+        : false;
     }
 
     if (state.signatureRefreshDefault === true) {
-        state.signatureApplied = true;
+      state.signatureApplied = true;
     }
 
     const signatureApplied = state.signatureApplied === true;
 
     if (signatureApplied !== true) {
-        signatureCharge = 0;
+      signatureCharge = 0;
     }
 
     state.signatureCharge = signatureCharge;
@@ -1274,116 +1394,116 @@ function updateTotals(response) {
     let signaturePriceVisibleInUi = null;
 
     const $signaturePrice =
-        $("#signature-addon-price:visible").first();
+      $("#signature-addon-price:visible").first();
 
     const currentSignaturePriceText = String(
-        $signaturePrice.text() || ""
+      $signaturePrice.text() || ""
     ).trim();
 
     if (/^free$/i.test(currentSignaturePriceText)) {
-        signaturePriceVisibleInUi = {
-            isFree: true,
-            charge: 0
-        };
+      signaturePriceVisibleInUi = {
+        isFree: true,
+        charge: 0
+      };
     } else {
-        const visiblePriceMatch =
-            currentSignaturePriceText.match(
-                /\+?\s*\$\s*([0-9]+(?:\.[0-9]{1,2})?)/
-            );
+      const visiblePriceMatch =
+        currentSignaturePriceText.match(
+          /\+?\s*\$\s*([0-9]+(?:\.[0-9]{1,2})?)/
+        );
 
-        if (visiblePriceMatch) {
-            signaturePriceVisibleInUi = {
-                isFree: false,
-                charge: parseFloat(visiblePriceMatch[1]) || 0
-            };
-        }
+      if (visiblePriceMatch) {
+        signaturePriceVisibleInUi = {
+          isFree: false,
+          charge: parseFloat(visiblePriceMatch[1]) || 0
+        };
+      }
     }
 
     if (signatureApplied === true && signatureCharge > 0) {
-        state.signatureDisplayCharge = signatureCharge;
-        state.signatureIsFree = false;
+      state.signatureDisplayCharge = signatureCharge;
+      state.signatureIsFree = false;
     } else if (
-        signatureChargeFromResponse !== null &&
-        parseFloat(signatureChargeFromResponse) > 0
+      signatureChargeFromResponse !== null &&
+      parseFloat(signatureChargeFromResponse) > 0
     ) {
+      state.signatureDisplayCharge =
+        parseFloat(signatureChargeFromResponse);
+      state.signatureIsFree = false;
+    } else if (
+      signaturePriceVisibleInUi !== null &&
+      signaturePriceVisibleInUi.charge > 0
+    ) {
+      state.signatureDisplayCharge =
+        signaturePriceVisibleInUi.charge;
+      state.signatureIsFree = false;
+    } else if (
+      state.signatureDisplayCharge === undefined ||
+      state.signatureDisplayCharge === null
+    ) {
+      if (signaturePriceVisibleInUi !== null) {
         state.signatureDisplayCharge =
-            parseFloat(signatureChargeFromResponse);
-        state.signatureIsFree = false;
-    } else if (
-        signaturePriceVisibleInUi !== null &&
-        signaturePriceVisibleInUi.charge > 0
-    ) {
-        state.signatureDisplayCharge =
-            signaturePriceVisibleInUi.charge;
-        state.signatureIsFree = false;
-    } else if (
-        state.signatureDisplayCharge === undefined ||
-        state.signatureDisplayCharge === null
-    ) {
-        if (signaturePriceVisibleInUi !== null) {
-            state.signatureDisplayCharge =
-                signaturePriceVisibleInUi.charge;
-            state.signatureIsFree =
-                signaturePriceVisibleInUi.isFree;
-        } else {
-            state.signatureDisplayCharge = 0;
-            state.signatureIsFree = true;
-        }
-    } else if (
-        parseFloat(state.signatureDisplayCharge || 0) > 0
-    ) {
-        state.signatureIsFree = false;
-    } else if (
-        signatureApplied === true &&
-        signatureCharge <= 0 &&
-        signaturePriceVisibleInUi?.isFree === true
-    ) {
+          signaturePriceVisibleInUi.charge;
+        state.signatureIsFree =
+          signaturePriceVisibleInUi.isFree;
+      } else {
         state.signatureDisplayCharge = 0;
         state.signatureIsFree = true;
+      }
+    } else if (
+      parseFloat(state.signatureDisplayCharge || 0) > 0
+    ) {
+      state.signatureIsFree = false;
+    } else if (
+      signatureApplied === true &&
+      signatureCharge <= 0 &&
+      signaturePriceVisibleInUi?.isFree === true
+    ) {
+      state.signatureDisplayCharge = 0;
+      state.signatureIsFree = true;
     }
-	const signatureDisplayFromResponse =
-    response.signatureDisplayCharge ??
-    response.shippingSignature?.displayCharge ??
-    response.shippingSignature?.display_charge ??
-    response.shipping_signature?.displayCharge ??
-    response.shipping_signature?.display_charge;
+    const signatureDisplayFromResponse =
+      response.signatureDisplayCharge ??
+      response.shippingSignature?.displayCharge ??
+      response.shippingSignature?.display_charge ??
+      response.shipping_signature?.displayCharge ??
+      response.shipping_signature?.display_charge;
 
-if (
-    signatureDisplayFromResponse !== undefined &&
-    signatureDisplayFromResponse !== null &&
-    signatureDisplayFromResponse !== ""
-) {
-    const displayCharge = Number(signatureDisplayFromResponse);
+    if (
+      signatureDisplayFromResponse !== undefined &&
+      signatureDisplayFromResponse !== null &&
+      signatureDisplayFromResponse !== ""
+    ) {
+      const displayCharge = Number(signatureDisplayFromResponse);
 
-    if (Number.isFinite(displayCharge) && displayCharge >= 0) {
+      if (Number.isFinite(displayCharge) && displayCharge >= 0) {
         state.signatureDisplayCharge = displayCharge;
         state.signatureIsFree = displayCharge === 0;
+      }
     }
-}
     const signatureDisplayCharge = parseFloat(
-        state.signatureDisplayCharge || 0
+      state.signatureDisplayCharge || 0
     );
 
     const signatureDisplayIsFree =
-        state.signatureIsFree === true;
+      state.signatureIsFree === true;
 
     /*
      * SUBTOTAL
      */
     const subtotal = parseFloat(
-        totals.SubTotal ??
-        totals.subTotal ??
-        totals.subtotal ??
-        0
+      totals.SubTotal ??
+      totals.subTotal ??
+      totals.subtotal ??
+      0
     );
 
     $("#summary-subtotal-value")
-        .text(formatMoney(subtotal))
-        .attr("data-value", subtotal);
+      .text(formatMoney(subtotal))
+      .attr("data-value", subtotal);
 
     $("#checkout-subtotal")
-        .text(formatMoney(subtotal))
-        .attr("data-value", subtotal);
+      .text(formatMoney(subtotal))
+      .attr("data-value", subtotal);
 
     /*
      * DISCOUNTS
@@ -1391,22 +1511,22 @@ if (
     const discounts = totals.Discounts || totals.discounts || {};
 
     $(".discount-row").each(function () {
-        const $row = $(this);
-        const discountKey = $row.attr("data-discount-key");
-        const discount = discounts[discountKey];
-        const amount = parseFloat(discount?.discount ?? 0);
+      const $row = $(this);
+      const discountKey = $row.attr("data-discount-key");
+      const discount = discounts[discountKey];
+      const amount = parseFloat(discount?.discount ?? 0);
 
-        if (discount && amount > 0) {
-            $row
-                .removeAttr("hidden")
-                .find(".summary-row-label")
-                .text(discount.label || discountKey);
+      if (discount && amount > 0) {
+        $row
+          .removeAttr("hidden")
+          .find(".summary-row-label")
+          .text(discount.label || discountKey);
 
-            $row.find(".discount-value")
-                .text("-" + formatMoney(amount));
-        } else {
-            $row.attr("hidden", true);
-        }
+        $row.find(".discount-value")
+          .text("-" + formatMoney(amount));
+      } else {
+        $row.attr("hidden", true);
+      }
     });
 
     /*
@@ -1414,42 +1534,69 @@ if (
      */
     const $summaryTotals = $(".summary-totals");
     const $totalRow = $("#summary-total-value").closest(
-        ".summary-row"
+      ".summary-row"
     );
 
+    const $mobileSummaryTotals = $(".mobile-summary-content");
+    const $MobileTotalRow = $(".msum-total");
+
     Object.keys(discounts).forEach(function (discountKey) {
-        const discount = discounts[discountKey];
-        const amount = parseFloat(discount?.discount ?? 0);
+      const discount = discounts[discountKey];
+      const amount = parseFloat(discount?.discount ?? 0);
 
-        if (!discount || amount <= 0) {
-            return;
-        }
+      if (!discount || amount <= 0) {
+        return;
+      }
 
-        let $row = $summaryTotals.find(
-            '.discount-row[data-discount-key="' +
-            discountKey +
-            '"]'
+      let $row = $summaryTotals.find(
+        '.discount-row[data-discount-key="' +
+        discountKey +
+        '"]'
+      );
+
+      let $MobileRow = $mobileSummaryTotals.find(
+        '.discount-row[data-discount-key="' +
+        discountKey +
+        '"]'
+      );
+
+      if (!$row.length) {
+        $row = $(
+          '<div class="summary-row discount-row">' +
+          '<span class="summary-row-label"></span>' +
+          '<span class="summary-row-value discount-value"></span>' +
+          "</div>"
         );
 
-        if (!$row.length) {
-            $row = $(
-                '<div class="summary-row discount-row">' +
-                '<span class="summary-row-label"></span>' +
-                '<span class="summary-row-value discount-value"></span>' +
-                "</div>"
-            );
+        $row.attr("data-discount-key", discountKey);
+        $row.insertBefore($totalRow);
 
-            $row.attr("data-discount-key", discountKey);
-            $row.insertBefore($totalRow);
-        }
+        $MobileRow = $(
+          '<div class="msum-row discount-row">'+
+          '<span class="msum-row-label"></span>'+
+          '<span class="discount-value"></span>' +
+          "</div>"
+        );
 
-        $row
-            .removeAttr("hidden")
-            .find(".summary-row-label")
-            .text(discount.label || discountKey);
+        $MobileRow.attr("data-discount-key", discountKey);
+        $MobileRow.insertBefore($MobileTotalRow);
+      }
 
-        $row.find(".discount-value")
-            .text("-" + formatMoney(amount));
+      $row
+        .removeAttr("hidden")
+        .find(".summary-row-label")
+        .text(discount.label || discountKey);
+
+      $row.find(".discount-value")
+        .text("-" + formatMoney(amount));
+
+      $MobileRow
+        .removeAttr("hidden")
+        .find(".msum-row-label")
+        .text(discount.label || discountKey);
+
+      $MobileRow.find(".discount-value")
+        .text("-" + formatMoney(amount));
     });
 
     /*
@@ -1458,46 +1605,46 @@ if (
     const $shippingValue = $("#summary-shipping-value");
 
     if ($shippingValue.length) {
-        if (parseFloat(shipping || 0) <= 0) {
-            $shippingValue
-                .text("Free")
-                .css("color", "var(--color-text-success)");
+      if (parseFloat(shipping || 0) <= 0) {
+        $shippingValue
+          .text("Free")
+          .css("color", "var(--color-text-success)");
 
-            $shippingValue.parent().attr("hidden", true);
-        } else {
-            $shippingValue
-                .text(formatMoney(shipping))
-                .css("color", "");
+        $shippingValue.parent().attr("hidden", true);
+      } else {
+        $shippingValue
+          .text(formatMoney(shipping))
+          .css("color", "");
 
-            $shippingValue.parent().attr("hidden", false);
-        }
+        $shippingValue.parent().attr("hidden", false);
+      }
     }
 
     $("#checkout-shipping")
-        .text(formatMoney(shipping))
-        .attr("data-value", shipping);
+      .text(formatMoney(shipping))
+      .attr("data-value", shipping);
 
     /*
      * TAX UI
      */
     if (tax <= 0) {
-        $("#summary-tax-value").parent().hide();
+      $("#summary-tax-value").parent().hide();
     } else {
-        $("#summary-tax-value").parent().show();
+      $("#summary-tax-value").parent().show();
     }
 
     $("#summary-tax-value").text(formatMoney(tax));
 
     $("#checkout-tax")
-        .text(formatMoney(tax))
-        .attr("data-value", tax);
+      .text(formatMoney(tax))
+      .attr("data-value", tax);
 
     const reviewTax = document.getElementById(
-        "review-summary-tax-value"
+      "review-summary-tax-value"
     );
 
     if (reviewTax) {
-        // Existing behavior retained.
+      // Existing behavior retained.
     }
 
     /*
@@ -1506,38 +1653,38 @@ if (
     const $protection = $("#protection");
 
     if ($protection.length) {
-        const $protectionRow =
-            $protection.closest(".addon-row");
+      const $protectionRow =
+        $protection.closest(".addon-row");
 
-        if (isPickupShippingMethod) {
-            $protection.prop("checked", false);
-            $protectionRow.removeClass("active").hide();
-        } else {
-            $protectionRow.show();
-            $protection.prop("checked", insuranceApplied);
-            $protectionRow.toggleClass(
-                "active",
-                insuranceApplied
-            );
-        }
+      if (isPickupShippingMethod) {
+        $protection.prop("checked", false);
+        $protectionRow.removeClass("active").hide();
+      } else {
+        $protectionRow.show();
+        $protection.prop("checked", insuranceApplied);
+        $protectionRow.toggleClass(
+          "active",
+          insuranceApplied
+        );
+      }
     }
 
     /*
      * Show the calculated display price even when Insurance is OFF.
      */
     const insuranceDisplayText =
-        "+" + formatMoney(insuranceDisplayAmount);
+      "+" + formatMoney(insuranceDisplayAmount);
 
     $("#protection-addon-price").text(insuranceDisplayText);
     $("#protect-confirm-keep-price").text(
-        formatMoney(insuranceDisplayAmount)
+      formatMoney(insuranceDisplayAmount)
     );
 
     $("#ShippingSignInsu #protection-addon-price")
-        .text(insuranceDisplayText);
+      .text(insuranceDisplayText);
 
     $("#ShippingSignInsu #protect-confirm-keep-price")
-        .text(formatMoney(insuranceDisplayAmount));
+      .text(formatMoney(insuranceDisplayAmount));
 
     /*
      * SUMMARY INSURANCE ROW
@@ -1545,14 +1692,14 @@ if (
     const $protectionSummaryRow = $("#protection-row");
 
     if ($protectionSummaryRow.length) {
-        if (insuranceApplied) {
-            $protectionSummaryRow
-                .removeAttr("hidden")
-                .find(".summary-row-value")
-                .text(formatMoney(insurance));
-        } else {
-            $protectionSummaryRow.attr("hidden", true);
-        }
+      if (insuranceApplied) {
+        $protectionSummaryRow
+          .removeAttr("hidden")
+          .find(".summary-row-value")
+          .text(formatMoney(insurance));
+      } else {
+        $protectionSummaryRow.attr("hidden", true);
+      }
     }
 
     /*
@@ -1561,11 +1708,11 @@ if (
      * When OFF, the order charge remains $0.
      */
     $("#checkout-insurance")
-        .text(formatMoney(insuranceApplied ? insurance : 0))
-        .attr(
-            "data-value",
-            insuranceApplied ? insurance : 0
-        );
+      .text(formatMoney(insuranceApplied ? insurance : 0))
+      .attr(
+        "data-value",
+        insuranceApplied ? insurance : 0
+      );
 
     /*
      * SHIPPING SIGNATURE UI
@@ -1573,107 +1720,124 @@ if (
     const $signature = $("#request-signature");
 
     if ($signature.length) {
-        $signature.prop("checked", signatureApplied);
+      $signature.prop("checked", signatureApplied);
 
-        $signature
-            .closest(".addon-row")
-            .toggleClass("active", signatureApplied);
+      $signature
+        .closest(".addon-row")
+        .toggleClass("active", signatureApplied);
     }
 
     const signatureDisplayText = signatureDisplayIsFree
-        ? "Free"
-        : "+" + formatMoney(signatureDisplayCharge);
+      ? "Free"
+      : "+" + formatMoney(signatureDisplayCharge);
 
     $("#signature-addon-price").text(signatureDisplayText);
 
     $("#ShippingSignInsu #signature-addon-price")
-        .text(signatureDisplayText);
+      .text(signatureDisplayText);
 
     const $signatureRow = $("#signature-row");
 
     if ($signatureRow.length) {
-        if (signatureApplied && signatureCharge > 0) {
-            $signatureRow
-                .removeAttr("hidden")
-                .find(".summary-row-value")
-                .text(formatMoney(signatureCharge));
-        } else {
-            $signatureRow.attr("hidden", true);
-        }
+      if (signatureApplied && signatureCharge > 0) {
+        $signatureRow
+          .removeAttr("hidden")
+          .find(".summary-row-value")
+          .text(formatMoney(signatureCharge));
+      } else {
+        $signatureRow.attr("hidden", true);
+      }
     }
 
     /*
-     * GIFT WRAP
-     */
+    * GIFT WRAP
+    */
+
     const giftWrap = parseFloat(
-        charges.GiftWrappingCharge?.charge ??
-        charges.GiftWrapping?.charge ??
-        response.giftWrapping?.charge ??
-        0
+      charges.GiftWrappingCharge?.charge ??
+      charges.GiftWrapping?.charge ??
+      response.giftWrapping?.charge ??
+      0
     );
 
     const $giftWrapRow = $("#gift-wrap-row");
-
+    const $giftWrapMobileRow = $("#msum-giftwrap-row");
     if ($giftWrapRow.length) {
-        if (giftWrap > 0) {
-            $giftWrapRow
-                .removeAttr("hidden")
-                .find(".summary-row-value")
-                .text(formatMoney(giftWrap));
-        } else {
-            $giftWrapRow.attr("hidden", true);
-        }
+      if (giftWrap > 0) {
+        $giftWrapRow
+          .removeAttr("hidden")
+          .find(".summary-row-value")
+          .text(formatMoney(giftWrap));
+
+        $giftWrapMobileRow
+          .removeAttr("hidden")
+          .find(".msum-giftwrap-value")
+          .text(formatMoney(giftWrap));
+      } else {
+        $giftWrapMobileRow.attr("hidden", true);
+        $giftWrapRow.attr("hidden", true);
+      }
     }
 
     /*
      * FINAL TOTAL
      */
     const netTotal =
-        totals.NetTotal ??
-        totals.netTotal ??
-        totals.net_total ??
-        totals.TotalAmount ??
-        totals.totalAmount ??
-        totals.Total ??
-        totals.total ??
-        totals.GrandTotal ??
-        totals.grandTotal ??
-        response.NetTotal ??
-        response.netTotal ??
-        response.GrandTotal ??
-        response.grandTotal;
+      totals.NetTotal ??
+      totals.netTotal ??
+      totals.net_total ??
+      totals.TotalAmount ??
+      totals.totalAmount ??
+      totals.Total ??
+      totals.total ??
+      totals.GrandTotal ??
+      totals.grandTotal ??
+      response.NetTotal ??
+      response.netTotal ??
+      response.GrandTotal ??
+      response.grandTotal;
 
     if (netTotal !== undefined && netTotal !== null) {
-        const numericTotal = parseFloat(netTotal);
-        const formattedTotal = formatMoney(numericTotal);
 
-        $("#summary-total-value")
-            .text(formattedTotal)
-            .attr("data-value", numericTotal);
+      const numericTotal = parseFloat(netTotal);
+      if(numericTotal<35 || numericTotal > 1000)
+      {
+        $("#afterpay-button").hide();
+      } else {
+        $("#afterpay-button").show();
+      }
+      $("#shoptotal").text(numericTotal);
+      const formattedTotal = formatMoney(numericTotal);
 
-        $("#review-summary-total-value").text(formattedTotal);
+      $("#summary-total-value")
+        .text(formattedTotal)
+        .attr("data-value", numericTotal);
 
-        $("#checkout-grand-total")
-            .text(formattedTotal)
-            .attr("data-value", numericTotal);
+      $("#review-summary-total-value").text(formattedTotal);
 
-        $("#place-order-btn-text").text(
-            "Place order · " + formattedTotal
-        );
+      $("#checkout-grand-total")
+        .text(formattedTotal)
+        .attr("data-value", numericTotal);
 
-        $("#place-order-btn").attr(
-            "aria-label",
-            "Place order for " + formattedTotal
-        );
+      $("#place-order-btn-text").text(
+        "Place order · " + formattedTotal
+      );
 
-        $("#place-order-mobile").attr(
-            "aria-label",
-            "Place order for " + formattedTotal
-        );
+      $("#place-order-btn").attr(
+        "aria-label",
+        "Place order for " + formattedTotal
+      );
 
-        $("#place-order-total-amount").text(formattedTotal);
-        $("#mobile-summary-amount").text(formattedTotal);
-        $("#mobile-footer-amount").text(formattedTotal);
+      $("#place-order-mobile").attr(
+        "aria-label",
+        "Place order for " + formattedTotal
+      );
+
+      $("#place-order-total-amount").text(formattedTotal);
+      $("#mobile-summary-amount").text(formattedTotal);
+      $("#mobile-footer-amount").text(formattedTotal);
+      $("#mobile-summary-total").text(formattedTotal);
+
     }
 
     /*
@@ -1687,72 +1851,74 @@ if (
      * NOTIFY CHECKOUT
      */
     const checkoutEventResponse = $.extend(
-        true,
-        {},
-        response
+      true,
+      {},
+      response
     );
 
     checkoutEventResponse.insuranceDisplayAmount =
-        insuranceDisplayAmount;
+      insuranceDisplayAmount;
 
     if (signatureApplied === true) {
-        checkoutEventResponse.shippingSignature = $.extend(
-            true,
-            {},
-            checkoutEventResponse.shippingSignature ||
-            checkoutEventResponse.shipping_signature ||
-            checkoutEventResponse.ShippingSignature ||
-            {}
-        );
+      checkoutEventResponse.shippingSignature = $.extend(
+        true,
+        {},
+        checkoutEventResponse.shippingSignature ||
+        checkoutEventResponse.shipping_signature ||
+        checkoutEventResponse.ShippingSignature ||
+        {}
+      );
 
-        checkoutEventResponse.shippingSignature.charge =
-            signatureCharge;
+      checkoutEventResponse.shippingSignature.charge =
+        signatureCharge;
 
-        checkoutEventResponse.shippingSignature.applied = "Yes";
+      checkoutEventResponse.shippingSignature.applied = "Yes";
     }
 
     document.dispatchEvent(
-        new CustomEvent("maxaroma:checkout-totals-updated", {
-            detail: {
-                response: checkoutEventResponse,
-                totals: totals,
-                subtotal: subtotal,
-                shipping: shipping,
-                tax: tax,
-                insurance: insurance,
-                insuranceDisplayAmount: insuranceDisplayAmount,
-                insuranceApplied: insuranceApplied,
-                signatureCharge: signatureCharge,
-                signatureDisplayCharge: signatureDisplayCharge,
-                signatureDisplayIsFree: signatureDisplayIsFree,
-                signatureApplied: signatureApplied,
-                giftWrap: giftWrap,
-                netTotal:
-                    netTotal !== undefined && netTotal !== null
-                        ? parseFloat(netTotal)
-                        : null
-            }
-        })
+      new CustomEvent("maxaroma:checkout-totals-updated", {
+        detail: {
+          response: checkoutEventResponse,
+          totals: totals,
+          subtotal: subtotal,
+          shipping: shipping,
+          tax: tax,
+          insurance: insurance,
+          insuranceDisplayAmount: insuranceDisplayAmount,
+          insuranceApplied: insuranceApplied,
+          signatureCharge: signatureCharge,
+          signatureDisplayCharge: signatureDisplayCharge,
+          signatureDisplayIsFree: signatureDisplayIsFree,
+          signatureApplied: signatureApplied,
+          giftWrap: giftWrap,
+          netTotal:
+            netTotal !== undefined && netTotal !== null
+              ? parseFloat(netTotal)
+              : null
+        }
+      })
     );
 
     const onlyGCPurchased = parseInt(
-        response.onlyGCPurchased ??
-        checkout.onlyGCPurchased ??
-        0,
-        10
+      response.onlyGCPurchased ??
+      checkout.onlyGCPurchased ??
+      0,
+      10
     );
-
+    scheduleTotalRefresh();
     scheduleCheckoutOffersRefresh();
+    //GetAfterpayWidget();
+    refreshAfterpayWidget();
 
     if (onlyGCPurchased === 1) {
-        $("#review-shipping-method-value").hide();
-        return;
+      $("#review-shipping-method-value").hide();
+      return;
     }
 
     updateCheckoutReviewShippingMethod();
-}
+  }
 
- function updateCheckoutReviewContact() {
+  function updateCheckoutReviewContact() {
     const reviewContact = document.getElementById("review-contact-value");
 
     if (!reviewContact) {
@@ -1761,14 +1927,14 @@ if (
     const emailInput = document.getElementById("email");
 
     if (!emailInput) {
-      $("#review-contact-value").parent().css('visibility','hidden');
+      $("#review-contact-value").parent().css('visibility', 'hidden');
       return;
     }
 
     const email = String(emailInput.value || "").trim();
 
     if (email) {
-      $("#review-contact-value").parent().css('visibility','visible');
+      $("#review-contact-value").parent().css('visibility', 'visible');
       reviewContact.textContent = email;
     }
   }
@@ -1784,13 +1950,12 @@ if (
     var city = $("#shipping_city").val() || "";
     var state = $("#shipping_state").val() || "";
     var zip = $("#shipping_zip").val() || "";
-    if(window.amazon.address != '')
-    {
-        var address1 = window.amazon.address.address1 || "";
-        var address2 = window.amazon.address.address2 || "";
-        var city = window.amazon.address.city || "";
-        var state = window.amazon.address.state || "";
-        var zip = window.amazon.address.zip || "";
+    if (window.amazon.address != '') {
+      var address1 = window.amazon.address.address1 || "";
+      var address2 = window.amazon.address.address2 || "";
+      var city = window.amazon.address.city || "";
+      var state = window.amazon.address.state || "";
+      var zip = window.amazon.address.zip || "";
     }
     const parts = [];
 
@@ -1880,7 +2045,7 @@ if (
   function loadShippingMethods() {
     showLoader(false);
     showShipMethodLoader(false);
-    //console.log("IN Shipping Methods");
+    console.log("IN Shipping Methods");
     const shippingFlags = getShippingFlags();
 
     const onlyGCPurchased = parseInt(shippingFlags.onlyGCPurchased ?? 0, 10);
@@ -1888,49 +2053,56 @@ if (
     if (onlyGCPurchased === 1) {
       $("#section-delivery").hide();
       $("#shipping-method-list").empty();
-  $("#place-order-btn").show();
-  $("#place-order-mobile").show();
-  $("#order-summary-sticky-dock").show();
-	$("#review-block").show();
+      $("#place-order-btn").show();
+      $("#place-order-mobile").show();
+      $("#order-summary-sticky-dock").show();
+      $("#review-block").show();
       return;
     }
     var address = getShippingAddress();
 
-    if(window.amazon.address !== '')
-    {
+    if (window.amazon.address !== '') {
       address = window.amazon.address;
     }
 
     if (!addressReady(address)) {
       $("#section-delivery fieldset").html(
         '<div class="checkout-empty-state">' +
-          "Enter country, state and ZIP code to see shipping methods." +
-          "</div>",
+        "Enter country, state and ZIP code to see shipping methods." +
+        "</div>",
       );
-	   $("#section-delivery").hide();
-	   $("#place-order-btn").hide();
-     $("#place-order-mobile").hide();
-     $("#order-summary-sticky-dock").hide();
-	   $("#review-block").hide();
+      $("#section-delivery").hide();
+      $("#place-order-btn").hide();
+      $("#place-order-mobile").hide();
+      $("#order-summary-sticky-dock").hide();
+      $("#review-block").hide();
 
       return;
     }
-	$("#section-delivery").show();
-	$("#place-order-btn").show();
-  $("#place-order-mobile").show();
-  $("#order-summary-sticky-dock").show();
-	$("#review-block").show();
+    $("#section-delivery").show();
+    $("#place-order-btn").show();
+    $("#place-order-mobile").show();
+    $("#order-summary-sticky-dock").show();
+    $("#review-block").show();
     const shippingMethodsUrl =
       urls.shippingMethods || "/checkoutnew/shipping-methods";
 
-    if (shippingRequest) {
-      shippingRequest.abort();
-    }
+    // if (shippingRequest) {
+    //   shippingRequest.abort();
+    // }
 
     showLoader(true);
     showShipMethodLoader(true);
     showMessage("#shipping-method-messages", "");
 
+    var is_logged_user = $("#is_logged_user").val();
+    console.log(is_logged_user);
+    var custEmail = "";
+    if(is_logged_user == 'No')
+    {
+        custEmail = $("#checkout-guest-form #email").val();
+    }
+    console.log(is_logged_user);
     shippingRequest = $.ajax({
       type: "POST",
       url: shippingMethodsUrl,
@@ -1939,6 +2111,10 @@ if (
       },
       dataType: "json",
       data: {
+        first_name: address.first_name,
+        last_name: address.last_name,
+        phone: address.phone,
+        custEmail: custEmail,
         country: address.country,
         state: address.state,
         zip: address.zip,
@@ -1959,7 +2135,7 @@ if (
       },
     })
       .done(function (response) {
-        console.log("SHIPPING SUCCESS:", response);
+        //console.log("SHIPPING SUCCESS:", response);
         if (response.status && response.status !== "success") {
           showMessage(
             "#shipping-method-messages",
@@ -1979,20 +2155,20 @@ if (
         //GetAfterpayWidget();
       })
       .fail(function (xhr, status, error) {
-        console.log("SHIPPING FAILED:", {
-          status: status,
-          error: error,
-          httpStatus: xhr.status,
-          response: xhr.responseText,
-        });
+        // console.log("SHIPPING FAILED:", {
+        //   status: status,
+        //   error: error,
+        //   httpStatus: xhr.status,
+        //   response: xhr.responseText,
+        // });
 
         if (status === "abort") {
-		$("#section-delivery").hide();
-		$("#place-order-btn").hide();
-    $("#place-order-mobile").hide();
-    $("#order-summary-sticky-dock").hide();
-        $("#review-block").hide();
-        return;
+          $("#section-delivery").hide();
+          $("#place-order-btn").hide();
+          $("#place-order-mobile").hide();
+          $("#order-summary-sticky-dock").hide();
+          $("#review-block").hide();
+          return;
         }
 
         let message = "Unable to load shipping methods. Please try again.";
@@ -2000,10 +2176,10 @@ if (
         if (xhr.responseJSON && xhr.responseJSON.message) {
           message = xhr.responseJSON.message;
         }
-		$("#section-delivery").hide();
-		$("#place-order-btn").hide();
-    $("#place-order-mobile").hide();
-    $("#order-summary-sticky-dock").hide();
+        $("#section-delivery").hide();
+        $("#place-order-btn").hide();
+        $("#place-order-mobile").hide();
+        $("#order-summary-sticky-dock").hide();
         $("#review-block").hide();
         showMessage("#shipping-method-messages", message, "error");
       })
@@ -2050,8 +2226,7 @@ if (
 
     var address = getShippingAddress();
 
-    if(window.amazon.address !== '')
-    {
+    if (window.amazon.address !== '') {
       address = window.amazon.address;
     }
 
@@ -2069,9 +2244,9 @@ if (
       return;
     }
 
-    if (shippingMethodRequest) {
-      shippingMethodRequest.abort();
-    }
+    // if (shippingMethodRequest) {
+    //   shippingMethodRequest.abort();
+    // }
 
     showLoader(true);
 
@@ -2217,12 +2392,11 @@ if (
           showMessage("#shipping-method-messages", response.message, "success");
         }
         //GetAfterpayWidget();
-        if($("#afterpay-widget").length > 0)
-        {
-          setTimeout(() => {
-            refreshAfterpayWidget();
-          }, 500);
-        }
+        // if ($("#afterpay-widget").length > 0) {
+        //   setTimeout(() => {
+        //     refreshAfterpayWidget();
+        //   }, 500);
+        // }
         loadDropshipperDetails();
       })
 
@@ -2285,12 +2459,12 @@ if (
     '#section-delivery input[name="shipping"]',
     function (event, changeOptions) {
       updateOnTimeDeliveryRate();
-	  $('#section-delivery .shipping-option')
-            .removeClass('active selected');
+      $('#section-delivery .shipping-option')
+        .removeClass('active selected');
 
-       $(this)
-            .closest('.shipping-option')
-            .addClass('active selected');
+      $(this)
+        .closest('.shipping-option')
+        .addClass('active selected');
 
       const shippingMethodId = parseInt($(this).val(), 10);
 
@@ -2325,87 +2499,114 @@ if (
     CheckGuestCustomer($(this).val());
   });
 
-  $(document).ready(function ()
-  {
+  $(document).on("change", "#gift-wrap", function () {
+    const action = $(this).is(":checked") ? "add" : "remove";
+    //console.log("Gift Wrapping Action:", action);
+    setGiftWrappingCharge(action);
+  });
+
+  $(document).on('click', '#FreeSampleProductsViewPopup .close, #FreeSampleProductsViewPopup #btndontshow', function () {
+      sessionStorage.setItem("freeSampleClosed", "true");
+      $("#FreeSampleProductsViewPopup .close").trigger('click');
+  });
+  $(document).on('click', '#FreeGiftViewPopup .close, #FreeGiftViewPopup #btndontshow', function () {
+      sessionStorage.setItem("freeGiftClosed", "true");
+      $("#FreeGiftViewPopup .close").trigger('click');
+  });
+  $("#FreeSampleGifts,#FreeSampleGiftsMobile").click(function(){
+    sessionStorage.removeItem('freeSampleClosed');
+    sessionStorage.removeItem('freeGiftClosed');
+    checkFreeGiftOnPageLoad();
+    checkFreeSamplePopup();
+  })
+  $("#tab-guest").click(function(){
+    $("#error_already_exist_email").remove();
+    //$("#contGuest").hide();
+  });
+  $("#contGuest").click(function(){
+    editSection('shipping');
+  })
+  $(document).ready(function () {
     /*
      * Restore server-side Insurance/Signature state
      * BEFORE shipping methods / totals AJAX starts.
      */
     restoreCheckoutAddonState();
 
-	if ( window.MaxaromaCheckout && window.MaxaromaCheckout.checkout && typeof updateTotals === "function")
-  {
-    updateTotals(window.MaxaromaCheckout.checkout);
-  }
-    
+    if (window.MaxaromaCheckout && window.MaxaromaCheckout.checkout && typeof updateTotals === "function") {
+      updateTotals(window.MaxaromaCheckout.checkout);
+    }
+
     const address = getShippingAddress();
 
     if (addressReady(address)) {
       loadShippingMethods();
     }
-    else
-    {
-	    $("#section-delivery").hide();
-		  $("#place-order-btn").hide();
+    else {
+      $("#section-delivery").hide();
+      $("#place-order-btn").hide();
       $("#place-order-mobile").hide();
       $("#order-summary-sticky-dock").hide();
-		  $("#review-block").hide();
-	}
+      $("#review-block").hide();
+    }
 
-	const onlyGCPurchased = parseInt(
-	  window.MaxaromaCheckout?.checkout?.onlyGCPurchased ??
-	  window.MaxaromaCheckout?.onlyGCPurchased ??
-	  0,
-	  10
-	);
-
+    const onlyGCPurchased = parseInt(
+      window.MaxaromaCheckout?.checkout?.onlyGCPurchased ??
+      window.MaxaromaCheckout?.onlyGCPurchased ??
+      0,
+      10
+    );
 
     loadDropshipperDetails();
-	if (onlyGCPurchased !== 1) {
-	  checkFreeGiftOnPageLoad();
-	  checkFreeSamplePopup();
-	}
+    if (onlyGCPurchased !== 1) {
+      checkFreeGiftOnPageLoad();
+      checkFreeSamplePopup();
+    }
 
     updateViewAll();
 
-    $("#chkcreditlimit").click(function(){
+    $("#chkcreditlimit").click(function () {
       loadCreditDetails();
     })
 
-    $(document).on("click",".promo-demo-btn",function(){
+    $(document).on("click", ".promo-demo-btn", function () {
       ShowOffer($(this).attr("data-preset"));
     })
 
     $(document).on("change", "#ShippingSignInsu #protection", function () {
-    if ($(this).prop("checked")) {
+      if ($(this).prop("checked")) {
         // ON: apply insurance directly; do not call keepProtection(),
         // because that belongs to the confirmation flow.
         setShippingInsurance("add");
-    } else {
+      } else {
         // OFF: preserve the existing confirmation behavior.
         removeProtection();
-    }
-});
-    $(document).on("change","#ShippingSignInsu #request-signature",function(){
-      if($(this).prop('checked'))
-      {
+      }
+    });
+    $(document).on("change", "#ShippingSignInsu #request-signature", function () {
+      if ($(this).prop('checked')) {
         keepSignature();
       } else {
         removeSignature();
       }
     });
+
+    $(document).on("keydown", function(e) {
+      if (e.key === "Escape" || e.keyCode === 27)
+      {
+          closeCartDrawer();
+      }
+    });
   });
 
-  $(document).on("click","#free_sample",function(){
-    if($.trim($("#FreeSampleProductsViewPopup").html()) != '')
-    {
+  $(document).on("click", "#free_sample", function () {
+    if ($.trim($("#FreeSampleProductsViewPopup").html()) != '') {
       $("#FreeSampleProductsViewPopup").modal('show');
     }
   })
 
-  $(document).on("click","#free_gift",function(){
-    if($.trim($("#FreeGiftViewPopup").html()) != '')
-    {
+  $(document).on("click", "#free_gift", function () {
+    if ($.trim($("#FreeGiftViewPopup").html()) != '') {
       $("#FreeGiftViewPopup").modal('show');
     }
   })
@@ -2416,266 +2617,19 @@ if (
     getShippingAddress: getShippingAddress,
     setShippingInsurance: setShippingInsurance,
     setShippingSignature: setShippingSignature,
-    setAfterpayWidget:setAfterpayWidget,
+    setAfterpayWidget: setAfterpayWidget,
+    processStripeWalletPayment: processStripeWalletPayment,
+    setGiftWrappingCharge: setGiftWrappingCharge,
+    refreshAfterpayWidget: refreshAfterpayWidget
   };
 
   /* =========================================================
        COUPON / PROMO CODE - NEW DESIGN INTEGRATION
        ========================================================= */
 
-  window.applyPromo = function () {
-    const input = document.getElementById("promo-code");
-
-    const result = document.getElementById("promo-result");
-
-    if (!input || !result) {
-      return;
-    }
-
-    const code = input.value.trim().toUpperCase();
-
-    if (!code) {
-      result.innerHTML =
-        '<p style="font-size:12px;color:var(--color-text-error);margin-top:8px;">' +
-        "Please enter a code." +
-        "</p>";
-
-      return;
-    }
-
-    const button = document.querySelector('#promo-panel button[type="button"]');
-
-    if (button) {
-      button.disabled = true;
-    }
-
-    /*
-     * IMPORTANT:
-     *
-     * Do not remove/hide the coupon input.
-     * Existing applied Coupon/Reward must remain visible.
-     */
-    result.innerHTML =
-      '<p class="promo-applying-message" ' +
-        'style="font-size:12px;margin-top:8px;">' +
-        "Applying coupon..." +
-        "</p>";
-
-    queueDiscountMutation({
-      type: "POST",
-
-      url: urls.discountApply || "/checkout/discount/apply",
-
-      headers: {
-        "X-CSRF-TOKEN": csrfToken,
-      },
-
-      dataType: "json",
-
-      data: {
-        coupon_code: code,
-      },
-    })
-      .done(function (response) {
-
-        result
-          .querySelectorAll(".promo-applying-message")
-          .forEach(function (element) {
-            element.remove();
-          });
-
-        if (
-          response.error === 1 ||
-          response.error === "1" ||
-          response.status === "error"
-        ) {
-          /*
-          result.insertAdjacentHTML(
-            "beforeend",
-            '<p class="promo-error" ' +
-              'style="' +
-              "font-size:12px;" +
-              "color:var(--color-text-error);" +
-              "margin-top:8px;" +
-              '">' +
-              (response.message || "This coupon could not be applied.") +
-              "</p>",
-          );
-          */
-
-         result.innerHTML =
-            '<p class="promo-error" ' +
-              'style="' +
-              "font-size:12px;" +
-              "color:var(--color-text-error);" +
-              "margin-top:8px;" +
-              '">' +
-              (response.message || "This coupon could not be applied.") +
-              "</p>";
-          return;
-        }
-
-        /*
-         * =====================================================
-         * SUCCESS
-         * =====================================================
-         *
-         * IMPORTANT:
-         *
-         * 1. Coupon input stays visible.
-         * 2. Existing Reward/Coupon stays visible.
-         * 3. New applied code is appended.
-         * 4. Coupon + Reward can both be shown.
-         */
-
-        const safeCode = escapeHtml(code);
-		const isYotpoReward = response.is_yotpo_reward === true;
-        /*
-         * Prevent duplicate display of same code.
-         */
-        const alreadyApplied = Array.from(
-          result.querySelectorAll(".coupon-applied"),
-        ).some(function (row) {
-          const rowCode = (
-            row.getAttribute("data-discount-code") || ""
-          ).toUpperCase();
-
-          return rowCode === code;
-        });
-
-        if (!alreadyApplied) {
-
-    const appliedHtml =
-        "<div " +
-        'class="coupon-applied animate-in" ' +
-        'data-discount-code="' +
-        safeCode +
-        '" ' +
-        'style="margin-top:12px;" ' +
-        'role="status">' +
-        '<div class="cuppon-applied-text">' +
-        '<span class="coupon-applied-code">' +
-        safeCode +
-        "</span>" +
-        '<span style="' +
-        "font-size:12px;" +
-        "color:var(--color-text-success);" +
-        'margin-left:8px;">' +
-        "Applied" +
-        "</span>" +
-        "</div>" +
-        "<button " +
-'type="button" ' +
-(isYotpoReward
-    ? 'id="maxaroma-remove-yotpo-reward" '
-    : "") +
-'class="coupon-remove" ' +
-'data-discount-code="' +
-safeCode +
-'" ' +
-'data-discount-kind="' +
-(isYotpoReward ? "reward" : "coupon") +
-'">' +
-"Remove" +
-"</button>"  +
-        "</div>";
-
-    result.insertAdjacentHTML("beforeend", appliedHtml);
-}
-
-        input.value = "";
-
-			/*
-			 * =====================================================
-			 * SYNC FINAL BACKEND CART
-			 * =====================================================
-			 *
-			 * Coupon Free Gift is inserted by the backend.
-			 * Render that final cart before/along with the
-			 * normal checkout recalculation.
-			 *
-			 * Backend remains the source of truth.
-			 */
-			if (
-				response &&
-				typeof updateTotals === "function"
-			) {
-				updateTotals(response);
-			}
-
-			if (
-				response.cart &&
-				typeof appendFreeGiftCartItems === "function"
-			) {
-				appendFreeGiftCartItems(response);
-			}
-
-						if (
-				response.coupon_free_gift_applied === true
-			) {
-				window.location.reload();
-				return;
-			}
-
-			/*
-			 * =====================================================
-			 * Recalculate existing selected shipping
-			 * method / totals.
-			 * =====================================================
-			 */
-			const selectedMethod =
-				$('input[name="shipping"]:checked').val();
-
-			if (
-				selectedMethod &&
-				window.MaxaromaOnePageCheckout &&
-				typeof window.MaxaromaOnePageCheckout.setShippingMethod === "function"
-			) {
-				window.MaxaromaOnePageCheckout.setShippingMethod(
-					parseInt(selectedMethod, 10),
-				);
-			}
-      })
-      .fail(function (xhr) {
-        result
-          .querySelectorAll(".promo-applying-message")
-          .forEach(function (element) {
-            element.remove();
-          });
-
-        const response = xhr.responseJSON || {};
-        /*
-        result.insertAdjacentHTML(
-          "beforeend",
-          '<p class="promo-error" ' +
-            'style="' +
-            "font-size:12px;" +
-            "color:var(--color-text-error);" +
-            "margin-top:8px;" +
-            '">' +
-            (response.message || "Unable to apply coupon. Please try again.") +
-            "</p>",
-        );
-        */
-        result.innerHTML =
-          '<p class="promo-error" ' +
-            'style="' +
-            "font-size:12px;" +
-            "color:var(--color-text-error);" +
-            "margin-top:8px;" +
-            '">' +
-            (response.message || "Unable to apply coupon. Please try again.") +
-            "</p>";
-      })
-      .always(function () {
-        if (button) {
-          button.disabled = false;
-        }
-      });
-  };
   /* =========================================================
-       REMOVE COUPON
-       ========================================================= */
+        REMOVE COUPON
+        ========================================================= */
   $(document).on(
     "click",
     ".coupon-remove, #maxaroma-remove-coupon, #maxaroma-remove-yotpo-reward",
@@ -2709,7 +2663,7 @@ safeCode +
       const removeUrl =
         discountType === "reward"
           ? urls.discountRemoveYotpoReward ||
-            "/checkout/discount/remove-yotpo-reward"
+          "/checkout/discount/remove-yotpo-reward"
           : urls.discountRemove || "/checkout/discount/remove";
 
       /*
@@ -2742,12 +2696,12 @@ safeCode +
               result.insertAdjacentHTML(
                 "beforeend",
                 '<p style="' +
-                  "font-size:12px;" +
-                  "color:var(--color-text-error);" +
-                  "margin-top:8px;" +
-                  '">' +
-                  (response.message || "Unable to remove discount.") +
-                  "</p>",
+                "font-size:12px;" +
+                "color:var(--color-text-error);" +
+                "margin-top:8px;" +
+                '">' +
+                (response.message || "Unable to remove discount.") +
+                "</p>",
               );
             }
 
@@ -2808,37 +2762,37 @@ safeCode +
           }
 
           if (
-				discountType !== "reward" &&
-				response.coupon_free_gift_removed === true
-			) {
-				window.location.reload();
-				return;
-			}
+            discountType !== "reward" &&
+            response.coupon_free_gift_removed === true
+          ) {
+            window.location.reload();
+            return;
+          }
 
           /*
            * Existing checkout recalculation.
            */
 
-	if (
-    response &&
-    typeof updateTotals === "function"
-) {
-    updateTotals(response);
-}
+          if (
+            response &&
+            typeof updateTotals === "function"
+          ) {
+            updateTotals(response);
+          }
 
-    const selectedMethod =
-        $('input[name="shipping"]:checked').val();
+          const selectedMethod =
+            $('input[name="shipping"]:checked').val();
 
-    if (
-        selectedMethod &&
-        window.MaxaromaOnePageCheckout &&
-        typeof window.MaxaromaOnePageCheckout.setShippingMethod ===
+          if (
+            selectedMethod &&
+            window.MaxaromaOnePageCheckout &&
+            typeof window.MaxaromaOnePageCheckout.setShippingMethod ===
             "function"
-    ) {
-        window.MaxaromaOnePageCheckout.setShippingMethod(
-            parseInt(selectedMethod, 10),
-        );
-    }
+          ) {
+            window.MaxaromaOnePageCheckout.setShippingMethod(
+              parseInt(selectedMethod, 10),
+            );
+          }
 
         })
         .fail(function (xhr) {
@@ -2850,12 +2804,12 @@ safeCode +
             result.insertAdjacentHTML(
               "beforeend",
               '<p style="' +
-                "font-size:12px;" +
-                "color:var(--color-text-error);" +
-                "margin-top:8px;" +
-                '">' +
-                (response.message || "Unable to remove discount.") +
-                "</p>",
+              "font-size:12px;" +
+              "color:var(--color-text-error);" +
+              "margin-top:8px;" +
+              '">' +
+              (response.message || "Unable to remove discount.") +
+              "</p>",
             );
           }
         });
@@ -2968,10 +2922,10 @@ safeCode +
        */
       const existing = mainList.querySelector(
         ".order-item-row" +
-          '[data-product-id="' +
-          productId +
-          '"]' +
-          '[data-free-gift="1"]',
+        '[data-product-id="' +
+        productId +
+        '"]' +
+        '[data-free-gift="1"]',
       );
 
       if (existing) {
@@ -3234,7 +3188,7 @@ safeCode +
      * Backend owns Free Gift add/remove.
      * Frontend only renders final backend state.
      */
-   // appendFreeGiftCartItems(uiResponse);
+    // appendFreeGiftCartItems(uiResponse);
 
     handleFreeGiftResponse(uiResponse);
 
@@ -3265,24 +3219,24 @@ safeCode +
       if (cartIndex === undefined || cartIndex === "") {
         return;
       }
-		
+
       const item = cart[cartIndex];
 
       if (!item) {
         return;
       }
-		
-	  const isFreeGiftRow =
-			$row.attr("data-free-gift") === "1" ||
-			$row.find('[data-free-gift="1"]').length > 0;
 
-		if (isFreeGiftRow) {
-			$row.find(".order-item-bogo-message").remove();
-			return;
-		}	
-		
+      const isFreeGiftRow =
+        $row.attr("data-free-gift") === "1" ||
+        $row.find('[data-free-gift="1"]').length > 0;
+
+      if (isFreeGiftRow) {
+        $row.find(".order-item-bogo-message").remove();
+        return;
+      }
+
       const message = item.BogoDiscountMessage || "";
-		
+
       const $existingMessage = $row.find(".order-item-bogo-message");
 
       if (message) {
@@ -3293,8 +3247,8 @@ safeCode +
             .find("#OrderInfoDiv")
             .append(
               '<div class="order-item-bogo-message" id="OrderInfoDiv">' +
-                message +
-                "</div>",
+              message +
+              "</div>",
             );
         }
       } else {
@@ -3313,7 +3267,7 @@ safeCode +
         })
         .promise();
     }
-
+    $(".cart-success, .cart-error").hide();
     return $.ajax({
       type: "POST",
       url: url,
@@ -3335,7 +3289,7 @@ safeCode +
         checkFreeSamplePopup();
         const result = handleCartResponse(response);
         scheduleCheckoutOffersRefresh();
-        updateViewAll();
+        scheduleTotalRefresh();
         return result;
       }
 
@@ -3403,7 +3357,7 @@ safeCode +
     return cartRequest(urls.cartClear || "/checkoutnew/cart/clear", {});
   }
 
- function updateCheckoutReviewContact() {
+  function updateCheckoutReviewContact() {
     const reviewContact = document.getElementById("review-contact-value");
 
     if (!reviewContact) {
@@ -3412,14 +3366,14 @@ safeCode +
     const emailInput = document.getElementById("email");
 
     if (!emailInput) {
-      $("#review-contact-value").parent().css('visibility','hidden');
+      $("#review-contact-value").parent().css('visibility', 'hidden');
       return;
     }
 
     const email = String(emailInput.value || "").trim();
 
     if (email) {
-      $("#review-contact-value").parent().css('visibility','visible');
+      $("#review-contact-value").parent().css('visibility', 'visible');
       reviewContact.textContent = email;
     }
   }
@@ -3435,13 +3389,12 @@ safeCode +
     var city = $("#shipping_city").val() || "";
     var state = $("#shipping_state").val() || "";
     var zip = $("#shipping_zip").val() || "";
-    if(window.amazon.address != '')
-    {
-        var address1 = window.amazon.address.address1 || "";
-        var address2 = window.amazon.address.address2 || "";
-        var city = window.amazon.address.city || "";
-        var state = window.amazon.address.state || "";
-        var zip = window.amazon.address.zip || "";
+    if (window.amazon.address != '') {
+      var address1 = window.amazon.address.address1 || "";
+      var address2 = window.amazon.address.address2 || "";
+      var city = window.amazon.address.city || "";
+      var state = window.amazon.address.state || "";
+      var zip = window.amazon.address.zip || "";
     }
     const parts = [];
 
@@ -3527,7 +3480,7 @@ safeCode +
       callback();
     }
   }
-
+  /*
   function loadShippingMethods() {
     showLoader(false);
     showShipMethodLoader(false);
@@ -3539,38 +3492,37 @@ safeCode +
     if (onlyGCPurchased === 1) {
       $("#section-delivery").hide();
       $("#shipping-method-list").empty();
-	  $("#place-order-btn").show();
-     $("#place-order-mobile").show();
-     $("#order-summary-sticky-dock").show();
-	   $("#review-block").show();	
+      $("#place-order-btn").show();
+      $("#place-order-mobile").show();
+      $("#order-summary-sticky-dock").show();
+      $("#review-block").show();
       return;
     }
     var address = getShippingAddress();
 
-    if(window.amazon.address !== '')
-    {
+    if (window.amazon.address !== '') {
       address = window.amazon.address;
     }
 
     if (!addressReady(address)) {
       $("#section-delivery fieldset").html(
         '<div class="checkout-empty-state">' +
-          "Enter country, state and ZIP code to see shipping methods." +
-          "</div>",
+        "Enter country, state and ZIP code to see shipping methods." +
+        "</div>",
       );
-	   $("#section-delivery").hide();
-	   $("#place-order-btn").hide();
-     $("#place-order-mobile").hide();
-     $("#order-summary-sticky-dock").hide();
-	   $("#review-block").hide();
+      $("#section-delivery").hide();
+      $("#place-order-btn").hide();
+      $("#place-order-mobile").hide();
+      $("#order-summary-sticky-dock").hide();
+      $("#review-block").hide();
 
       return;
     }
-	$("#section-delivery").show();
-	$("#place-order-btn").show();
-  $("#place-order-mobile").show();
-  $("#order-summary-sticky-dock").show();
-	$("#review-block").show();
+    $("#section-delivery").show();
+    $("#place-order-btn").show();
+    $("#place-order-mobile").show();
+    $("#order-summary-sticky-dock").show();
+    $("#review-block").show();
     const shippingMethodsUrl =
       urls.shippingMethods || "/checkoutnew/shipping-methods";
 
@@ -3590,6 +3542,9 @@ safeCode +
       },
       dataType: "json",
       data: {
+        first_name: address.first_name,
+        last_name: address.last_name,
+        phone: address.phone,
         country: address.country,
         state: address.state,
         zip: address.zip,
@@ -3610,18 +3565,18 @@ safeCode +
       },
     })
       .done(function (response) {
-        console.log("SHIPPING SUCCESS:", response);
+        //console.log("SHIPPING SUCCESS:", response);
         if (response.status && response.status !== "success") {
           showMessage(
             "#shipping-method-messages",
             response.message || "Unable to load shipping methods.",
             "error",
           );
-		$("#section-delivery").hide();
-		$("#place-order-btn").hide();
-    $("#place-order-mobile").hide();
-    $("#order-summary-sticky-dock").hide();
-		$("#review-block").hide();
+          $("#section-delivery").hide();
+          $("#place-order-btn").hide();
+          $("#place-order-mobile").hide();
+          $("#order-summary-sticky-dock").hide();
+          $("#review-block").hide();
           return;
         }
 
@@ -3630,32 +3585,32 @@ safeCode +
         //GetAfterpayWidget();
       })
       .fail(function (xhr, status, error) {
-        console.log("SHIPPING FAILED:", {
-          status: status,
-          error: error,
-          httpStatus: xhr.status,
-          response: xhr.responseText,
-        });
+        // console.log("SHIPPING FAILED:", {
+        //   status: status,
+        //   error: error,
+        //   httpStatus: xhr.status,
+        //   response: xhr.responseText,
+        // });
 
         if (status === "abort") {
-		$("#section-delivery").hide();
-		$("#place-order-btn").hide();
-    $("#place-order-mobile").hide();
-    $("#order-summary-sticky-dock").hide();
-        $("#review-block").hide();
-        return;
+          $("#section-delivery").hide();
+          $("#place-order-btn").hide();
+          $("#place-order-mobile").hide();
+          $("#order-summary-sticky-dock").hide();
+          $("#review-block").hide();
+          return;
         }
 
         let message = "Unable to load shipping methods. Please try again.";
 
         if (xhr.responseJSON && xhr.responseJSON.message) {
-          console.log(xhr.responseJSON);
+          //console.log(xhr.responseJSON);
           message = xhr.responseJSON.message;
         }
-		$("#section-delivery").hide();
-		$("#place-order-btn").hide();
-    $("#place-order-mobile").hide();
-    $("#order-summary-sticky-dock").hide();
+        $("#section-delivery").hide();
+        $("#place-order-btn").hide();
+        $("#place-order-mobile").hide();
+        $("#order-summary-sticky-dock").hide();
         $("#review-block").hide();
         showMessage("#shipping-method-messages", message, "error");
       })
@@ -3664,7 +3619,7 @@ safeCode +
         showLoader(false);
       });
   }
-
+  */
   function queueShippingMethodsLoad() {
     showLoader(true);
     showShipMethodLoader(true);
@@ -3702,8 +3657,7 @@ safeCode +
 
     var address = getShippingAddress();
 
-    if(window.amazon.address !== '')
-    {
+    if (window.amazon.address !== '') {
       address = window.amazon.address;
     }
 
@@ -3869,12 +3823,11 @@ safeCode +
           showMessage("#shipping-method-messages", response.message, "success");
         }
         //GetAfterpayWidget();
-        if($("#afterpay-widget").length > 0)
-        {
-          setTimeout(() => {
-            refreshAfterpayWidget();
-          }, 500);
-        }
+        // if ($("#afterpay-widget").length > 0) {
+        //   setTimeout(() => {
+        //     refreshAfterpayWidget();
+        //   }, 500);
+        // }
         loadDropshipperDetails();
       })
 
@@ -3937,12 +3890,12 @@ safeCode +
     '#section-delivery input[name="shipping"]',
     function (event, changeOptions) {
       updateOnTimeDeliveryRate();
-	  $('#section-delivery .shipping-option')
-            .removeClass('active selected');
+      $('#section-delivery .shipping-option')
+        .removeClass('active selected');
 
-       $(this)
-            .closest('.shipping-option')
-            .addClass('active selected');
+      $(this)
+        .closest('.shipping-option')
+        .addClass('active selected');
 
       const shippingMethodId = parseInt($(this).val(), 10);
 
@@ -3979,80 +3932,78 @@ safeCode +
      * Restore server-side Insurance/Signature state
      * BEFORE shipping methods / totals AJAX starts.
      */
-    /*restoreCheckoutAddonState();
+  /*restoreCheckoutAddonState();
 
-	if ( window.MaxaromaCheckout && window.MaxaromaCheckout.checkout && typeof updateTotals === "function")
-  {
-    updateTotals(window.MaxaromaCheckout.checkout);
+if ( window.MaxaromaCheckout && window.MaxaromaCheckout.checkout && typeof updateTotals === "function")
+{
+  updateTotals(window.MaxaromaCheckout.checkout);
+}
+
+  const address = getShippingAddress();
+
+  if (addressReady(address)) {
+    loadShippingMethods();
   }
+  else
+  {
+    $("#section-delivery").hide();
+    $("#place-order-btn").hide();
+    $("#place-order-mobile").hide();
+    $("#order-summary-sticky-dock").hide();
+    $("#review-block").hide();
+}
 
-    const address = getShippingAddress();
+const onlyGCPurchased = parseInt(
+  window.MaxaromaCheckout?.checkout?.onlyGCPurchased ??
+  window.MaxaromaCheckout?.onlyGCPurchased ??
+  0,
+  10
+);
 
-    if (addressReady(address)) {
-      loadShippingMethods();
-    }
-    else
+  loadDropshipperDetails();
+
+  loadDropshipperDetails();
+ if (onlyGCPurchased !== 1) {
+  checkFreeGiftOnPageLoad();
+  checkFreeSamplePopup();
+}
+
+  updateViewAll();
+
+  $("#chkcreditlimit").click(function(){
+    loadCreditDetails();
+  })
+
+  $(document).on("click",".promo-demo-btn",function(){
+    ShowOffer($(this).attr("data-preset"));
+  })
+
+  $(document).on("change","#ShippingSignInsu #protection",function(){
+    if($(this).prop('checked'))
     {
-	    $("#section-delivery").hide();
-		  $("#place-order-btn").hide();
-      $("#place-order-mobile").hide();
-      $("#order-summary-sticky-dock").hide();
-		  $("#review-block").hide();
-	}
-
-	const onlyGCPurchased = parseInt(
-	  window.MaxaromaCheckout?.checkout?.onlyGCPurchased ??
-	  window.MaxaromaCheckout?.onlyGCPurchased ??
-	  0,
-	  10
-	);
-
-
-    loadDropshipperDetails();
-
-
-    loadDropshipperDetails();
-   if (onlyGCPurchased !== 1) {
-	  checkFreeGiftOnPageLoad();
-	  checkFreeSamplePopup();
-	}
-
-    updateViewAll();
-
-    $("#chkcreditlimit").click(function(){
-      loadCreditDetails();
-    })
-
-    $(document).on("click",".promo-demo-btn",function(){
-      ShowOffer($(this).attr("data-preset"));
-    })
-
-    $(document).on("change","#ShippingSignInsu #protection",function(){
-      if($(this).prop('checked'))
-      {
-        keepProtection();
-      } else {
-        removeProtection();
-      }
-      /*
-      if($("#shipinsurance").prop('checked'))
-      {
-        $("#protection").prop('checked',true);
-      } else {
-        $("#protection").prop('checked',false);
-      }
-      $("#protection").trigger('change');
-      */
-   // });
-   /* $(document).on("change","#ShippingSignInsu #request-signature",function(){
-      if($(this).prop('checked'))
-      {
-        keepSignature();
-      } else {
-        removeSignature();
-      }
-    });
-  });*/
+      keepProtection();
+    } else {
+      removeProtection();
+    }
+    /*
+    if($("#shipinsurance").prop('checked'))
+    {
+      $("#protection").prop('checked',true);
+    } else {
+      $("#protection").prop('checked',false);
+    }
+    $("#protection").trigger('change');
+    */
+  // });
+  /* $(document).on("change","#ShippingSignInsu #request-signature",function(){
+     if($(this).prop('checked'))
+     {
+       keepSignature();
+     } else {
+       removeSignature();
+     }
+   });
+ });*/
 
   /*$(document).on("click","#free_sample",function(){
     if($.trim($("#FreeSampleProductsViewPopup").html()) != '')
@@ -4083,7 +4034,6 @@ safeCode +
 
   window.applyPromo = function () {
     const input = document.getElementById("promo-code");
-
     const result = document.getElementById("promo-result");
 
     if (!input || !result) {
@@ -4093,237 +4043,199 @@ safeCode +
     const code = input.value.trim().toUpperCase();
 
     if (!code) {
-      result.innerHTML =
-        '<p style="font-size:12px;color:var(--color-text-error);margin-top:8px;">' +
-        "Please enter a code." +
-        "</p>";
+      const errorMessage = document.createElement("p");
+      errorMessage.className = "promo-error";
+      errorMessage.style.cssText =
+        "font-size:12px;color:var(--color-text-error);margin-top:8px;";
+      errorMessage.textContent = "Please enter a code.";
 
+      result.appendChild(errorMessage);
       return;
     }
 
-    const button = document.querySelector('#promo-panel button[type="button"]');
+    const button = document.querySelector(
+      '#promo-panel button[type="button"]'
+    );
 
     if (button) {
       button.disabled = true;
     }
 
     /*
-     * IMPORTANT:
-     *
-     * Do not remove/hide the coupon input.
-     * Existing applied Coupon/Reward must remain visible.
+     * Remove only previous status messages.
+     * Keep existing Coupon and Yotpo Reward rows.
      */
-    result.innerHTML =
-      '<p class="promo-applying-message" ' +
-        'style="font-size:12px;margin-top:8px;">' +
-        "Applying coupon..." +
-        "</p>";
+    result.querySelectorAll(
+      ".promo-applying-message, .promo-error"
+    ).forEach(function (element) {
+      element.remove();
+    });
+
+    const applyingMessage = document.createElement("p");
+    applyingMessage.className = "promo-applying-message";
+    applyingMessage.style.cssText =
+      "font-size:12px;margin-top:8px;";
+    applyingMessage.textContent = "Applying coupon...";
+
+    result.appendChild(applyingMessage);
 
     queueDiscountMutation({
       type: "POST",
-
       url: urls.discountApply || "/checkout/discount/apply",
-
       headers: {
         "X-CSRF-TOKEN": csrfToken,
       },
-
       dataType: "json",
-
       data: {
         coupon_code: code,
       },
     })
       .done(function (response) {
-
-        result
-          .querySelectorAll(".promo-applying-message")
-          .forEach(function (element) {
-            element.remove();
-          });
+        result.querySelectorAll(
+          ".promo-applying-message"
+        ).forEach(function (element) {
+          element.remove();
+        });
 
         if (
           response.error === 1 ||
           response.error === "1" ||
           response.status === "error"
         ) {
-          /*
-          result.insertAdjacentHTML(
-            "beforeend",
-            '<p class="promo-error" ' +
-              'style="' +
-              "font-size:12px;" +
-              "color:var(--color-text-error);" +
-              "margin-top:8px;" +
-              '">' +
-              (response.message || "This coupon could not be applied.") +
-              "</p>",
-          );
-          */
+          const errorMessage = document.createElement("p");
+          errorMessage.className = "promo-error";
+          errorMessage.style.cssText =
+            "font-size:12px;color:var(--color-text-error);margin-top:8px;";
+          errorMessage.textContent =
+            response.message ||
+            "This coupon could not be applied.";
 
-         result.innerHTML =
-            '<p class="promo-error" ' +
-              'style="' +
-              "font-size:12px;" +
-              "color:var(--color-text-error);" +
-              "margin-top:8px;" +
-              '">' +
-              (response.message || "This coupon could not be applied.") +
-              "</p>";
+          result.appendChild(errorMessage);
           return;
         }
 
         /*
-         * =====================================================
-         * SUCCESS
-         * =====================================================
-         *
-         * IMPORTANT:
-         *
-         * 1. Coupon input stays visible.
-         * 2. Existing Reward/Coupon stays visible.
-         * 3. New applied code is appended.
-         * 4. Coupon + Reward can both be shown.
+         * Render the applied Coupon/Reward without
+         * replacing existing applied rows.
          */
-
         const safeCode = escapeHtml(code);
-		const isYotpoReward = response.is_yotpo_reward === true;
-        /*
-         * Prevent duplicate display of same code.
-         */
+
+        const isYotpoReward =
+          response.is_yotpo_reward === true ||
+          response.is_yotpo_reward === 1 ||
+          response.is_yotpo_reward === "1";
+
         const alreadyApplied = Array.from(
-          result.querySelectorAll(".coupon-applied"),
+          result.querySelectorAll(".coupon-applied")
         ).some(function (row) {
           const rowCode = (
             row.getAttribute("data-discount-code") || ""
-          ).toUpperCase();
+          ).trim().toUpperCase();
 
           return rowCode === code;
         });
 
         if (!alreadyApplied) {
+          const appliedHtml =
+            '<div class="coupon-applied animate-in" ' +
+            'data-discount-code="' + safeCode + '" ' +
+            'style="margin-top:12px;" role="status">' +
+            '<div class="cuppon-applied-text">' +
+            '<span class="coupon-applied-code">' +
+            safeCode +
+            '</span>' +
+            '<span style="' +
+            'font-size:12px;' +
+            'color:var(--color-text-success);' +
+            'margin-left:8px;">' +
+            'Applied' +
+            '</span>' +
+            '</div>' +
+            '<button type="button" ' +
+            (isYotpoReward
+              ? 'id="maxaroma-remove-yotpo-reward" '
+              : '') +
+            'class="coupon-remove" ' +
+            'data-discount-code="' + safeCode + '" ' +
+            'data-discount-kind="' +
+            (isYotpoReward ? "reward" : "coupon") +
+            '">' +
+            'Remove' +
+            '</button>' +
+            '</div>';
+          toggleSummaryAccordion('coupon');
 
-    const appliedHtml =
-        "<div " +
-        'class="coupon-applied animate-in" ' +
-        'data-discount-code="' +
-        safeCode +
-        '" ' +
-        'style="margin-top:12px;" ' +
-        'role="status">' +
-        '<div class="cuppon-applied-text">' +
-        '<span class="coupon-applied-code">' +
-        safeCode +
-        "</span>" +
-        '<span style="' +
-        "font-size:12px;" +
-        "color:var(--color-text-success);" +
-        'margin-left:8px;">' +
-        "Applied" +
-        "</span>" +
-        "</div>" +
-        "<button " +
-'type="button" ' +
-(isYotpoReward
-    ? 'id="maxaroma-remove-yotpo-reward" '
-    : "") +
-'class="coupon-remove" ' +
-'data-discount-code="' +
-safeCode +
-'" ' +
-'data-discount-kind="' +
-(isYotpoReward ? "reward" : "coupon") +
-'">' +
-"Remove" +
-"</button>"  +
-        "</div>";
-
-    result.insertAdjacentHTML("beforeend", appliedHtml);
-}
+          result.insertAdjacentHTML("beforeend", appliedHtml);
+        }
 
         input.value = "";
 
-			/*
-			 * =====================================================
-			 * SYNC FINAL BACKEND CART
-			 * =====================================================
-			 *
-			 * Coupon Free Gift is inserted by the backend.
-			 * Render that final cart before/along with the
-			 * normal checkout recalculation.
-			 *
-			 * Backend remains the source of truth.
-			 */
-			if (
-				response &&
-				typeof updateTotals === "function"
-			) {
-				updateTotals(response);
-			}
+        /*
+         * Keep the coupon field visible.
+         */
+        const promoField = input.closest(".promo-field");
 
-			if (
-				response.cart &&
-				typeof appendFreeGiftCartItems === "function"
-			) {
-				appendFreeGiftCartItems(response);
-			}
+        if (promoField) {
+          promoField.style.display = "";
+          promoField.hidden = false;
+        }
 
-						if (
-				response.coupon_free_gift_applied === true
-			) {
-				window.location.reload();
-				return;
-			}
+        /*
+         * Backend response remains the source of truth.
+         */
+        if (response && typeof updateTotals === "function") {
+          updateTotals(response);
+        }
 
-			/*
-			 * =====================================================
-			 * Recalculate existing selected shipping
-			 * method / totals.
-			 * =====================================================
-			 */
-			const selectedMethod =
-				$('input[name="shipping"]:checked').val();
+        if (
+          response.cart &&
+          typeof appendFreeGiftCartItems === "function"
+        ) {
+          appendFreeGiftCartItems(response);
+        }
 
-			if (
-				selectedMethod &&
-				window.MaxaromaOnePageCheckout &&
-				typeof window.MaxaromaOnePageCheckout.setShippingMethod === "function"
-			) {
-				window.MaxaromaOnePageCheckout.setShippingMethod(
-					parseInt(selectedMethod, 10),
-				);
-			}
+        if (response.coupon_free_gift_applied === true) {
+          window.location.reload();
+          return;
+        }
+
+        /*
+         * Recalculate the currently selected shipping method.
+         */
+        const selectedMethod = $(
+          'input[name="shipping"]:checked'
+        ).val();
+
+        if (
+          selectedMethod &&
+          window.MaxaromaOnePageCheckout &&
+          typeof window.MaxaromaOnePageCheckout.setShippingMethod ===
+          "function"
+        ) {
+          window.MaxaromaOnePageCheckout.setShippingMethod(
+            parseInt(selectedMethod, 10)
+          );
+        }
       })
       .fail(function (xhr) {
-        result
-          .querySelectorAll(".promo-applying-message")
-          .forEach(function (element) {
-            element.remove();
-          });
+        result.querySelectorAll(
+          ".promo-applying-message"
+        ).forEach(function (element) {
+          element.remove();
+        });
 
         const response = xhr.responseJSON || {};
-        /*
-        result.insertAdjacentHTML(
-          "beforeend",
-          '<p class="promo-error" ' +
-            'style="' +
-            "font-size:12px;" +
-            "color:var(--color-text-error);" +
-            "margin-top:8px;" +
-            '">' +
-            (response.message || "Unable to apply coupon. Please try again.") +
-            "</p>",
-        );
-        */
-        result.innerHTML =
-          '<p class="promo-error" ' +
-            'style="' +
-            "font-size:12px;" +
-            "color:var(--color-text-error);" +
-            "margin-top:8px;" +
-            '">' +
-            (response.message || "Unable to apply coupon. Please try again.") +
-            "</p>";
+        const errorMessage = document.createElement("p");
+
+        errorMessage.className = "promo-error";
+        errorMessage.style.cssText =
+          "font-size:12px;color:var(--color-text-error);margin-top:8px;";
+        errorMessage.textContent =
+          response.message ||
+          "Unable to apply coupon. Please try again.";
+
+        result.appendChild(errorMessage);
+        //toggleSummaryAccordion('coupon');
       })
       .always(function () {
         if (button) {
@@ -4331,6 +4243,7 @@ safeCode +
         }
       });
   };
+
   /* =========================================================
        REMOVE COUPON
        ========================================================= */
@@ -4367,7 +4280,7 @@ safeCode +
       const removeUrl =
         discountType === "reward"
           ? urls.discountRemoveYotpoReward ||
-            "/checkout/discount/remove-yotpo-reward"
+          "/checkout/discount/remove-yotpo-reward"
           : urls.discountRemove || "/checkout/discount/remove";
 
       /*
@@ -4400,12 +4313,12 @@ safeCode +
               result.insertAdjacentHTML(
                 "beforeend",
                 '<p style="' +
-                  "font-size:12px;" +
-                  "color:var(--color-text-error);" +
-                  "margin-top:8px;" +
-                  '">' +
-                  (response.message || "Unable to remove discount.") +
-                  "</p>",
+                "font-size:12px;" +
+                "color:var(--color-text-error);" +
+                "margin-top:8px;" +
+                '">' +
+                (response.message || "Unable to remove discount.") +
+                "</p>",
               );
             }
 
@@ -4466,37 +4379,37 @@ safeCode +
           }
 
           if (
-				discountType !== "reward" &&
-				response.coupon_free_gift_removed === true
-			) {
-				window.location.reload();
-				return;
-			}
+            discountType !== "reward" &&
+            response.coupon_free_gift_removed === true
+          ) {
+            window.location.reload();
+            return;
+          }
 
           /*
            * Existing checkout recalculation.
            */
 
-	if (
-    response &&
-    typeof updateTotals === "function"
-) {
-    updateTotals(response);
-}
+          if (
+            response &&
+            typeof updateTotals === "function"
+          ) {
+            updateTotals(response);
+          }
 
-    const selectedMethod =
-        $('input[name="shipping"]:checked').val();
+          const selectedMethod =
+            $('input[name="shipping"]:checked').val();
 
-    if (
-        selectedMethod &&
-        window.MaxaromaOnePageCheckout &&
-        typeof window.MaxaromaOnePageCheckout.setShippingMethod ===
+          if (
+            selectedMethod &&
+            window.MaxaromaOnePageCheckout &&
+            typeof window.MaxaromaOnePageCheckout.setShippingMethod ===
             "function"
-    ) {
-        window.MaxaromaOnePageCheckout.setShippingMethod(
-            parseInt(selectedMethod, 10),
-        );
-    }
+          ) {
+            window.MaxaromaOnePageCheckout.setShippingMethod(
+              parseInt(selectedMethod, 10),
+            );
+          }
 
         })
         .fail(function (xhr) {
@@ -4508,12 +4421,12 @@ safeCode +
             result.insertAdjacentHTML(
               "beforeend",
               '<p style="' +
-                "font-size:12px;" +
-                "color:var(--color-text-error);" +
-                "margin-top:8px;" +
-                '">' +
-                (response.message || "Unable to remove discount.") +
-                "</p>",
+              "font-size:12px;" +
+              "color:var(--color-text-error);" +
+              "margin-top:8px;" +
+              '">' +
+              (response.message || "Unable to remove discount.") +
+              "</p>",
             );
           }
         });
@@ -4626,10 +4539,10 @@ safeCode +
        */
       const existing = mainList.querySelector(
         ".order-item-row" +
-          '[data-product-id="' +
-          productId +
-          '"]' +
-          '[data-free-gift="1"]',
+        '[data-product-id="' +
+        productId +
+        '"]' +
+        '[data-free-gift="1"]',
       );
 
       if (existing) {
@@ -4892,7 +4805,7 @@ safeCode +
      * Backend owns Free Gift add/remove.
      * Frontend only renders final backend state.
      */
-   // appendFreeGiftCartItems(uiResponse);
+    // appendFreeGiftCartItems(uiResponse);
 
     handleFreeGiftResponse(uiResponse);
 
@@ -4915,15 +4828,13 @@ safeCode +
       return;
     }
 
-     $(".order-item-row").each(function () {
+    $(".order-item-row").each(function () {
       const $row = $(this);
-      
-      
-     if ($row.attr("data-free-gift") === "1") {
+
+      if ($row.attr("data-free-gift") === "1") {
         $row.find(".order-item-bogo-message").remove();
         return;
       }
-
 
       const cartIndex = $row.attr("data-cart-index");
 
@@ -4949,8 +4860,8 @@ safeCode +
             .find("#OrderInfoDiv")
             .append(
               '<div class="order-item-bogo-message" id="OrderInfoDiv">' +
-                message +
-                "</div>",
+              message +
+              "</div>",
             );
         }
       } else {
@@ -4991,7 +4902,13 @@ safeCode +
         checkFreeSamplePopup();
         const result = handleCartResponse(response);
         scheduleCheckoutOffersRefresh();
-        updateViewAll();
+        scheduleTotalRefresh();
+        //GetAfterpayWidget();
+        // if ($("#afterpay-widget").length > 0) {
+        //   setTimeout(() => {
+        //     refreshAfterpayWidget();
+        //   }, 500);
+        // }
         return result;
       }
 
@@ -5058,862 +4975,863 @@ safeCode +
   function clearCheckoutCart() {
     return cartRequest(urls.cartClear || "/checkoutnew/cart/clear", {});
   }
-function updateQty(btn, delta) {
-  const row = btn.closest(".order-item-row");
+  function updateQty(btn, delta) {
+    $(".cart-success, .cart-error").hide();
+    const row = btn.closest(".order-item-row");
 
-  if (!row) {
-    return;
-  }
+    if (!row) {
+      return;
+    }
 
-  const stepper = btn.closest(".qty-stepper");
+    const stepper = btn.closest(".qty-stepper");
 
-  if (!stepper) {
-    return;
-  }
+    if (!stepper) {
+      return;
+    }
 
-  const valEl =
-    stepper.querySelector(".qty-value");
+    const valEl =
+      stepper.querySelector(".qty-value");
 
-  if (!valEl) {
-    return;
-  }
+    if (!valEl) {
+      return;
+    }
 
-  const productId =
-    parseInt(
-      row.dataset.productId || "0",
-      10
-    );
+    const productId =
+      parseInt(
+        row.dataset.productId || "0",
+        10
+      );
 
-  if (!productId) {
-    console.error(
-      "updateQty: product_id missing",
-      row
-    );
-    return;
-  }
+    if (!productId) {
+      console.error(
+        "updateQty: product_id missing",
+        row
+      );
+      return;
+    }
 
-  const currentQty =
-    parseInt(
-      valEl.textContent || "1",
-      10
-    ) || 1;
+    const currentQty =
+      parseInt(
+        valEl.textContent || "1",
+        10
+      ) || 1;
 
-  const nextQty =
-    Math.max(
-      1,
-      currentQty +
+    const nextQty =
+      Math.max(
+        1,
+        currentQty +
         parseInt(delta, 10)
-    );
+      );
 
-  if (
-    nextQty === currentQty
-  ) {
-    return;
-  }
+    if (
+      nextQty === currentQty
+    ) {
+      return;
+    }
 
-  if (
-    row.dataset.cartUpdating === "1"
-  ) {
-    return;
-  }
+    if (
+      row.dataset.cartUpdating === "1"
+    ) {
+      return;
+    }
 
-  row.dataset.cartUpdating = "1";
+    row.dataset.cartUpdating = "1";
 
-  const buttons =
-    stepper.querySelectorAll(
-      ".qty-btn"
-    );
+    const buttons =
+      stepper.querySelectorAll(
+        ".qty-btn"
+      );
 
-  buttons.forEach(function (button) {
-    button.disabled = true;
-  });
+    buttons.forEach(function (button) {
+      button.disabled = true;
+    });
 
-  showLoader(true);
+    showLoader(true);
 
-  updateCheckoutCart(
-    productId,
-    nextQty,
-    "No"
-  )
-    .done(function (response) {
-
-  /*
-   * =====================================================
-   * WHOLESALER MINIMUM-ORDER REDIRECT
-   * =====================================================
-   *
-   * Handle redirect before normal success validation.
-   */
-  if (
-    response &&
-    (
-      response.status === "redirect" ||
-      response.redirect
+    updateCheckoutCart(
+      productId,
+      nextQty,
+      "No"
     )
-  ) {
-    window.location.href =
-      response.redirect || "/shoppingcart";
+      .done(function (response) {
 
-    return;
-  }
+        /*
+         * =====================================================
+         * WHOLESALER MINIMUM-ORDER REDIRECT
+         * =====================================================
+         *
+         * Handle redirect before normal success validation.
+         */
+        if (
+          response &&
+          (
+            response.status === "redirect" ||
+            response.redirect
+          )
+        ) {
+          window.location.href =
+            response.redirect || "/shoppingcart";
 
-  /*
-   * =====================================================
-   * CART UPDATE FAILED
-   * =====================================================
-   */
-  if (
-    !response ||
-    response.success !== true
-  ) {
-    console.error(
-      "Cart quantity update failed:",
-      response
-    );
+          return;
+        }
 
-    return;
-  }
+        /*
+         * =====================================================
+         * CART UPDATE FAILED
+         * =====================================================
+         */
+        if (
+          !response ||
+          response.success !== true
+        ) {
+          console.error(
+            "Cart quantity update failed:",
+            response
+          );
 
-      /*
-       * =====================================================
-       * FINAL BACKEND CART
-       * =====================================================
-       */
-      let responseCart = [];
+          return;
+        }
 
-      if (
-        Array.isArray(
-          response.cart
-        )
-      ) {
+        /*
+         * =====================================================
+         * FINAL BACKEND CART
+         * =====================================================
+         */
+        let responseCart = [];
 
-        responseCart =
-          response.cart;
+        if (
+          Array.isArray(
+            response.cart
+          )
+        ) {
 
-      } else if (
-        response.cart &&
-        Array.isArray(
-          response.cart.Cart
-        )
-      ) {
+          responseCart =
+            response.cart;
 
-        responseCart =
-          response.cart.Cart;
+        } else if (
+          response.cart &&
+          Array.isArray(
+            response.cart.Cart
+          )
+        ) {
 
-      } else if (
-        response.freeGift &&
-        Array.isArray(
-          response.freeGift.cart
-        )
-      ) {
+          responseCart =
+            response.cart.Cart;
 
-        responseCart =
-          response.freeGift.cart;
+        } else if (
+          response.freeGift &&
+          Array.isArray(
+            response.freeGift.cart
+          )
+        ) {
 
-      } else if (
-        response.freeGift &&
-        response.freeGift.cart &&
-        Array.isArray(
-          response.freeGift.cart.Cart
-        )
-      ) {
+          responseCart =
+            response.freeGift.cart;
 
-        responseCart =
-          response.freeGift.cart.Cart;
-      }
+        } else if (
+          response.freeGift &&
+          response.freeGift.cart &&
+          Array.isArray(
+            response.freeGift.cart.Cart
+          )
+        ) {
 
-      /*
-       * =====================================================
-       * FINAL QTY / LINE TOTAL
-       * =====================================================
-       */
-      let finalQty =
-        nextQty;
+          responseCart =
+            response.freeGift.cart.Cart;
+        }
 
-      let lineTotal =
-        null;
+        /*
+         * =====================================================
+         * FINAL QTY / LINE TOTAL
+         * =====================================================
+         */
+        let finalQty =
+          nextQty;
 
-      if (
-        responseCart.length
-      ) {
+        let lineTotal =
+          null;
 
-        const cartItem =
-          responseCart.find(
-            function (item) {
+        if (
+          responseCart.length
+        ) {
 
-              return (
-                parseInt(
-                  item.ProductID ||
+          const cartItem =
+            responseCart.find(
+              function (item) {
+
+                return (
+                  parseInt(
+                    item.ProductID ||
                     item.products_id ||
                     item.product_id ||
                     0,
-                  10
-                ) === productId
-              );
-            }
-          );
+                    10
+                  ) === productId
+                );
+              }
+            );
 
-        if (cartItem) {
+          if (cartItem) {
 
-          finalQty =
-            parseInt(
-              cartItem.Qty ||
+            finalQty =
+              parseInt(
+                cartItem.Qty ||
                 cartItem.qty ||
                 cartItem.quantity ||
                 nextQty,
-              10
-            );
-
-          /*
-           * Prefer backend TotPrice.
-           */
-          if (
-            cartItem.TotPrice !==
-              undefined &&
-            cartItem.TotPrice !==
-              null &&
-            cartItem.TotPrice !==
-              ""
-          ) {
-
-            lineTotal =
-              parseFloat(
-                String(
-                  cartItem.TotPrice
-                ).replace(
-                  /[^0-9.-]/g,
-                  ""
-                )
-              );
-          }
-
-          /*
-           * Fallback to Price * Qty.
-           */
-          if (
-            (
-              lineTotal === null ||
-              isNaN(lineTotal)
-            ) &&
-            cartItem.Price !==
-              undefined
-          ) {
-
-            const unitPrice =
-              parseFloat(
-                String(
-                  cartItem.Price
-                ).replace(
-                  /[^0-9.-]/g,
-                  ""
-                )
+                10
               );
 
+            /*
+             * Prefer backend TotPrice.
+             */
             if (
-              !isNaN(
-                unitPrice
-              )
+              cartItem.TotPrice !==
+              undefined &&
+              cartItem.TotPrice !==
+              null &&
+              cartItem.TotPrice !==
+              ""
             ) {
 
               lineTotal =
-                unitPrice *
-                finalQty;
-            }
-          }
-        }
-      }
-
-      //console.log(typeof $.fn.createAfterpayWidget);
-
-      if (
-        typeof $.fn.createAfterpayWidget ===
-        "function"
-      ) {
-        createAfterpayWidget();
-      }
-
-      /*
-       * =====================================================
-       * UPDATE CURRENT QTY UI
-       * =====================================================
-       */
-      valEl.textContent =
-        finalQty;
-
-      /*
-       * =====================================================
-       * UPDATE CURRENT LINE PRICE
-       * =====================================================
-       */
-      if (
-        lineTotal !== null &&
-        !isNaN(lineTotal)
-      ) {
-
-        const priceEl =
-          row.querySelector(
-            ".order-item-price-current"
-          );
-
-        if (priceEl) {
-
-          priceEl.textContent =
-            "$" +
-            lineTotal.toFixed(2);
-        }
-      }
-
-      /*
-       * =====================================================
-       * UPDATE DUPLICATE PRODUCT ROWS
-       * =====================================================
-       */
-      document
-        .querySelectorAll(
-          '.order-item-row[data-product-id="' +
-            productId +
-            '"]'
-        )
-        .forEach(
-          function (itemRow) {
-
-            const quantityElement =
-              itemRow.querySelector(
-                ".qty-value"
-              );
-
-            if (
-              quantityElement
-            ) {
-
-              quantityElement.textContent =
-                finalQty;
+                parseFloat(
+                  String(
+                    cartItem.TotPrice
+                  ).replace(
+                    /[^0-9.-]/g,
+                    ""
+                  )
+                );
             }
 
+            /*
+             * Fallback to Price * Qty.
+             */
             if (
-              lineTotal !== null &&
-              !isNaN(lineTotal)
+              (
+                lineTotal === null ||
+                isNaN(lineTotal)
+              ) &&
+              cartItem.Price !==
+              undefined
             ) {
 
-              const priceElement =
-                itemRow.querySelector(
-                  ".order-item-price-current"
+              const unitPrice =
+                parseFloat(
+                  String(
+                    cartItem.Price
+                  ).replace(
+                    /[^0-9.-]/g,
+                    ""
+                  )
                 );
 
               if (
-                priceElement
+                !isNaN(
+                  unitPrice
+                )
               ) {
 
-                priceElement.textContent =
-                  "$" +
-                  lineTotal.toFixed(
-                    2
-                  );
+                lineTotal =
+                  unitPrice *
+                  finalQty;
               }
             }
           }
-        );
+        }
 
-      /*
-       * =====================================================
-       * UPDATE SUBTOTAL
-       * =====================================================
-       */
-      updateCheckoutDrawerSubtotal({
-        cart: responseCart,
-      });
+        //console.log(typeof $.fn.createAfterpayWidget);
 
-      resetShippingSignatureAfterCartChange();
+        if (
+          typeof $.fn.createAfterpayWidget ===
+          "function"
+        ) {
+          createAfterpayWidget();
+        }
 
-      /*
-       * =====================================================
-       * FINAL FREE GIFT CART / FREE SAMPLE PRIORITY
-       * =====================================================
-       *
-       * response.cart may contain the pre-Free-Gift cart.
-       *
-       * response.freeGift.cart is the final backend cart.
-       */
-      let finalCheckoutCart =
-        responseCart;
+        /*
+         * =====================================================
+         * UPDATE CURRENT QTY UI
+         * =====================================================
+         */
+        valEl.textContent =
+          finalQty;
 
-      if (
-        response.freeGift &&
-        Array.isArray(
-          response.freeGift.cart
-        )
-      ) {
+        /*
+         * =====================================================
+         * UPDATE CURRENT LINE PRICE
+         * =====================================================
+         */
+        if (
+          lineTotal !== null &&
+          !isNaN(lineTotal)
+        ) {
 
-        finalCheckoutCart =
-          response.freeGift.cart;
+          const priceEl =
+            row.querySelector(
+              ".order-item-price-current"
+            );
 
-      } else if (
-        response.freeGift &&
-        response.freeGift.cart &&
-        Array.isArray(
-          response.freeGift.cart.Cart
-        )
-      ) {
+          if (priceEl) {
 
-        finalCheckoutCart =
-          response.freeGift.cart.Cart;
-      }
+            priceEl.textContent =
+              "$" +
+              lineTotal.toFixed(2);
+          }
+        }
 
-      /*
-       * =====================================================
-       * CHECK FINAL FREE GIFT
-       * =====================================================
-       */
-      const finalCartHasFreeGift =
-        Array.isArray(
-          finalCheckoutCart
-        ) &&
-        finalCheckoutCart.some(
-          function (item) {
+        /*
+         * =====================================================
+         * UPDATE DUPLICATE PRODUCT ROWS
+         * =====================================================
+         */
+        document
+          .querySelectorAll(
+            '.order-item-row[data-product-id="' +
+            productId +
+            '"]'
+          )
+          .forEach(
+            function (itemRow) {
 
-            if (!item) {
-              return false;
+              const quantityElement =
+                itemRow.querySelector(
+                  ".qty-value"
+                );
+
+              if (
+                quantityElement
+              ) {
+
+                quantityElement.textContent =
+                  finalQty;
+              }
+
+              if (
+                lineTotal !== null &&
+                !isNaN(lineTotal)
+              ) {
+
+                const priceElement =
+                  itemRow.querySelector(
+                    ".order-item-price-current"
+                  );
+
+                if (
+                  priceElement
+                ) {
+
+                  priceElement.textContent =
+                    "$" +
+                    lineTotal.toFixed(
+                      2
+                    );
+                }
+              }
             }
+          );
 
-            return String(
-              item.IS_Free_Gift ??
+        /*
+         * =====================================================
+         * UPDATE SUBTOTAL
+         * =====================================================
+         */
+        updateCheckoutDrawerSubtotal({
+          cart: responseCart,
+        });
+
+        resetShippingSignatureAfterCartChange();
+
+        /*
+         * =====================================================
+         * FINAL FREE GIFT CART / FREE SAMPLE PRIORITY
+         * =====================================================
+         *
+         * response.cart may contain the pre-Free-Gift cart.
+         *
+         * response.freeGift.cart is the final backend cart.
+         */
+        let finalCheckoutCart =
+          responseCart;
+
+        if (
+          response.freeGift &&
+          Array.isArray(
+            response.freeGift.cart
+          )
+        ) {
+
+          finalCheckoutCart =
+            response.freeGift.cart;
+
+        } else if (
+          response.freeGift &&
+          response.freeGift.cart &&
+          Array.isArray(
+            response.freeGift.cart.Cart
+          )
+        ) {
+
+          finalCheckoutCart =
+            response.freeGift.cart.Cart;
+        }
+
+        /*
+         * =====================================================
+         * CHECK FINAL FREE GIFT
+         * =====================================================
+         */
+        const finalCartHasFreeGift =
+          Array.isArray(
+            finalCheckoutCart
+          ) &&
+          finalCheckoutCart.some(
+            function (item) {
+
+              if (!item) {
+                return false;
+              }
+
+              return String(
+                item.IS_Free_Gift ??
                 item.Is_Free_Gift ??
                 item.is_free_gift ??
                 ""
-            ).toLowerCase() ===
-              "yes";
-          }
-        );
-
-      /*
-       * =====================================================
-       * CHECK FINAL FREE SAMPLE
-       * =====================================================
-       *
-       * This is intentionally kept for detecting the
-       * final backend state, but it is NOT used to prevent
-       * stale Free Sample UI removal.
-       */
-      const finalCartHasFreeSample =
-        Array.isArray(
-          finalCheckoutCart
-        ) &&
-        finalCheckoutCart.some(
-          function (item) {
-
-            if (!item) {
-              return false;
+              ).toLowerCase() ===
+                "yes";
             }
+          );
 
-            return String(
-              item.Is_Free_Sample ??
+        /*
+         * =====================================================
+         * CHECK FINAL FREE SAMPLE
+         * =====================================================
+         *
+         * This is intentionally kept for detecting the
+         * final backend state, but it is NOT used to prevent
+         * stale Free Sample UI removal.
+         */
+        const finalCartHasFreeSample =
+          Array.isArray(
+            finalCheckoutCart
+          ) &&
+          finalCheckoutCart.some(
+            function (item) {
+
+              if (!item) {
+                return false;
+              }
+
+              return String(
+                item.Is_Free_Sample ??
                 item.IS_Free_Sample ??
                 item.is_free_sample ??
                 ""
-            ).toLowerCase() ===
-              "yes";
+              ).toLowerCase() ===
+                "yes";
+            }
+          );
+
+        /*
+         * =====================================================
+         * FREE GIFT HAS PRIORITY OVER FREE SAMPLE
+         * =====================================================
+         *
+         * IMPORTANT:
+         *
+         * Once the FINAL backend response contains a
+         * Free Gift, Free Sample must NEVER remain visible
+         * in the checkout UI.
+         *
+         * We intentionally do NOT require:
+         *
+         *     !finalCartHasFreeSample
+         *
+         * because the browser can still contain a stale
+         * Free Sample DOM row even after backend processing
+         * has removed it.
+         */
+        if (
+          finalCartHasFreeGift
+        ) {
+
+          //console.log("FREE GIFT PRIORITY: removing all Free Sample UI");
+
+          /*
+           * Remove stale Free Sample rows globally.
+           *
+           * This covers:
+           *
+           * 1. Main checkout summary
+           * 2. Cart drawer
+           * 3. Duplicate Free Sample rows
+           */
+          document
+            .querySelectorAll(
+              '.order-item-row[data-free-sample="1"]'
+            )
+            .forEach(
+              function (sampleRow) {
+
+                sampleRow.remove();
+              }
+            );
+
+          /*
+           * Sync checkout summary using the FINAL
+           * backend cart.
+           */
+          if (
+            typeof syncCheckoutSummaryAfterCartChange ===
+            "function"
+          ) {
+
+            syncCheckoutSummaryAfterCartChange(
+              finalCheckoutCart
+            );
+          }
+
+          /*
+           * Update cart count using the FINAL cart.
+           */
+          if (
+            typeof updateCartItemCountAfterChange ===
+            "function"
+          ) {
+
+            updateCartItemCountAfterChange(
+              finalCheckoutCart
+            );
+          }
+        }
+
+        /*
+         * =====================================================
+         * FREE SAMPLE RULE CHANGE
+         * =====================================================
+         *
+         * IMPORTANT:
+         *
+         * We ONLY touch Free Sample UI when backend
+         * explicitly says the Free Sample rule changed.
+         */
+        if (
+          response.free_sample_rule_changed ===
+          true
+        ) {
+
+          /*
+           * Remove OLD Free Sample UI.
+           */
+          document
+            .querySelectorAll(
+              '.order-item-row[data-free-sample="1"]'
+            )
+            .forEach(
+              function (sampleRow) {
+
+                sampleRow.remove();
+              }
+            );
+
+          /*
+           * Sync checkout summary.
+           */
+          if (
+            typeof syncCheckoutSummaryAfterCartChange ===
+            "function"
+          ) {
+
+            syncCheckoutSummaryAfterCartChange(
+              responseCart
+            );
+          }
+
+          /*
+           * Open popup for NEW Free Sample rule.
+           */
+          if (
+            typeof checkFreeSamplePopup ===
+            "function"
+          ) {
+
+            checkFreeSamplePopup();
+          }
+        }
+
+        /*
+         * =====================================================
+         * SAME RULE:
+         *
+         * Nothing happens to Free Sample UI.
+         * =====================================================
+         */
+
+      })
+      .fail(function (xhr) {
+
+        const response =
+          xhr.responseJSON || {};
+
+        console.error(
+          "Cart quantity update request failed:",
+          response
+        );
+      })
+      .always(function () {
+
+        delete row.dataset.cartUpdating;
+
+        buttons.forEach(
+          function (button) {
+            button.disabled = false;
           }
         );
 
-      /*
-       * =====================================================
-       * FREE GIFT HAS PRIORITY OVER FREE SAMPLE
-       * =====================================================
-       *
-       * IMPORTANT:
-       *
-       * Once the FINAL backend response contains a
-       * Free Gift, Free Sample must NEVER remain visible
-       * in the checkout UI.
-       *
-       * We intentionally do NOT require:
-       *
-       *     !finalCartHasFreeSample
-       *
-       * because the browser can still contain a stale
-       * Free Sample DOM row even after backend processing
-       * has removed it.
-       */
-      if (
-        finalCartHasFreeGift
-      ) {
-
-        console.log("FREE GIFT PRIORITY: removing all Free Sample UI");
-
-        /*
-         * Remove stale Free Sample rows globally.
-         *
-         * This covers:
-         *
-         * 1. Main checkout summary
-         * 2. Cart drawer
-         * 3. Duplicate Free Sample rows
-         */
-        document
-          .querySelectorAll(
-            '.order-item-row[data-free-sample="1"]'
-          )
-          .forEach(
-            function (sampleRow) {
-
-              sampleRow.remove();
-            }
-          );
-
-        /*
-         * Sync checkout summary using the FINAL
-         * backend cart.
-         */
-        if (
-          typeof syncCheckoutSummaryAfterCartChange ===
-          "function"
-        ) {
-
-          syncCheckoutSummaryAfterCartChange(
-            finalCheckoutCart
-          );
-        }
-
-        /*
-         * Update cart count using the FINAL cart.
-         */
-        if (
-          typeof updateCartItemCountAfterChange ===
-          "function"
-        ) {
-
-          updateCartItemCountAfterChange(
-            finalCheckoutCart
-          );
-        }
-      }
-
-      /*
-       * =====================================================
-       * FREE SAMPLE RULE CHANGE
-       * =====================================================
-       *
-       * IMPORTANT:
-       *
-       * We ONLY touch Free Sample UI when backend
-       * explicitly says the Free Sample rule changed.
-       */
-      if (
-        response.free_sample_rule_changed ===
-        true
-      ) {
-
-        /*
-         * Remove OLD Free Sample UI.
-         */
-        document
-          .querySelectorAll(
-            '.order-item-row[data-free-sample="1"]'
-          )
-          .forEach(
-            function (sampleRow) {
-
-              sampleRow.remove();
-            }
-          );
-
-        /*
-         * Sync checkout summary.
-         */
-        if (
-          typeof syncCheckoutSummaryAfterCartChange ===
-          "function"
-        ) {
-
-          syncCheckoutSummaryAfterCartChange(
-            responseCart
-          );
-        }
-
-        /*
-         * Open popup for NEW Free Sample rule.
-         */
-        if (
-          typeof checkFreeSamplePopup ===
-          "function"
-        ) {
-
-          checkFreeSamplePopup();
-        }
-      }
-
-      /*
-       * =====================================================
-       * SAME RULE:
-       *
-       * Nothing happens to Free Sample UI.
-       * =====================================================
-       */
-
-    })
-    .fail(function (xhr) {
-
-      const response =
-        xhr.responseJSON || {};
-
-      console.error(
-        "Cart quantity update request failed:",
-        response
-      );
-    })
-    .always(function () {
-
-      delete row.dataset.cartUpdating;
-
-      buttons.forEach(
-        function (button) {
-          button.disabled = false;
-        }
-      );
-
-      showLoader(false);
-    });
-}
-
-function handleFreeGiftResponse(response) {
-  response = response || {};
-
-  const freeGift =
-    response.freeGift ||
-    response.free_gift ||
-    null;
-
-  /*
-   * =====================================================
-   * FINAL BACKEND CART
-   * =====================================================
-   */
-  let cart = [];
-  let hasFinalCart = false;
-
-  if (Array.isArray(response.cart)) {
-    cart = response.cart;
-    hasFinalCart = true;
-  } else if (
-    response.cart &&
-    Array.isArray(response.cart.Cart)
-  ) {
-    cart = response.cart.Cart;
-    hasFinalCart = true;
+        showLoader(false);
+      });
   }
 
-  if (freeGift && Array.isArray(freeGift.cart)) {
-    cart = freeGift.cart;
-    hasFinalCart = true;
-  } else if (
-    freeGift &&
-    freeGift.cart &&
-    Array.isArray(freeGift.cart.Cart)
-  ) {
-    cart = freeGift.cart.Cart;
-    hasFinalCart = true;
-  }
+  function handleFreeGiftResponse(response) {
+    response = response || {};
 
-  /*
-   * =====================================================
-   * STATUS
-   * =====================================================
-   */
-  const status = String(
-    freeGift && freeGift.status
-      ? freeGift.status
-      : ""
-  ).toLowerCase();
+    const freeGift =
+      response.freeGift ||
+      response.free_gift ||
+      null;
 
-  const removedFreeGiftCount = parseInt(
-    freeGift && freeGift.removedFreeGiftCount
-      ? freeGift.removedFreeGiftCount
-      : 0,
-    10
-  );
+    /*
+     * =====================================================
+     * FINAL BACKEND CART
+     * =====================================================
+     */
+    let cart = [];
+    let hasFinalCart = false;
 
-  /*
-   * =====================================================
-   * IDENTIFY FREE GIFTS IN FINAL BACKEND CART
-   * =====================================================
-   */
-  const backendGiftProductIds = new Set();
-
-  const freeGifts = cart.filter(function (item) {
-    if (!item) {
-      return false;
+    if (Array.isArray(response.cart)) {
+      cart = response.cart;
+      hasFinalCart = true;
+    } else if (
+      response.cart &&
+      Array.isArray(response.cart.Cart)
+    ) {
+      cart = response.cart.Cart;
+      hasFinalCart = true;
     }
 
-    const isFreeGift =
-      String(
-        item.IS_Free_Gift ||
-        item.Is_Free_Gift ||
-        item.is_free_gift ||
-        ""
-      ).toLowerCase() === "yes";
-
-    if (!isFreeGift) {
-      return false;
+    if (freeGift && Array.isArray(freeGift.cart)) {
+      cart = freeGift.cart;
+      hasFinalCart = true;
+    } else if (
+      freeGift &&
+      freeGift.cart &&
+      Array.isArray(freeGift.cart.Cart)
+    ) {
+      cart = freeGift.cart.Cart;
+      hasFinalCart = true;
     }
 
-    const productId = parseInt(
-      item.ProductID ||
-      item.product_id ||
-      item.products_id ||
-      item.id ||
-      0,
+    /*
+     * =====================================================
+     * STATUS
+     * =====================================================
+     */
+    const status = String(
+      freeGift && freeGift.status
+        ? freeGift.status
+        : ""
+    ).toLowerCase();
+
+    const removedFreeGiftCount = parseInt(
+      freeGift && freeGift.removedFreeGiftCount
+        ? freeGift.removedFreeGiftCount
+        : 0,
       10
     );
 
-    if (productId > 0) {
-      backendGiftProductIds.add(productId);
+    /*
+     * =====================================================
+     * IDENTIFY FREE GIFTS IN FINAL BACKEND CART
+     * =====================================================
+     */
+    const backendGiftProductIds = new Set();
+
+    const freeGifts = cart.filter(function (item) {
+      if (!item) {
+        return false;
+      }
+
+      const isFreeGift =
+        String(
+          item.IS_Free_Gift ||
+          item.Is_Free_Gift ||
+          item.is_free_gift ||
+          ""
+        ).toLowerCase() === "yes";
+
+      if (!isFreeGift) {
+        return false;
+      }
+
+      const productId = parseInt(
+        item.ProductID ||
+        item.product_id ||
+        item.products_id ||
+        item.id ||
+        0,
+        10
+      );
+
+      if (productId > 0) {
+        backendGiftProductIds.add(productId);
+      }
+
+      return true;
+    });
+
+    const finalCartHasFreeGift =
+      backendGiftProductIds.size > 0;
+
+    /*
+     * =====================================================
+     * REMOVE STALE FREE GIFT UI
+     * =====================================================
+     *
+     * Backend final cart is the source of truth.
+     */
+    if (hasFinalCart) {
+      document
+        .querySelectorAll(
+          '.order-item-row[data-free-gift="1"]'
+        )
+        .forEach(function (row) {
+          const rowProductId = parseInt(
+            row.getAttribute("data-product-id") || "0",
+            10
+          );
+
+          if (
+            rowProductId <= 0 ||
+            !backendGiftProductIds.has(rowProductId)
+          ) {
+            row.remove();
+          }
+        });
     }
 
-    return true;
-  });
+    /*
+     * =====================================================
+     * FREE GIFT PRIORITY
+     * =====================================================
+     *
+     * When a Free Gift is present in the final cart,
+     * remove stale Free Sample UI rows.
+     */
+    const freeGiftRequiresPriority =
+      finalCartHasFreeGift ||
+      status === "popup" ||
+      status === "auto_add" ||
+      status === "auto_added";
 
-  const finalCartHasFreeGift =
-    backendGiftProductIds.size > 0;
+    if (freeGiftRequiresPriority) {
+      document
+        .querySelectorAll(
+          '.order-item-row[data-free-sample="1"]'
+        )
+        .forEach(function (sampleRow) {
+          sampleRow.remove();
+        });
+    }
 
-  /*
-   * =====================================================
-   * REMOVE STALE FREE GIFT UI
-   * =====================================================
-   *
-   * Backend final cart is the source of truth.
-   */
-  if (hasFinalCart) {
-    document
-      .querySelectorAll(
-        '.order-item-row[data-free-gift="1"]'
-      )
-      .forEach(function (row) {
-        const rowProductId = parseInt(
-          row.getAttribute("data-product-id") || "0",
-          10
-        );
-
-        if (
-          rowProductId <= 0 ||
-          !backendGiftProductIds.has(rowProductId)
-        ) {
+    /*
+     * =====================================================
+     * REMOVE OLD FREE GIFT UI
+     * =====================================================
+     *
+     * Do not return immediately here.
+     * The same response may contain a new rule's
+     * popup or auto-added gift.
+     */
+    if (removedFreeGiftCount > 0) {
+      document
+        .querySelectorAll(
+          '.order-item-row[data-free-gift="1"]'
+        )
+        .forEach(function (row) {
           row.remove();
-        }
+        });
+    }
+
+    /*
+     * =====================================================
+     * TERMINAL STATUSES
+     * =====================================================
+     */
+    if (
+      [
+        "removed",
+        "no_rule",
+        "none",
+        "qualification_lost"
+      ].includes(status)
+    ) {
+      updateCartItemCountAfterChange(cart);
+      return;
+    }
+
+    /*
+     * =====================================================
+     * NO FREE GIFT RESPONSE
+     * =====================================================
+     */
+    if (!freeGift) {
+      updateCartItemCountAfterChange(cart);
+      return;
+    }
+
+    /*
+     * =====================================================
+     * CUSTOMER MUST SELECT A GIFT
+     * =====================================================
+     */
+    if (status === "popup") {
+      openFreeGiftPopup(freeGift);
+
+      updateCartItemCountAfterChange(cart);
+      return;
+    }
+
+    /*
+     * =====================================================
+     * BACKEND ALREADY ADDED THE GIFT
+     * =====================================================
+     */
+    if (
+      status === "auto_add" ||
+      status === "auto_added"
+    ) {
+      freeGifts.forEach(function (gift) {
+        appendNewFreeGiftCartItem(gift);
       });
-  }
 
-  /*
-   * =====================================================
-   * FREE GIFT PRIORITY
-   * =====================================================
-   *
-   * When a Free Gift is present in the final cart,
-   * remove stale Free Sample UI rows.
-   */
-  const freeGiftRequiresPriority =
-    finalCartHasFreeGift ||
-    status === "popup" ||
-    status === "auto_add" ||
-    status === "auto_added";
+      updateCartItemCountAfterChange(cart);
+      return;
+    }
 
-  if (freeGiftRequiresPriority) {
-    document
-      .querySelectorAll(
-        '.order-item-row[data-free-sample="1"]'
-      )
-      .forEach(function (sampleRow) {
-        sampleRow.remove();
-      });
-  }
-
-  /*
-   * =====================================================
-   * REMOVE OLD FREE GIFT UI
-   * =====================================================
-   *
-   * Do not return immediately here.
-   * The same response may contain a new rule's
-   * popup or auto-added gift.
-   */
-  if (removedFreeGiftCount > 0) {
-    document
-      .querySelectorAll(
-        '.order-item-row[data-free-gift="1"]'
-      )
-      .forEach(function (row) {
-        row.remove();
-      });
-  }
-
-  /*
-   * =====================================================
-   * TERMINAL STATUSES
-   * =====================================================
-   */
-  if (
-    [
-      "removed",
-      "no_rule",
-      "none",
-      "qualification_lost"
-    ].includes(status)
-  ) {
-    updateCartItemCountAfterChange(cart);
-    return;
-  }
-
-  /*
-   * =====================================================
-   * NO FREE GIFT RESPONSE
-   * =====================================================
-   */
-  if (!freeGift) {
-    updateCartItemCountAfterChange(cart);
-    return;
-  }
-
-  /*
-   * =====================================================
-   * CUSTOMER MUST SELECT A GIFT
-   * =====================================================
-   */
-  if (status === "popup") {
-    openFreeGiftPopup(freeGift);
-
-    updateCartItemCountAfterChange(cart);
-    return;
-  }
-
-  /*
-   * =====================================================
-   * BACKEND ALREADY ADDED THE GIFT
-   * =====================================================
-   */
-  if (
-    status === "auto_add" ||
-    status === "auto_added"
-  ) {
+    /*
+     * =====================================================
+     * FALLBACK
+     * =====================================================
+     *
+     * Render only gifts present in the final backend cart.
+     */
     freeGifts.forEach(function (gift) {
       appendNewFreeGiftCartItem(gift);
     });
 
     updateCartItemCountAfterChange(cart);
-    return;
   }
-
-  /*
-   * =====================================================
-   * FALLBACK
-   * =====================================================
-   *
-   * Render only gifts present in the final backend cart.
-   */
-  freeGifts.forEach(function (gift) {
-    appendNewFreeGiftCartItem(gift);
-  });
-
-  updateCartItemCountAfterChange(cart);
-}
 
   function addFreeGiftFromCheckout(productId, freeProductId, oneGift) {
     productId = parseInt(productId || 0, 10);
@@ -5947,15 +5865,15 @@ function handleFreeGiftResponse(response) {
       gift_wrap: "No",
 
       free_gift:
-    1,
+        1,
 
-	free_product_id:
-		freeProductId,
+      free_product_id:
+        freeProductId,
 
-	free_gift_one:
-		oneGift !== false
-			? 1
-			: 0
+      free_gift_one:
+        oneGift !== false
+          ? 1
+          : 0
     })
       .done(function (response) {
         if (
@@ -6019,116 +5937,120 @@ function handleFreeGiftResponse(response) {
    * Load Free Sample popup from backend.
    */
 
- function checkFreeGiftOnPageLoad() {
-
+  function checkFreeGiftOnPageLoad() {
+    if (sessionStorage.getItem("freeGiftClosed") == "true") {
+        return;
+    }
     const freeGiftUrl =
-        "/checkoutnew/free-gift/resolve";
+      "/checkoutnew/free-gift/resolve";
 
-    console.log(
-        "FREE GIFT PAGE LOAD REQUEST",
-        freeGiftUrl
-    );
+    // console.log(
+    //   "FREE GIFT PAGE LOAD REQUEST",
+    //   freeGiftUrl
+    // );
 
     $.ajax({
-        type: "POST",
-        url: freeGiftUrl,
+      type: "POST",
+      url: freeGiftUrl,
 
-        headers: {
-            "X-CSRF-TOKEN": csrfToken
-        },
+      headers: {
+        "X-CSRF-TOKEN": csrfToken
+      },
 
-        dataType: "json"
+      dataType: "json"
     })
-    .done(function (response) {
-
-        console.log(
-            "FREE GIFT PAGE LOAD RESPONSE",
-            response
-        );
+      .done(function (response) {
+        // console.log(
+        //   "FREE GIFT PAGE LOAD RESPONSE",
+        //   response
+        // );
 
         if (!response) {
-            console.error(
-                "FREE GIFT EMPTY RESPONSE"
-            );
-            return;
+          console.error(
+            "FREE GIFT EMPTY RESPONSE"
+          );
+          return;
         }
 
-        console.log(
-            "FREE GIFT STATUS:",
-            response.status
-        );
+        // console.log(
+        //   "FREE GIFT STATUS:",
+        //   response.status
+        // );
 
-        console.log(
-            "FREE GIFT POPUP HTML LENGTH:",
-            response.popupHtml
-                ? response.popupHtml.length
-                : 0
-        );
+        // console.log(
+        //   "FREE GIFT POPUP HTML LENGTH:",
+        //   response.popupHtml
+        //     ? response.popupHtml.length
+        //     : 0
+        // );
 
         handleFreeGiftResponse({
-            freeGift: response,
-            cart: response.cart || []
+          freeGift: response,
+          cart: response.cart || []
         });
-    })
-    .fail(function (xhr) {
+      })
+      .fail(function (xhr) {
 
         console.error(
-            "FREE GIFT PAGE LOAD FAILED",
-            xhr.status,
-            xhr.responseJSON || xhr.responseText
+          "FREE GIFT PAGE LOAD FAILED",
+          xhr.status,
+          xhr.responseJSON || xhr.responseText
         );
-    });
-}
-   function checkFreeSamplePopup() {
-  const popupUrl =
-    urls.freeSamplePopup ||
-    "/checkoutnew/free-sample/popup";
-
-  if (!popupUrl) {
-    return;
+      });
   }
-
-  $.ajax({
-    type: "POST",
-
-    url: popupUrl,
-
-    headers: {
-      "X-CSRF-TOKEN": csrfToken,
-    },
-
-    dataType: "json",
-  })
-    .done(function (response) {
-      if (!response) {
+  function checkFreeSamplePopup() {
+    if (sessionStorage.getItem("freeSampleClosed") == "true") {
         return;
-      }
+    }
+    const popupUrl =
+      urls.freeSamplePopup ||
+      "/checkoutnew/free-sample/popup";
 
-      if (
-        response.success !== true &&
-        response.status !== "success"
-      ) {
-        return;
-      }
+    if (!popupUrl) {
+      return;
+    }
 
-      const popupHtml =
-        response.html || "";
+    $.ajax({
+      type: "POST",
 
-      if (!popupHtml) {
-        return;
-      }
+      url: popupUrl,
 
-      openFreeSamplePopup(
-        popupHtml
-      );
+      headers: {
+        "X-CSRF-TOKEN": csrfToken,
+      },
+
+      dataType: "json",
     })
-    .fail(function (xhr) {
-      console.error(
-        "Free Sample popup request failed:",
-        xhr.responseJSON || {}
-      );
-    });
-}
+      .done(function (response) {
+        if (!response) {
+          return;
+        }
+
+        if (
+          response.success !== true &&
+          response.status !== "success"
+        ) {
+          return;
+        }
+
+        const popupHtml =
+          response.html || "";
+
+        if (!popupHtml) {
+          return;
+        }
+
+        openFreeSamplePopup(
+          popupHtml
+        );
+      })
+      .fail(function (xhr) {
+        console.error(
+          "Free Sample popup request failed:",
+          xhr.responseJSON || {}
+        );
+      });
+  }
   $(document).off("click.maxaromaFreeSample", "#btnfreeSample");
 
   $(document).on("click.maxaromaFreeSample", "#btnfreeSample", function (e) {
@@ -6144,13 +6066,13 @@ function handleFreeGiftResponse(response) {
       .get();
 
     if (!selectedProducts.length) {
-	  e.preventDefault();
-	  e.stopImmediatePropagation();
+      e.preventDefault();
+      e.stopImmediatePropagation();
 
-	  alert("Please select free sample products.");
+      alert("Please select free sample products.");
 
-	  return false;
-	}
+      return false;
+    }
 
     if (button.dataset.freeSampleAdding === "1") {
       return;
@@ -6176,12 +6098,12 @@ function handleFreeGiftResponse(response) {
       },
     })
       .done(function (response) {
-    if (!response || response.success !== true) {
-        return;
-    }
+        if (!response || response.success !== true) {
+          return;
+        }
 
-    window.location.reload();
-})
+        window.location.reload();
+      })
       .fail(function (xhr) {
         console.error("Free Sample add failed:", xhr.responseJSON || {});
       })
@@ -6235,9 +6157,9 @@ function handleFreeGiftResponse(response) {
      * No gift selected.
      */
     if (!selectedProducts.length) {
-		    alert(
+      alert(
         'Please select Free Gift products.'
-    );
+      );
 
       return;
     }
@@ -6264,28 +6186,28 @@ function handleFreeGiftResponse(response) {
      */
     let sequence = $.Deferred().resolve().promise();
 
-selectedProducts.forEach(function (productId) {
-  sequence = sequence.then(function () {
-    return addFreeGiftFromCheckout(
-      productId,
-      freeProductId,
-      false
-    );
-  });
-});
+    selectedProducts.forEach(function (productId) {
+      sequence = sequence.then(function () {
+        return addFreeGiftFromCheckout(
+          productId,
+          freeProductId,
+          false
+        );
+      });
+    });
 
-sequence
-  .done(function () {
-    window.location.reload();
-  })
-  .fail(function (xhr) {
-    console.error(
-      "Free Gift popup add failed:",
-      xhr && xhr.responseJSON
-        ? xhr.responseJSON
-        : xhr
-    );
-  })
+    sequence
+      .done(function () {
+        window.location.reload();
+      })
+      .fail(function (xhr) {
+        console.error(
+          "Free Gift popup add failed:",
+          xhr && xhr.responseJSON
+            ? xhr.responseJSON
+            : xhr
+        );
+      })
       .fail(function (xhr) {
         console.error(
           "Free Gift popup add failed:",
@@ -6299,259 +6221,277 @@ sequence
       });
   });
   function removeItem(btn) {
-  const row = btn.closest(".order-item-row");
+    $(".cart-success, .cart-error").hide();
+    const row = btn.closest(".order-item-row");
 
-  if (!row) {
-    return;
-  }
+    if (!row) {
+      return;
+    }
 
-  const cartId = parseInt(row.dataset.cartId || "", 10);
+    const cartId = parseInt(row.dataset.cartId || "", 10);
 
-  if (Number.isNaN(cartId) || cartId < 0) {
-    console.error("removeItem: cart_id missing", row);
-    return;
-  }
+    if (Number.isNaN(cartId) || cartId < 0) {
+      console.error("removeItem: cart_id missing", row);
+      return;
+    }
 
-  /*
-   * =====================================================
-   * PREVENT DUPLICATE REMOVE REQUESTS
-   * =====================================================
-   */
-  if (row.dataset.cartRemoving === "1") {
-    return;
-  }
+    /*
+     * =====================================================
+     * PREVENT DUPLICATE REMOVE REQUESTS
+     * =====================================================
+     */
+    if (row.dataset.cartRemoving === "1") {
+      return;
+    }
 
-  row.dataset.cartRemoving = "1";
-  btn.disabled = true;
+    row.dataset.cartRemoving = "1";
+    btn.disabled = true;
 
-  removeFromCheckoutCart(cartId)
-    .done(function (response) {
-
-	  /*
-	   * Handle redirect before normal cart processing.
-	   */
-	  if (
-		response &&
-		(
-		  response.status === "redirect" ||
-		  response.redirect
-		)
-	  ) {
-		window.location.href =
-		  response.redirect || "/shoppingcart";
-
-		return;
-	  }
-
-      /*
-       * =====================================================
-       * FINAL BACKEND CART
-       * =====================================================
-       *
-       * Backend response is the source of truth.
-       */
-      let cart = [];
-
-      if (Array.isArray(response.cart)) {
-        cart = response.cart;
-      } else if (
-        response.cart &&
-        Array.isArray(response.cart.Cart)
-      ) {
-        cart = response.cart.Cart;
-      }
-
-      /*
-       * =====================================================
-       * EMPTY CART
-       * =====================================================
-       */
-			  if (
-			response.status === "redirect" ||
-			response.redirect
-		) {
-			window.location.href =
-				response.redirect || "/shoppingcart";
-
-			return;
-		}
-
-/*
- * EMPTY CART
- */
-if (!cart.length) {
-    window.location.href = "/shoppingcart";
-
-    return;
-}
-
-      /*
-       * =====================================================
-       * ONLY GIFT CERTIFICATE PURCHASE
-       * =====================================================
-       */
-      if (
-        response.checkout &&
-        (
-          response.checkout.onlyGCPurchased === 1 ||
-          response.checkout.onlyGCPurchased === "1"
-        )
-      ) {
-        window.location.reload();
-
-        return;
-      }
-
-      /*
-       * =====================================================
-       * REMOVE DELETED PRODUCT FROM UI
-       * =====================================================
-       *
-       * Remove the deleted product from every checkout
-       * location immediately.
-       */
-      document
-        .querySelectorAll(
-          '.order-item-row[data-cart-id="' + cartId + '"]'
-        )
-        .forEach(function (element) {
-          element.style.transition = "opacity .15s ease";
-          element.style.opacity = "0";
-
-          setTimeout(function () {
-            element.remove();
-          }, 150);
-        });
-
-      /*
-       * =====================================================
-       * RE-SYNC ORDER SUMMARY
-       * =====================================================
-       *
-       * The backend cart is the source of truth.
-       */
-      setTimeout(function () {
-        syncCheckoutSummaryAfterCartChange(cart);
+    removeFromCheckoutCart(cartId)
+      .done(function (response) {
 
         /*
-         * =================================================
-         * UPDATE CHECKOUT TOTALS
-         * =================================================
-         *
-         * IMPORTANT:
-         *
-         * After removing a product, coupon / auto discount /
-         * quantity discount / tax / protection etc. can change.
-         *
-         * The backend checkout response must therefore be
-         * used to update the totals immediately.
-         */
-        if (response.checkout) {
-          updateTotals(response.checkout);
-
-          /*
-           * =================================================
-           * COUPON UI SYNC
-           * =================================================
-           *
-           * Example:
-           *
-           * Coupon applies only to:
-           * UP730870159378
-           *
-           * Remove UP730870159378
-           *
-           * Backend re-validates coupon
-           *
-           * Coupon becomes invalid
-           *
-           * Remove the "TESTCODEQUALDEV Applied" row
-           * immediately without page refresh.
-           */
-          const totals =
-            response.checkout.totals ||
-            response.checkout.Totals ||
-            {};
-
-          const discounts =
-            totals.Discounts ||
-            totals.discounts ||
-            {};
-
-          const couponDiscount =
-            discounts.CouponDiscount ||
-            discounts.couponDiscount ||
-            null;
-
-          /*
-           * If CouponDiscount is no longer present,
-           * remove the applied coupon UI.
-           *
-           * Do NOT remove Yotpo Reward UI here.
-           */
-          if (
-            !couponDiscount ||
-            parseFloat(
-              couponDiscount.discount || 0
-            ) <= 0
-          ) {
-            document
-              .querySelectorAll(".coupon-applied")
-              .forEach(function (element) {
-                element.remove();
-              });
-
-            const promoResult =
-              document.getElementById("promo-result");
-
-            if (promoResult) {
-              delete promoResult.dataset.couponCode;
-            }
-          }
-        }
-
-        /*
-         * =================================================
-         * UPDATE SUBTOTAL / CART SUMMARY
-         * =================================================
-         */
-        updateCheckoutDrawerSubtotal({
-          cart: cart,
-        });
-
-        /*
-         * =================================================
-         * RESET SHIPPING SIGNATURE
-         * =================================================
-         */
-        resetShippingSignatureAfterCartChange();
-        updateViewAll();
-        /*
-         * =================================================
-         * REFRESH SHIPPING METHODS
-         * =================================================
+         * Handle redirect before normal cart processing.
          */
         if (
-          typeof loadShippingMethods === "function"
+          response &&
+          (
+            response.status === "redirect" ||
+            response.redirect
+          )
         ) {
-          loadShippingMethods();
+          window.location.href =
+            response.redirect || "/shoppingcart";
+
+          return;
         }
-      }, 180);
-    })
-    .fail(function (xhr) {
-      const response =
-        xhr.responseJSON || {};
 
-      console.error(
-        "Cart remove request failed:",
-        response
-      );
+        /*
+         * =====================================================
+         * FINAL BACKEND CART
+         * =====================================================
+         *
+         * Backend response is the source of truth.
+         */
+        let cart = [];
 
-      btn.disabled = false;
+        if (Array.isArray(response.cart)) {
+          cart = response.cart;
+        } else if (
+          response.cart &&
+          Array.isArray(response.cart.Cart)
+        ) {
+          cart = response.cart.Cart;
+        }
 
-      delete row.dataset.cartRemoving;
-    });
-}
+        /*
+         * =====================================================
+         * EMPTY CART
+         * =====================================================
+         */
+        if (
+          response.status === "redirect" ||
+          response.redirect
+        ) {
+          window.location.href =
+            response.redirect || "/shoppingcart";
+
+          return;
+        }
+
+        /*
+         * EMPTY CART
+         */
+        if (!cart.length) {
+          window.location.href = "/shoppingcart";
+
+          return;
+        }
+
+        /*
+         * =====================================================
+         * ONLY GIFT CERTIFICATE PURCHASE
+         * =====================================================
+         */
+        if (
+          response.checkout &&
+          (
+            response.checkout.onlyGCPurchased === 1 ||
+            response.checkout.onlyGCPurchased === "1"
+          )
+        ) {
+          window.location.reload();
+
+          return;
+        }
+
+        /*
+         * =====================================================
+         * REMOVE DELETED PRODUCT FROM UI
+         * =====================================================
+         *
+         * Remove the deleted product from every checkout
+         * location immediately.
+         */
+        document
+          .querySelectorAll(
+            '.order-item-row[data-cart-id="' + cartId + '"]'
+          )
+          .forEach(function (element) {
+            element.style.transition = "opacity .15s ease";
+            element.style.opacity = "0";
+
+            setTimeout(function () {
+              element.remove();
+            }, 150);
+          });
+
+        /*
+         * =====================================================
+         * RE-SYNC ORDER SUMMARY
+         * =====================================================
+         *
+         * The backend cart is the source of truth.
+         */
+        setTimeout(function () {
+          syncCheckoutSummaryAfterCartChange(cart);
+
+          /*
+           * =================================================
+           * UPDATE CHECKOUT TOTALS
+           * =================================================
+           *
+           * IMPORTANT:
+           *
+           * After removing a product, coupon / auto discount /
+           * quantity discount / tax / protection etc. can change.
+           *
+           * The backend checkout response must therefore be
+           * used to update the totals immediately.
+           */
+          if (response.checkout) {
+            var message = response.message || "";
+            if(message != '')
+            {
+              var messageDiv = document.createElement('div');
+              messageDiv.id = 'cart-success-message';
+              messageDiv.className = 'alert alert-success cart-success';
+              if(row.dataset.freeGift == '1')
+                messageDiv.textContent = "Free Gift removed from cart.";
+              else if(row.dataset.freeSample == '1')
+                messageDiv.textContent = "Free Sample removed from cart.";
+              else
+                messageDiv.textContent = message;
+              $(".order-items-list").prepend(messageDiv);
+              $("#cart-success-message").stop(true, true).show().delay(3000).queue(function () {
+                  $(this).remove();
+              });
+            }
+            updateTotals(response.checkout);
+
+            /*
+             * =================================================
+             * COUPON UI SYNC
+             * =================================================
+             *
+             * Example:
+             *
+             * Coupon applies only to:
+             * UP730870159378
+             *
+             * Remove UP730870159378
+             *
+             * Backend re-validates coupon
+             *
+             * Coupon becomes invalid
+             *
+             * Remove the "TESTCODEQUALDEV Applied" row
+             * immediately without page refresh.
+             */
+            const totals =
+              response.checkout.totals ||
+              response.checkout.Totals ||
+              {};
+
+            const discounts =
+              totals.Discounts ||
+              totals.discounts ||
+              {};
+
+            const couponDiscount =
+              discounts.CouponDiscount ||
+              discounts.couponDiscount ||
+              null;
+
+            /*
+             * If CouponDiscount is no longer present,
+             * remove the applied coupon UI.
+             *
+             * Do NOT remove Yotpo Reward UI here.
+             */
+            if (
+              !couponDiscount ||
+              parseFloat(
+                couponDiscount.discount || 0
+              ) <= 0
+            ) {
+              document
+                .querySelectorAll(".coupon-applied")
+                .forEach(function (element) {
+                  element.remove();
+                });
+
+              const promoResult =
+                document.getElementById("promo-result");
+
+              if (promoResult) {
+                delete promoResult.dataset.couponCode;
+              }
+            }
+          }
+
+          /*
+           * =================================================
+           * UPDATE SUBTOTAL / CART SUMMARY
+           * =================================================
+           */
+          updateCheckoutDrawerSubtotal({
+            cart: cart,
+          });
+
+          /*
+           * =================================================
+           * RESET SHIPPING SIGNATURE
+           * =================================================
+           */
+          resetShippingSignatureAfterCartChange();
+          updateViewAll();
+          /*
+           * =================================================
+           * REFRESH SHIPPING METHODS
+           * =================================================
+           */
+          if (
+            typeof loadShippingMethods === "function"
+          ) {
+            loadShippingMethods();
+          }
+        }, 180);
+      })
+      .fail(function (xhr) {
+        const response =
+          xhr.responseJSON || {};
+
+        console.error(
+          "Cart remove request failed:",
+          response
+        );
+
+        btn.disabled = false;
+
+        delete row.dataset.cartRemoving;
+      });
+  }
   function resetShippingSignatureAfterCartChange() {
     window.MaxaromaCheckout = window.MaxaromaCheckout || {};
 
@@ -6591,454 +6531,452 @@ if (!cart.length) {
     }
   }
 
- function syncCheckoutSummaryAfterCartChange_bk_26_10_2026(cart) {
-  if (!Array.isArray(cart)) {
-    return;
-  }
-
-  const mainList = document.getElementById("checkout-cart-items");
-  const drawerBody = document.querySelector(".cart-drawer-body");
-
-  if (!mainList || !drawerBody) {
-    updateCartItemCountAfterChange(cart);
-    return;
-  }
-
-  function getCartItemId(item) {
-    if (!item) {
-      return "";
+  function syncCheckoutSummaryAfterCartChange_bk_26_10_2026(cart) {
+    if (!Array.isArray(cart)) {
+      return;
     }
 
-    return String(
-      item.cart_id ??
+    const mainList = document.getElementById("checkout-cart-items");
+    const drawerBody = document.querySelector(".cart-drawer-body");
+
+    if (!mainList || !drawerBody) {
+      updateCartItemCountAfterChange(cart);
+      return;
+    }
+
+    function getCartItemId(item) {
+      if (!item) {
+        return "";
+      }
+
+      return String(
+        item.cart_id ??
         item.ProductID ??
         item.product_id ??
         item.id ??
         "",
-    );
-  }
-
-  function getRowIds(row) {
-    if (!row) {
-      return [];
+      );
     }
 
-    const ids = [];
+    function getRowIds(row) {
+      if (!row) {
+        return [];
+      }
 
-    const cartId = String(row.dataset.cartId || "");
-    const productId = String(row.dataset.productId || "");
+      const ids = [];
 
-    if (cartId !== "") {
-      ids.push(cartId);
+      const cartId = String(row.dataset.cartId || "");
+      const productId = String(row.dataset.productId || "");
+
+      if (cartId !== "") {
+        ids.push(cartId);
+      }
+
+      if (productId !== "" && !ids.includes(productId)) {
+        ids.push(productId);
+      }
+
+      return ids;
     }
 
-    if (productId !== "" && !ids.includes(productId)) {
-      ids.push(productId);
+    function rowMatchesId(row, itemId) {
+      return getRowIds(row).includes(String(itemId));
     }
 
-    return ids;
-  }
+    /*
+     * Backend cart is the source of truth.
+     * Exclude Free Gift / Free Sample from normal item rendering.
+     */
+    const normalCart = cart.filter(function (item) {
+      if (!item) {
+        return false;
+      }
 
-  function rowMatchesId(row, itemId) {
-    return getRowIds(row).includes(String(itemId));
-  }
-
-  /*
-   * Backend cart is the source of truth.
-   * Exclude Free Gift / Free Sample from normal item rendering.
-   */
-  const normalCart = cart.filter(function (item) {
-    if (!item) {
-      return false;
-    }
-
-    const isFreeGift =
-      String(
-        item.IS_Free_Gift ??
+      const isFreeGift =
+        String(
+          item.IS_Free_Gift ??
           item.Is_Free_Gift ??
           item.is_free_gift ??
           "",
-      ).toLowerCase() === "yes";
+        ).toLowerCase() === "yes";
 
-    const isFreeSample =
-      String(
-        item.IS_Free_Sample ??
+      const isFreeSample =
+        String(
+          item.IS_Free_Sample ??
           item.Is_Free_Sample ??
           item.is_free_sample ??
           "",
-      ).toLowerCase() === "yes";
+        ).toLowerCase() === "yes";
 
-    return !isFreeGift && !isFreeSample;
-  });
+      return !isFreeGift && !isFreeSample;
+    });
 
-  const currentIds = new Set(
-    normalCart
-      .map(getCartItemId)
-      .filter(function (id) {
-        return id !== "";
-      }),
-  );
+    const currentIds = new Set(
+      normalCart
+        .map(getCartItemId)
+        .filter(function (id) {
+          return id !== "";
+        }),
+    );
 
-  /*
-   * Remove only products which no longer exist
-   * in the backend cart.
-   */
-  mainList
-    .querySelectorAll('.order-item-row:not([data-free-gift="1"])')
-    .forEach(function (row) {
-      const stillExists = getRowIds(row).some(function (id) {
-        return currentIds.has(id);
+    /*
+     * Remove only products which no longer exist
+     * in the backend cart.
+     */
+    mainList
+      .querySelectorAll('.order-item-row:not([data-free-gift="1"])')
+      .forEach(function (row) {
+        const stillExists = getRowIds(row).some(function (id) {
+          return currentIds.has(id);
+        });
+
+        if (!stillExists) {
+          row.remove();
+        }
       });
 
-      if (!stillExists) {
-        row.remove();
+    const existingSummaryRows = Array.from(
+      mainList.querySelectorAll(
+        '.order-item-row:not([data-free-gift="1"])',
+      ),
+    );
+
+    const drawerRows = Array.from(
+      drawerBody.querySelectorAll(
+        '.order-item-row:not([data-free-gift="1"])',
+      ),
+    );
+
+    const moreButton = mainList.querySelector(".view-all-items");
+
+    /*
+     * Only first 2 normal products are shown
+     * in Order Summary.
+     */
+    const desiredItems = normalCart.slice(0, 2);
+
+    desiredItems.forEach(function (item) {
+      const itemId = getCartItemId(item);
+
+      if (!itemId) {
+        return;
       }
-    });
 
-  const existingSummaryRows = Array.from(
-    mainList.querySelectorAll(
-      '.order-item-row:not([data-free-gift="1"])',
-    ),
-  );
-
-  const drawerRows = Array.from(
-    drawerBody.querySelectorAll(
-      '.order-item-row:not([data-free-gift="1"])',
-    ),
-  );
-
-  const moreButton = mainList.querySelector(".view-all-items");
-
-  /*
-   * Only first 2 normal products are shown
-   * in Order Summary.
-   */
-  const desiredItems = normalCart.slice(0, 2);
-
-  desiredItems.forEach(function (item) {
-    const itemId = getCartItemId(item);
-
-    if (!itemId) {
-      return;
-    }
-
-    /*
-     * Keep existing summary row if it already exists.
-     */
-    let row = existingSummaryRows.find(function (candidate) {
-      return rowMatchesId(candidate, itemId);
-    });
-
-    /*
-     * If missing, use drawer row as template.
-     */
-    if (!row) {
-      const drawerRow = drawerRows.find(function (candidate) {
+      /*
+       * Keep existing summary row if it already exists.
+       */
+      let row = existingSummaryRows.find(function (candidate) {
         return rowMatchesId(candidate, itemId);
       });
 
-      if (drawerRow) {
-        row = drawerRow.cloneNode(true);
-
-        row.dataset.freeGift = "0";
-        delete row.dataset.cartRemoving;
-
-        row.style.opacity = "1";
-
-        row.querySelectorAll(".item-remove").forEach(function (button) {
-          button.disabled = false;
+      /*
+       * If missing, use drawer row as template.
+       */
+      if (!row) {
+        const drawerRow = drawerRows.find(function (candidate) {
+          return rowMatchesId(candidate, itemId);
         });
+
+        if (drawerRow) {
+          row = drawerRow.cloneNode(true);
+
+          row.dataset.freeGift = "0";
+          delete row.dataset.cartRemoving;
+
+          row.style.opacity = "1";
+
+          row.querySelectorAll(".item-remove").forEach(function (button) {
+            button.disabled = false;
+          });
+        }
       }
-    }
 
-    if (!row) {
-      return;
-    }
-
-    /*
-     * Keep backend IDs synchronized.
-     */
-    row.dataset.cartId =
-      item.cart_id ??
-      item.ProductID ??
-      item.product_id ??
-      item.id ??
-      row.dataset.cartId ??
-      "";
-
-    if (item.ProductID !== undefined && item.ProductID !== null) {
-      row.dataset.productId = item.ProductID;
-    }
-
-    /*
-     * Move row into correct Order Summary position.
-     */
-    if (moreButton) {
-      mainList.insertBefore(row, moreButton);
-    } else {
-      mainList.appendChild(row);
-    }
-  });
-
-  /*
-   * Remove extra normal rows.
-   */
-  const desiredIds = new Set(
-    desiredItems
-      .map(getCartItemId)
-      .filter(function (id) {
-        return id !== "";
-      }),
-  );
-
-  mainList
-    .querySelectorAll('.order-item-row:not([data-free-gift="1"])')
-    .forEach(function (row) {
-      const isDesired = getRowIds(row).some(function (id) {
-        return desiredIds.has(id);
-      });
-
-      if (!isDesired) {
-        row.remove();
+      if (!row) {
+        return;
       }
-    });
 
-  updateCartItemCountAfterChange(cart);
-}
-
-
-function syncCheckoutSummaryAfterCartChange(cart) {
-  if (!Array.isArray(cart)) {
-    return;
-  }
-
-  const mainList = document.getElementById("checkout-cart-items");
-  const drawerBody = document.querySelector(".cart-drawer-body");
-
-  if (!mainList || !drawerBody) {
-    updateCartItemCountAfterChange(cart);
-    return;
-  }
-
-  function getCartItemId(item) {
-    if (!item) {
-      return "";
-    }
-
-    return String(
-      item.cart_id ??
+      /*
+       * Keep backend IDs synchronized.
+       */
+      row.dataset.cartId =
+        item.cart_id ??
         item.ProductID ??
         item.product_id ??
         item.id ??
-        ""
-    );
-  }
+        row.dataset.cartId ??
+        "";
 
-  function getRowIds(row) {
-    if (!row) {
-      return [];
-    }
-
-    const ids = [];
-    const cartId = String(row.dataset.cartId || "");
-    const productId = String(row.dataset.productId || "");
-
-    if (cartId !== "") {
-      ids.push(cartId);
-    }
-
-    if (productId !== "" && !ids.includes(productId)) {
-      ids.push(productId);
-    }
-
-    return ids;
-  }
-
-  function rowMatchesId(row, itemId) {
-    return getRowIds(row).includes(String(itemId));
-  }
-
-  /*
-   * Exclude Free Gift and Free Sample from normal products.
-   */
-  const normalCart = cart.filter(function (item) {
-    if (!item) {
-      return false;
-    }
-
-    const isFreeGift =
-      String(
-        item.IS_Free_Gift ??
-          item.Is_Free_Gift ??
-          item.is_free_gift ??
-          ""
-      ).toLowerCase() === "yes";
-
-    const isFreeSample =
-      String(
-        item.IS_Free_Sample ??
-          item.Is_Free_Sample ??
-          item.is_free_sample ??
-          ""
-      ).toLowerCase() === "yes";
-
-    return !isFreeGift && !isFreeSample;
-  });
-
-  const currentIds = new Set(
-    normalCart
-      .map(getCartItemId)
-      .filter(function (id) {
-        return id !== "";
-      })
-  );
-
-  /*
-   * Remove only normal products that no longer exist.
-   */
-  mainList
-    .querySelectorAll(
-      '.order-item-row:not([data-free-gift="1"]):not([data-free-sample="1"])'
-    )
-    .forEach(function (row) {
-      const stillExists = getRowIds(row).some(function (id) {
-        return currentIds.has(id);
-      });
-
-      if (!stillExists) {
-        row.remove();
+      if (item.ProductID !== undefined && item.ProductID !== null) {
+        row.dataset.productId = item.ProductID;
       }
-    });
 
-  const existingSummaryRows = Array.from(
-    mainList.querySelectorAll(
-      '.order-item-row:not([data-free-gift="1"]):not([data-free-sample="1"])'
-    )
-  );
-
-  const drawerRows = Array.from(
-    drawerBody.querySelectorAll(
-      '.order-item-row:not([data-free-gift="1"]):not([data-free-sample="1"])'
-    )
-  );
-
-  const moreButton = mainList.querySelector(".view-all-items");
-
-  /*
-   * Keep the existing Order Summary order.
-   * Only the first two backend normal products are displayed.
-   */
-  const desiredItems = normalCart.slice(0, 2);
-
-  desiredItems.forEach(function (item) {
-    const itemId = getCartItemId(item);
-
-    if (!itemId) {
-      return;
-    }
-
-    let row = existingSummaryRows.find(function (candidate) {
-      return rowMatchesId(candidate, itemId);
-    });
-
-    /*
-     * If a desired product is missing from the summary,
-     * clone its existing Cart Drawer row.
-     */
-    if (!row) {
-      const drawerRow = drawerRows.find(function (candidate) {
-        return rowMatchesId(candidate, itemId);
-      });
-
-      if (drawerRow) {
-        row = drawerRow.cloneNode(true);
-
-        row.dataset.freeGift = "0";
-        delete row.dataset.cartRemoving;
-        delete row.dataset.cartUpdating;
-
-        row.style.opacity = "1";
-
-        row.querySelectorAll(".item-remove").forEach(function (button) {
-          button.disabled = false;
-        });
-
-        row.querySelectorAll(".qty-btn").forEach(function (button) {
-          button.disabled = false;
-        });
-      }
-    }
-
-    if (!row) {
-      return;
-    }
-
-    /*
-     * Keep backend IDs synchronized.
-     */
-    row.dataset.cartId =
-      item.cart_id ??
-      item.ProductID ??
-      item.product_id ??
-      item.id ??
-      row.dataset.cartId ??
-      "";
-
-    const productId =
-      item.ProductID ??
-      item.products_id ??
-      item.product_id ??
-      null;
-
-    if (productId !== null) {
-      row.dataset.productId = productId;
-    }
-
-    /*
-     * IMPORTANT FIX:
-     * Do not move an existing row.
-     * Insert only a newly created summary row.
-     */
-    if (row.parentElement !== mainList) {
+      /*
+       * Move row into correct Order Summary position.
+       */
       if (moreButton) {
         mainList.insertBefore(row, moreButton);
       } else {
         mainList.appendChild(row);
       }
+    });
 
-      existingSummaryRows.push(row);
-    }
-  });
+    /*
+     * Remove extra normal rows.
+     */
+    const desiredIds = new Set(
+      desiredItems
+        .map(getCartItemId)
+        .filter(function (id) {
+          return id !== "";
+        }),
+    );
 
-  /*
-   * Remove normal summary rows that are not among
-   * the first two desired products.
-   */
-  const desiredIds = new Set(
-    desiredItems
-      .map(getCartItemId)
-      .filter(function (id) {
-        return id !== "";
-      })
-  );
+    mainList
+      .querySelectorAll('.order-item-row:not([data-free-gift="1"])')
+      .forEach(function (row) {
+        const isDesired = getRowIds(row).some(function (id) {
+          return desiredIds.has(id);
+        });
 
-  mainList
-    .querySelectorAll(
-      '.order-item-row:not([data-free-gift="1"]):not([data-free-sample="1"])'
-    )
-    .forEach(function (row) {
-      const isDesired = getRowIds(row).some(function (id) {
-        return desiredIds.has(id);
+        if (!isDesired) {
+          row.remove();
+        }
       });
 
-      if (!isDesired) {
-        row.remove();
+    updateCartItemCountAfterChange(cart);
+  }
+
+  function syncCheckoutSummaryAfterCartChange(cart) {
+    if (!Array.isArray(cart)) {
+      return;
+    }
+
+    const mainList = document.getElementById("checkout-cart-items");
+    const drawerBody = document.querySelector(".cart-drawer-body");
+
+    if (!mainList || !drawerBody) {
+      updateCartItemCountAfterChange(cart);
+      return;
+    }
+
+    function getCartItemId(item) {
+      if (!item) {
+        return "";
+      }
+
+      return String(
+        item.cart_id ??
+        item.ProductID ??
+        item.product_id ??
+        item.id ??
+        ""
+      );
+    }
+
+    function getRowIds(row) {
+      if (!row) {
+        return [];
+      }
+
+      const ids = [];
+      const cartId = String(row.dataset.cartId || "");
+      const productId = String(row.dataset.productId || "");
+
+      if (cartId !== "") {
+        ids.push(cartId);
+      }
+
+      if (productId !== "" && !ids.includes(productId)) {
+        ids.push(productId);
+      }
+
+      return ids;
+    }
+
+    function rowMatchesId(row, itemId) {
+      return getRowIds(row).includes(String(itemId));
+    }
+
+    /*
+     * Exclude Free Gift and Free Sample from normal products.
+     */
+    const normalCart = cart.filter(function (item) {
+      if (!item) {
+        return false;
+      }
+
+      const isFreeGift =
+        String(
+          item.IS_Free_Gift ??
+          item.Is_Free_Gift ??
+          item.is_free_gift ??
+          ""
+        ).toLowerCase() === "yes";
+
+      const isFreeSample =
+        String(
+          item.IS_Free_Sample ??
+          item.Is_Free_Sample ??
+          item.is_free_sample ??
+          ""
+        ).toLowerCase() === "yes";
+
+      return !isFreeGift && !isFreeSample;
+    });
+
+    const currentIds = new Set(
+      normalCart
+        .map(getCartItemId)
+        .filter(function (id) {
+          return id !== "";
+        })
+    );
+
+    /*
+     * Remove only normal products that no longer exist.
+     */
+    mainList
+      .querySelectorAll(
+        '.order-item-row:not([data-free-gift="1"]):not([data-free-sample="1"])'
+      )
+      .forEach(function (row) {
+        const stillExists = getRowIds(row).some(function (id) {
+          return currentIds.has(id);
+        });
+
+        if (!stillExists) {
+          row.remove();
+        }
+      });
+
+    const existingSummaryRows = Array.from(
+      mainList.querySelectorAll(
+        '.order-item-row:not([data-free-gift="1"]):not([data-free-sample="1"])'
+      )
+    );
+
+    const drawerRows = Array.from(
+      drawerBody.querySelectorAll(
+        '.order-item-row:not([data-free-gift="1"]):not([data-free-sample="1"])'
+      )
+    );
+
+    const moreButton = mainList.querySelector(".view-all-items");
+
+    /*
+     * Keep the existing Order Summary order.
+     * Only the first two backend normal products are displayed.
+     */
+    const desiredItems = normalCart.slice(0, 2);
+
+    desiredItems.forEach(function (item) {
+      const itemId = getCartItemId(item);
+
+      if (!itemId) {
+        return;
+      }
+
+      let row = existingSummaryRows.find(function (candidate) {
+        return rowMatchesId(candidate, itemId);
+      });
+
+      /*
+       * If a desired product is missing from the summary,
+       * clone its existing Cart Drawer row.
+       */
+      if (!row) {
+        const drawerRow = drawerRows.find(function (candidate) {
+          return rowMatchesId(candidate, itemId);
+        });
+
+        if (drawerRow) {
+          row = drawerRow.cloneNode(true);
+
+          row.dataset.freeGift = "0";
+          delete row.dataset.cartRemoving;
+          delete row.dataset.cartUpdating;
+
+          row.style.opacity = "1";
+
+          row.querySelectorAll(".item-remove").forEach(function (button) {
+            button.disabled = false;
+          });
+
+          row.querySelectorAll(".qty-btn").forEach(function (button) {
+            button.disabled = false;
+          });
+        }
+      }
+
+      if (!row) {
+        return;
+      }
+
+      /*
+       * Keep backend IDs synchronized.
+       */
+      row.dataset.cartId =
+        item.cart_id ??
+        item.ProductID ??
+        item.product_id ??
+        item.id ??
+        row.dataset.cartId ??
+        "";
+
+      const productId =
+        item.ProductID ??
+        item.products_id ??
+        item.product_id ??
+        null;
+
+      if (productId !== null) {
+        row.dataset.productId = productId;
+      }
+
+      /*
+       * IMPORTANT FIX:
+       * Do not move an existing row.
+       * Insert only a newly created summary row.
+       */
+      if (row.parentElement !== mainList) {
+        if (moreButton) {
+          mainList.insertBefore(row, moreButton);
+        } else {
+          mainList.appendChild(row);
+        }
+
+        existingSummaryRows.push(row);
       }
     });
 
-  updateCartItemCountAfterChange(cart);
-}
+    /*
+     * Remove normal summary rows that are not among
+     * the first two desired products.
+     */
+    const desiredIds = new Set(
+      desiredItems
+        .map(getCartItemId)
+        .filter(function (id) {
+          return id !== "";
+        })
+    );
 
+    mainList
+      .querySelectorAll(
+        '.order-item-row:not([data-free-gift="1"]):not([data-free-sample="1"])'
+      )
+      .forEach(function (row) {
+        const isDesired = getRowIds(row).some(function (id) {
+          return desiredIds.has(id);
+        });
+
+        if (!isDesired) {
+          row.remove();
+        }
+      });
+
+    updateCartItemCountAfterChange(cart);
+  }
 
   function updateCheckoutDrawerSubtotal(response) {
     if (!response) {
@@ -7151,10 +7089,10 @@ function syncCheckoutSummaryAfterCartChange(cart) {
      * DEBUG
      * =====================================================
      */
-    console.log("Checkout drawer subtotal updated:", {
-      itemCount: cart.length,
-      subtotal: subtotal,
-    });
+    // console.log("Checkout drawer subtotal updated:", {
+    //   itemCount: cart.length,
+    //   subtotal: subtotal,
+    // });
   }
 
   function updateCartItemCountAfterChange(cart) {
@@ -7319,8 +7257,7 @@ function syncCheckoutSummaryAfterCartChange(cart) {
     if ($("#checkout-login-form").valid()) {
       showLoginLoader(true);
       $("#checkout-login-form #newsletter").val('No');
-      if($("#checkout-login-form #customer_newsletter").prop('checked'))
-      {
+      if ($("#checkout-login-form #customer_newsletter").prop('checked')) {
         $("#checkout-login-form #newsletter").val('Yes');
       }
       $.ajax({
@@ -7563,9 +7500,9 @@ function syncCheckoutSummaryAfterCartChange(cart) {
           responseInsuranceValue = parseFloat(response.shippingInsuranceCharge);
         } else if (responseInsurance && typeof responseInsurance === "object") {
 
-        /*
-         * Response insurance object.
-         */
+          /*
+           * Response insurance object.
+           */
           if (
             responseInsurance.charge !== undefined &&
             responseInsurance.charge !== null
@@ -7749,6 +7686,200 @@ function syncCheckoutSummaryAfterCartChange(cart) {
       });
   }
 
+  function setGiftWrappingCharge(action) {
+    action = action === "remove" ? "remove" : "add";
+
+    if (!urls.setGiftWrappingCharge) {
+      showMessage(
+        "#shipping-method-messages",
+        "Gift wrapping URL is not configured.",
+        "error"
+      );
+      return;
+    }
+
+    if (giftWrappingRequest) {
+      giftWrappingRequest.abort();
+    }
+
+    const $checkbox = $("#gift-wrapping");
+    const requestedState = action === "add";
+
+    // Initialize checkout state.
+    window.MaxaromaCheckout = window.MaxaromaCheckout || {};
+    window.MaxaromaCheckout.totalsState =
+      window.MaxaromaCheckout.totalsState || {};
+
+    const state = window.MaxaromaCheckout.totalsState;
+
+    // Preserve previous gift wrapping state.
+    const previousApplied =
+      state.giftWrappingApplied !== undefined
+        ? state.giftWrappingApplied
+        : $checkbox.is(":checked");
+
+    const previousCharge =
+      state.giftWrappingCharge !== undefined &&
+        state.giftWrappingCharge !== null
+        ? parseFloat(state.giftWrappingCharge) || 0
+        : currentGiftWrappingValue !== null
+          ? currentGiftWrappingValue
+          : 0;
+
+    state.giftWrappingApplied = requestedState;
+    state.giftWrappingCharge = previousCharge;
+
+    // Update checkbox immediately.
+    if ($checkbox.length) {
+      $checkbox.prop("checked", requestedState);
+      $checkbox.closest(".addon-row")
+        .toggleClass("active", requestedState);
+    }
+
+    giftWrappingRequest = $.ajax({
+      type: "POST",
+      url: urls.setGiftWrappingCharge,
+      headers: {
+        "X-CSRF-TOKEN": csrfToken
+      },
+      dataType: "json",
+      data: {
+        action: action
+      }
+    })
+      .done(function (response) {
+
+        // Handle API errors.
+        if (
+          response.status === false ||
+          response.status === "error" ||
+          response.status === "Error"
+        ) {
+          console.log(response);
+          state.giftWrappingApplied = previousApplied;
+          state.giftWrappingCharge = previousCharge;
+
+          if ($checkbox.length) {
+            $checkbox.prop("checked", previousApplied);
+            $checkbox.closest(".addon-row")
+              .toggleClass("active", previousApplied);
+          }
+
+          showMessage(
+            "#shipping-method-messages",
+            response.message || "Unable to update gift wrapping.",
+            "error"
+          );
+
+          return;
+        }
+
+        const totals = response.totals || response.Totals || {};
+        const charges = totals.Charges || totals.charges || {};
+
+        // Read gift wrapping charge from backend.
+        const giftWrappingResponse =
+          response.giftWrapping ||
+          response.gift_wrapping ||
+          {};
+
+        let responseCharge = null;
+
+        if (response.gift_wrapping_charge !== undefined) {
+          responseCharge = parseFloat(response.gift_wrapping_charge);
+        } else if (response.giftWrappingCharge !== undefined) {
+          responseCharge = parseFloat(response.giftWrappingCharge);
+        } else if (giftWrappingResponse.charge !== undefined) {
+          responseCharge = parseFloat(giftWrappingResponse.charge);
+        } else if (charges.GiftWrappingCharge?.charge !== undefined) {
+          responseCharge = parseFloat(
+            charges.GiftWrappingCharge.charge
+          );
+        } else if (charges.GiftWrapping?.charge !== undefined) {
+          responseCharge = parseFloat(charges.GiftWrapping.charge);
+        } else if (totals.gift_wrapping_charge !== undefined) {
+          responseCharge = parseFloat(totals.gift_wrapping_charge);
+        }
+
+        // Preserve previous amount if backend does not return it.
+        if (
+          responseCharge !== null &&
+          Number.isFinite(responseCharge) &&
+          responseCharge >= 0
+        ) {
+          state.giftWrappingCharge = responseCharge;
+        } else {
+          state.giftWrappingCharge = previousCharge;
+        }
+
+        currentGiftWrappingValue = state.giftWrappingCharge;
+
+        // Update applied state from backend when available.
+        if (response.gift_wrapping_applied !== undefined) {
+          state.giftWrappingApplied =
+            isAppliedFlag(response.gift_wrapping_applied);
+        } else if (response.giftWrappingApplied !== undefined) {
+          state.giftWrappingApplied =
+            isAppliedFlag(response.giftWrappingApplied);
+        } else if (giftWrappingResponse.applied !== undefined) {
+          state.giftWrappingApplied =
+            isAppliedFlag(giftWrappingResponse.applied);
+        } else if (response.applied !== undefined) {
+          state.giftWrappingApplied =
+            isAppliedFlag(response.applied);
+        } else {
+          state.giftWrappingApplied = requestedState;
+        }
+
+        // Keep checkbox synchronized.
+        if ($checkbox.length) {
+          $checkbox.prop(
+            "checked",
+            state.giftWrappingApplied === true
+          );
+
+          $checkbox.closest(".addon-row").toggleClass(
+            "active",
+            state.giftWrappingApplied === true
+          );
+        }
+        if ($("#protection").length > 0 && $("#protection").is(":checked") === true) {
+          setShippingInsurance("add");
+        }
+        // Refresh checkout totals and summary.
+        updateTotals(response);
+      })
+      .fail(function (xhr, status) {
+
+        if (status === "abort") {
+          return;
+        }
+
+        // Restore previous state.
+        state.giftWrappingApplied = previousApplied;
+        state.giftWrappingCharge = previousCharge;
+
+        currentGiftWrappingValue = previousCharge;
+
+        if ($checkbox.length) {
+          $checkbox.prop("checked", previousApplied);
+          $checkbox.closest(".addon-row")
+            .toggleClass("active", previousApplied);
+        }
+
+        const response = xhr.responseJSON || {};
+
+        showMessage(
+          "#shipping-method-messages",
+          response.message || "Unable to update gift wrapping.",
+          "error"
+        );
+      })
+      .always(function () {
+        giftWrappingRequest = null;
+      });
+  }
+
   /* =========================================================
        INSURANCE CHECKBOX
        ========================================================= */
@@ -7773,125 +7904,251 @@ function syncCheckoutSummaryAfterCartChange(cart) {
     setShippingSignature(action);
   });
 
-function setShippingSignature(action) {
-  action = action === "remove" ? "remove" : "add";
+  function setShippingSignature(action) {
+    action = action === "remove" ? "remove" : "add";
 
-  if (!urls.shippingSignature) {
-    showMessage(
-      "#shipping-method-messages",
-      "Shipping signature URL is not configured.",
-      "error",
-    );
-    return;
-  }
-
-  window.MaxaromaCheckout = window.MaxaromaCheckout || {};
-  window.MaxaromaCheckout.totalsState =
-    window.MaxaromaCheckout.totalsState || {};
-
-  const state = window.MaxaromaCheckout.totalsState;
-
-  state.signatureRequestVersion =
-    (state.signatureRequestVersion || 0) + 1;
-
-  const requestVersion = state.signatureRequestVersion;
-
-  if (shippingSignatureRequest) {
-    shippingSignatureRequest.abort();
-  }
-
-  const $checkbox = $("#request-signature");
-  const requestedState = action === "add";
-
-  state.signatureRefreshDefault = false;
-  state.signatureApplied = requestedState;
-
-  /*
-   * OFF means no Signature charge is applied.
-   * Preserve the paid display price separately.
-   */
-  if (!requestedState) {
-    const savedDisplayCharge =
-      parseFloat(state.signatureDisplayCharge);
-
-    const savedIsFree = state.signatureIsFree === true;
-
-    const appliedCharge =
-      parseFloat(state.signatureCharge || 0);
-
-    if (
-      !Number.isNaN(savedDisplayCharge) &&
-      savedDisplayCharge > 0
-    ) {
-      state.signatureDisplayCharge = savedDisplayCharge;
-      state.signatureIsFree = false;
-    } else if (savedIsFree) {
-      state.signatureDisplayCharge = 0;
-      state.signatureIsFree = true;
-    } else if (
-      !Number.isNaN(appliedCharge) &&
-      appliedCharge > 0
-    ) {
-      state.signatureDisplayCharge = appliedCharge;
-      state.signatureIsFree = false;
-    } else {
-      const $visiblePrice =
-        $("#signature-addon-price:visible").first();
-
-      const currentPriceText =
-        String($visiblePrice.text() || "").trim();
-
-      const priceMatch = currentPriceText.match(
-        /\+?\s*\$?\s*([0-9]+(?:\.[0-9]{1,2})?)/,
+    if (!urls.shippingSignature) {
+      showMessage(
+        "#shipping-method-messages",
+        "Shipping signature URL is not configured.",
+        "error",
       );
-
-      if (
-        priceMatch &&
-        parseFloat(priceMatch[1]) > 0
-      ) {
-        state.signatureDisplayCharge =
-          parseFloat(priceMatch[1]);
-
-        state.signatureIsFree = false;
-      } else if (/^free$/i.test(currentPriceText)) {
-        state.signatureDisplayCharge = 0;
-        state.signatureIsFree = true;
-      }
+      return;
     }
 
-    state.signatureCharge = 0;
-  }
+    window.MaxaromaCheckout = window.MaxaromaCheckout || {};
+    window.MaxaromaCheckout.totalsState =
+      window.MaxaromaCheckout.totalsState || {};
 
-  if ($checkbox.length) {
-    $checkbox.prop("checked", requestedState);
+    const state = window.MaxaromaCheckout.totalsState;
 
-    $checkbox
-      .closest(".addon-row")
-      .toggleClass("active", requestedState);
-  }
+    state.signatureRequestVersion =
+      (state.signatureRequestVersion || 0) + 1;
 
-  shippingSignatureRequest = $.ajax({
-    type: "POST",
-    url: urls.shippingSignature,
-    headers: {
-      "X-CSRF-TOKEN": csrfToken,
-    },
-    dataType: "json",
-    data: {
-      action: action,
-    },
-  })
-    .done(function (response) {
+    const requestVersion = state.signatureRequestVersion;
+
+    if (shippingSignatureRequest) {
+      shippingSignatureRequest.abort();
+    }
+
+    const $checkbox = $("#request-signature");
+    const requestedState = action === "add";
+
+    state.signatureRefreshDefault = false;
+    state.signatureApplied = requestedState;
+
+    /*
+     * OFF means no Signature charge is applied.
+     * Preserve the paid display price separately.
+     */
+    if (!requestedState) {
+      const savedDisplayCharge =
+        parseFloat(state.signatureDisplayCharge);
+
+      const savedIsFree = state.signatureIsFree === true;
+
+      const appliedCharge =
+        parseFloat(state.signatureCharge || 0);
+
       if (
-        requestVersion !== state.signatureRequestVersion
+        !Number.isNaN(savedDisplayCharge) &&
+        savedDisplayCharge > 0
       ) {
-        return;
+        state.signatureDisplayCharge = savedDisplayCharge;
+        state.signatureIsFree = false;
+      } else if (savedIsFree) {
+        state.signatureDisplayCharge = 0;
+        state.signatureIsFree = true;
+      } else if (
+        !Number.isNaN(appliedCharge) &&
+        appliedCharge > 0
+      ) {
+        state.signatureDisplayCharge = appliedCharge;
+        state.signatureIsFree = false;
+      } else {
+        const $visiblePrice =
+          $("#signature-addon-price:visible").first();
+
+        const currentPriceText =
+          String($visiblePrice.text() || "").trim();
+
+        const priceMatch = currentPriceText.match(
+          /\+?\s*\$?\s*([0-9]+(?:\.[0-9]{1,2})?)/,
+        );
+
+        if (
+          priceMatch &&
+          parseFloat(priceMatch[1]) > 0
+        ) {
+          state.signatureDisplayCharge =
+            parseFloat(priceMatch[1]);
+
+          state.signatureIsFree = false;
+        } else if (/^free$/i.test(currentPriceText)) {
+          state.signatureDisplayCharge = 0;
+          state.signatureIsFree = true;
+        }
       }
 
-      if (
-        response.status &&
-        response.status !== "success"
-      ) {
+      state.signatureCharge = 0;
+    }
+
+    if ($checkbox.length) {
+      $checkbox.prop("checked", requestedState);
+
+      $checkbox
+        .closest(".addon-row")
+        .toggleClass("active", requestedState);
+    }
+
+    shippingSignatureRequest = $.ajax({
+      type: "POST",
+      url: urls.shippingSignature,
+      headers: {
+        "X-CSRF-TOKEN": csrfToken,
+      },
+      dataType: "json",
+      data: {
+        action: action,
+      },
+    })
+      .done(function (response) {
+        if (
+          requestVersion !== state.signatureRequestVersion
+        ) {
+          return;
+        }
+
+        if (
+          response.status &&
+          response.status !== "success"
+        ) {
+          const previousState = !requestedState;
+
+          state.signatureApplied = previousState;
+
+          if (!previousState) {
+            state.signatureCharge = 0;
+          }
+
+          if ($checkbox.length) {
+            $checkbox.prop("checked", previousState);
+
+            $checkbox
+              .closest(".addon-row")
+              .toggleClass("active", previousState);
+          }
+
+          showMessage(
+            "#shipping-method-messages",
+            response.message ||
+            "Unable to update shipping signature.",
+            "error",
+          );
+
+          return;
+        }
+
+        let appliedState = null;
+
+        const signatureResponse =
+          response.shippingSignature ||
+          response.shipping_signature ||
+          response.ShippingSignature ||
+          null;
+
+        if (
+          signatureResponse &&
+          typeof signatureResponse === "object"
+        ) {
+          if (signatureResponse.applied !== undefined) {
+            appliedState = isAppliedFlag(
+              signatureResponse.applied,
+            );
+          }
+        } else if (response.applied !== undefined) {
+          appliedState = isAppliedFlag(response.applied);
+        }
+
+        if (appliedState === null) {
+          appliedState = requestedState;
+        }
+
+        /*
+         * IMPORTANT:
+         * OFF must not overwrite a previously saved paid
+         * display price with a stale "Free" label.
+         */
+        if (!requestedState) {
+          const savedDisplayCharge =
+            parseFloat(state.signatureDisplayCharge);
+
+          const savedAppliedCharge =
+            parseFloat(state.signatureCharge || 0);
+
+          if (
+            !Number.isNaN(savedDisplayCharge) &&
+            savedDisplayCharge > 0
+          ) {
+            state.signatureDisplayCharge =
+              savedDisplayCharge;
+
+            state.signatureIsFree = false;
+          } else if (
+            !Number.isNaN(savedAppliedCharge) &&
+            savedAppliedCharge > 0
+          ) {
+            state.signatureDisplayCharge =
+              savedAppliedCharge;
+
+            state.signatureIsFree = false;
+          } else {
+            const $signaturePrice =
+              $("#signature-addon-price:visible").first();
+
+            const currentPriceText =
+              String($signaturePrice.text() || "").trim();
+
+            const priceMatch = currentPriceText.match(
+              /\+?\s*\$?\s*([0-9]+(?:\.[0-9]{1,2})?)/,
+            );
+
+            if (
+              priceMatch &&
+              parseFloat(priceMatch[1]) > 0
+            ) {
+              state.signatureDisplayCharge =
+                parseFloat(priceMatch[1]);
+
+              state.signatureIsFree = false;
+            } else if (/^free$/i.test(currentPriceText)) {
+              state.signatureDisplayCharge = 0;
+              state.signatureIsFree = true;
+            }
+          }
+
+          // OFF = zero charge on the order.
+          state.signatureCharge = 0;
+        }
+
+        if ($checkbox.length) {
+          $checkbox.prop("checked", appliedState);
+
+          $checkbox
+            .closest(".addon-row")
+            .toggleClass("active", appliedState);
+        }
+
+        updateTotals(response);
+      })
+      .fail(function (xhr, status) {
+        if (
+          status === "abort" ||
+          requestVersion !== state.signatureRequestVersion
+        ) {
+          return;
+        }
+
         const previousState = !requestedState;
 
         state.signatureApplied = previousState;
@@ -7908,152 +8165,25 @@ function setShippingSignature(action) {
             .toggleClass("active", previousState);
         }
 
+        const errorResponse = xhr.responseJSON || {};
+
         showMessage(
           "#shipping-method-messages",
-          response.message ||
-            "Unable to update shipping signature.",
+          errorResponse.message ||
+          "Unable to update shipping signature.",
           "error",
         );
-
-        return;
-      }
-
-      let appliedState = null;
-
-      const signatureResponse =
-        response.shippingSignature ||
-        response.shipping_signature ||
-        response.ShippingSignature ||
-        null;
-
-      if (
-        signatureResponse &&
-        typeof signatureResponse === "object"
-      ) {
-        if (signatureResponse.applied !== undefined) {
-          appliedState = isAppliedFlag(
-            signatureResponse.applied,
-          );
-        }
-      } else if (response.applied !== undefined) {
-        appliedState = isAppliedFlag(response.applied);
-      }
-
-      if (appliedState === null) {
-        appliedState = requestedState;
-      }
-
-      /*
-       * IMPORTANT:
-       * OFF must not overwrite a previously saved paid
-       * display price with a stale "Free" label.
-       */
-      if (!requestedState) {
-        const savedDisplayCharge =
-          parseFloat(state.signatureDisplayCharge);
-
-        const savedAppliedCharge =
-          parseFloat(state.signatureCharge || 0);
-
+      })
+      .always(function () {
         if (
-          !Number.isNaN(savedDisplayCharge) &&
-          savedDisplayCharge > 0
+          requestVersion === state.signatureRequestVersion
         ) {
-          state.signatureDisplayCharge =
-            savedDisplayCharge;
-
-          state.signatureIsFree = false;
-        } else if (
-          !Number.isNaN(savedAppliedCharge) &&
-          savedAppliedCharge > 0
-        ) {
-          state.signatureDisplayCharge =
-            savedAppliedCharge;
-
-          state.signatureIsFree = false;
-        } else {
-          const $signaturePrice =
-            $("#signature-addon-price:visible").first();
-
-          const currentPriceText =
-            String($signaturePrice.text() || "").trim();
-
-          const priceMatch = currentPriceText.match(
-            /\+?\s*\$?\s*([0-9]+(?:\.[0-9]{1,2})?)/,
-          );
-
-          if (
-            priceMatch &&
-            parseFloat(priceMatch[1]) > 0
-          ) {
-            state.signatureDisplayCharge =
-              parseFloat(priceMatch[1]);
-
-            state.signatureIsFree = false;
-          } else if (/^free$/i.test(currentPriceText)) {
-            state.signatureDisplayCharge = 0;
-            state.signatureIsFree = true;
-          }
+          shippingSignatureRequest = null;
         }
+      });
+  }
 
-        // OFF = zero charge on the order.
-        state.signatureCharge = 0;
-      }
-
-      if ($checkbox.length) {
-        $checkbox.prop("checked", appliedState);
-
-        $checkbox
-          .closest(".addon-row")
-          .toggleClass("active", appliedState);
-      }
-
-      updateTotals(response);
-    })
-    .fail(function (xhr, status) {
-      if (
-        status === "abort" ||
-        requestVersion !== state.signatureRequestVersion
-      ) {
-        return;
-      }
-
-      const previousState = !requestedState;
-
-      state.signatureApplied = previousState;
-
-      if (!previousState) {
-        state.signatureCharge = 0;
-      }
-
-      if ($checkbox.length) {
-        $checkbox.prop("checked", previousState);
-
-        $checkbox
-          .closest(".addon-row")
-          .toggleClass("active", previousState);
-      }
-
-      const errorResponse = xhr.responseJSON || {};
-
-      showMessage(
-        "#shipping-method-messages",
-        errorResponse.message ||
-          "Unable to update shipping signature.",
-        "error",
-      );
-    })
-    .always(function () {
-      if (
-        requestVersion === state.signatureRequestVersion
-      ) {
-        shippingSignatureRequest = null;
-      }
-    });
-}
-
- function setAfterpayWidget()
-  {
+  function setAfterpayWidget() {
     $.ajax({
       type: "POST",
       url: urls.setDropshipper,
@@ -8246,7 +8376,7 @@ function setShippingSignature(action) {
           'style="margin-top:12px;" ' +
           'role="status" ' +
           'aria-live="polite">' +
-         '<div class="cuppon-applied-text">' +
+          '<div class="cuppon-applied-text">' +
           '<span class="coupon-applied-code">' +
           $("<div>")
             .text(giftCertificate.code || code)
@@ -8260,9 +8390,9 @@ function setShippingSignature(action) {
           "</span>" +
           "</div>" +
           '<div style="font-size:13px;">' +
-            'Applied: <strong>$' +
-            appliedValue.toFixed(2) +
-            '</strong></div>' +
+          'Applied: <strong>$' +
+          appliedValue.toFixed(2) +
+          '</strong></div>' +
           "<button " +
           'type="button" ' +
           'class="giftcard-remove" ' +
@@ -8271,7 +8401,6 @@ function setShippingSignature(action) {
           "Remove" +
           "</button>" +
           "</div>";
-
         /*
          * Backend already recalculated totals.
          * Update the checkout UI from response.
@@ -8525,14 +8654,14 @@ function setShippingSignature(action) {
       };
     } else if (savedCode && savedValue > 0) {
 
-    /*
-     * -----------------------------------------------------
-     * Backend did NOT return Gift Certificate OR returned
-     * an empty object.
-     *
-     * If we already have a valid frontend state, preserve it.
-     * -----------------------------------------------------
-     */
+      /*
+       * -----------------------------------------------------
+       * Backend did NOT return Gift Certificate OR returned
+       * an empty object.
+       *
+       * If we already have a valid frontend state, preserve it.
+       * -----------------------------------------------------
+       */
       /*
        * Do NOT clear:
        *
@@ -8607,9 +8736,9 @@ function setShippingSignature(action) {
       "</span>" +
       "</div>" +
       '<div style="font-size:13px;">' +
-  'Applied: <strong>$' +
-  value.toFixed(2) +
-  '</strong></div>' +
+      'Applied: <strong>$' +
+      value.toFixed(2) +
+      '</strong></div>' +
       "<button " +
       'type="button" ' +
       'class="coupon-remove" ' +
@@ -8650,398 +8779,397 @@ function setShippingSignature(action) {
 
     return deferred.promise();
   }
-function appendNewFreeGiftCartItem(cartItem) {
-  if (!cartItem) {
-    return;
-  }
+  function appendNewFreeGiftCartItem(cartItem) {
+    if (!cartItem) {
+      return;
+    }
 
-  const productId = parseInt(
-    cartItem.ProductID ||
+    const productId = parseInt(
+      cartItem.ProductID ||
       cartItem.product_id ||
       cartItem.id ||
       0,
-    10,
-  );
-
-  const cartId = parseInt(
-    cartItem.CartID ||
-      cartItem.cart_id ||
-      0,
-    10,
-  );
-
-  if (!productId) {
-    return;
-  }
-
-  /*
-   * ---------------------------------------------------------
-   * FREE GIFT RULE SKU COUNT
-   *
-   * 1 SKU
-   *      => Remove hidden
-   *
-   * Multiple SKUs
-   *      => Remove visible
-   *
-   * Coupon Free Gift
-   *      => Remove hidden
-   * ---------------------------------------------------------
-   */
-  const freeGiftRuleSkuCount =
-    parseInt(
-      cartItem.FreeGiftRuleSkuCount ||
-        cartItem.free_gift_rule_sku_count ||
-        1,
       10,
-    ) || 1;
-
-  /*
-   * ---------------------------------------------------------
-   * Prevent duplicate Free Gift
-   * ---------------------------------------------------------
-   */
-  const existingGift = document.querySelector(
-    '.order-item-row[data-product-id="' +
-      productId +
-      '"][data-free-gift="1"]',
-  );
-
-  if (existingGift) {
-    return;
-  }
-
-  /*
-   * ---------------------------------------------------------
-   * Use existing checkout item row as template.
-   * ---------------------------------------------------------
-   */
-  const template = document.querySelector(
-    '.order-item-row:not([data-free-gift="1"])',
-  );
-
-  if (!template) {
-    console.error(
-      "Free Gift: existing cart row template not found.",
     );
 
-    return;
-  }
-
-  const row = template.cloneNode(true);
-
-  row.dataset.productId = String(productId);
-  row.dataset.freeGift = "1";
-  
-  row.querySelectorAll(".order-item-bogo-message").forEach(function (element) {
-    element.remove();
-});
-  	
-  if (cartId) {
-    row.dataset.cartId = String(cartId);
-  }
-
-  /*
-   * ---------------------------------------------------------
-   * Product data
-   * ---------------------------------------------------------
-   */
-  const productName =
-    cartItem.ProductName ||
-    cartItem.products_name ||
-    cartItem.product_name ||
-    cartItem.name ||
-    "Free Gift";
-
-  const quantity =
-    parseInt(
-      cartItem.Qty ||
-        cartItem.qty ||
-        cartItem.quantity ||
-        1,
+    const cartId = parseInt(
+      cartItem.CartID ||
+      cartItem.cart_id ||
+      0,
       10,
-    ) || 1;
+    );
 
-  const sku =
-    cartItem.ORGSKU ||
-    cartItem.SKU ||
-    cartItem.sku ||
-    "";
+    if (!productId) {
+      return;
+    }
 
-  let giftSku = String(sku);
+    /*
+     * ---------------------------------------------------------
+     * FREE GIFT RULE SKU COUNT
+     *
+     * 1 SKU
+     *      => Remove hidden
+     *
+     * Multiple SKUs
+     *      => Remove visible
+     *
+     * Coupon Free Gift
+     *      => Remove hidden
+     * ---------------------------------------------------------
+     */
+    const freeGiftRuleSkuCount =
+      parseInt(
+        cartItem.FreeGiftRuleSkuCount ||
+        cartItem.free_gift_rule_sku_count ||
+        1,
+        10,
+      ) || 1;
 
-  if (
-    giftSku &&
-    giftSku.toUpperCase().indexOf("GIFT-") !== 0
-  ) {
-    giftSku = "GIFT-" + giftSku;
-  }
+    /*
+     * ---------------------------------------------------------
+     * Prevent duplicate Free Gift
+     * ---------------------------------------------------------
+     */
+    const existingGift = document.querySelector(
+      '.order-item-row[data-product-id="' +
+      productId +
+      '"][data-free-gift="1"]',
+    );
 
-  /*
-   * ---------------------------------------------------------
-   * Product name
-   * ---------------------------------------------------------
-   */
-  const nameElement = row.querySelector(
-    ".order-item-name",
-  );
+    if (existingGift) {
+      return;
+    }
 
-  if (nameElement) {
-    nameElement.textContent = productName;
-  }
+    /*
+     * ---------------------------------------------------------
+     * Use existing checkout item row as template.
+     * ---------------------------------------------------------
+     */
+    const template = document.querySelector(
+      '.order-item-row:not([data-free-gift="1"])',
+    );
 
-  /*
-   * ---------------------------------------------------------
-   * Brand
-   * ---------------------------------------------------------
-   */
-  const brandElement = row.querySelector(
-    ".order-item-brand",
-  );
+    if (!template) {
+      console.error(
+        "Free Gift: existing cart row template not found.",
+      );
 
-  if (brandElement) {
-    brandElement.textContent =
-      cartItem.manufactureName ||
-      cartItem.ManufactureName ||
-      cartItem.brand ||
-      cartItem.Brand ||
-      "";
-  }
+      return;
+    }
 
-  /*
-   * ---------------------------------------------------------
-   * SKU
-   * ---------------------------------------------------------
-   */
-  const skuElement = row.querySelector(
-    ".order-item-sku",
-  );
+    const row = template.cloneNode(true);
 
-  if (skuElement) {
-    skuElement.textContent =
-      giftSku;
-  }
+    row.dataset.productId = String(productId);
+    row.dataset.freeGift = "1";
 
-  /*
-   * ---------------------------------------------------------
-   * FINAL SALE
-   *
-   * IMPORTANT:
-   * The Free Gift row is cloned from a normal product row.
-   *
-   * Therefore remove ALL cloned .order-item-variant
-   * elements first.
-   *
-   * Then add Final Sale ONLY when the Free Gift backend
-   * cart item actually contains a non-empty FinalSale value.
-   * ---------------------------------------------------------
-   */
-  const finalSale =
-    cartItem.FinalSale ||
-    cartItem.final_sale ||
-    "";
-
-  /*
-   * Remove any variant elements inherited from
-   * the normal product template.
-   */
-  row
-    .querySelectorAll(".order-item-variant")
-    .forEach(function (element) {
+    row.querySelectorAll(".order-item-bogo-message").forEach(function (element) {
       element.remove();
     });
 
-  /*
-   * Add Final Sale only if backend sends it.
-   */
-  if (String(finalSale).trim() !== "") {
-    const finalSaleElement =
-      document.createElement("div");
+    if (cartId) {
+      row.dataset.cartId = String(cartId);
+    }
 
-    finalSaleElement.className =
-      "order-item-variant";
+    /*
+     * ---------------------------------------------------------
+     * Product data
+     * ---------------------------------------------------------
+     */
+    const productName =
+      cartItem.ProductName ||
+      cartItem.products_name ||
+      cartItem.product_name ||
+      cartItem.name ||
+      "Free Gift";
 
-    finalSaleElement.textContent =
-      String(finalSale).trim();
+    const quantity =
+      parseInt(
+        cartItem.Qty ||
+        cartItem.qty ||
+        cartItem.quantity ||
+        1,
+        10,
+      ) || 1;
+
+    const sku =
+      cartItem.ORGSKU ||
+      cartItem.SKU ||
+      cartItem.sku ||
+      "";
+
+    let giftSku = String(sku);
+
+    if (
+      giftSku &&
+      giftSku.toUpperCase().indexOf("GIFT-") !== 0
+    ) {
+      giftSku = "GIFT-" + giftSku;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Product name
+     * ---------------------------------------------------------
+     */
+    const nameElement = row.querySelector(
+      ".order-item-name",
+    );
+
+    if (nameElement) {
+      nameElement.textContent = productName;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Brand
+     * ---------------------------------------------------------
+     */
+    const brandElement = row.querySelector(
+      ".order-item-brand",
+    );
+
+    if (brandElement) {
+      brandElement.textContent =
+        cartItem.manufactureName ||
+        cartItem.ManufactureName ||
+        cartItem.brand ||
+        cartItem.Brand ||
+        "";
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * SKU
+     * ---------------------------------------------------------
+     */
+    const skuElement = row.querySelector(
+      ".order-item-sku",
+    );
 
     if (skuElement) {
-      skuElement.insertAdjacentElement(
-        "afterend",
-        finalSaleElement,
-      );
+      skuElement.textContent =
+        giftSku;
     }
-  }
 
-  /*
-   * ---------------------------------------------------------
-   * Product image
-   * ---------------------------------------------------------
-   */
-  const imageElement = row.querySelector("img");
+    /*
+     * ---------------------------------------------------------
+     * FINAL SALE
+     *
+     * IMPORTANT:
+     * The Free Gift row is cloned from a normal product row.
+     *
+     * Therefore remove ALL cloned .order-item-variant
+     * elements first.
+     *
+     * Then add Final Sale ONLY when the Free Gift backend
+     * cart item actually contains a non-empty FinalSale value.
+     * ---------------------------------------------------------
+     */
+    const finalSale =
+      cartItem.FinalSale ||
+      cartItem.final_sale ||
+      "";
 
-  if (imageElement) {
-    imageElement.src =
-      getFreeGiftImageUrl(cartItem);
+    /*
+     * Remove any variant elements inherited from
+     * the normal product template.
+     */
+    row
+      .querySelectorAll(".order-item-variant")
+      .forEach(function (element) {
+        element.remove();
+      });
 
-    imageElement.removeAttribute("srcset");
-  }
+    /*
+     * Add Final Sale only if backend sends it.
+     */
+    if (String(finalSale).trim() !== "") {
+      const finalSaleElement =
+        document.createElement("div");
 
-  /*
-   * ---------------------------------------------------------
-   * Free Gift price
-   * ---------------------------------------------------------
-   */
-  const priceElement = row.querySelector(
-    ".order-item-price-current",
-  );
+      finalSaleElement.className =
+        "order-item-variant";
 
-  if (priceElement) {
-    priceElement.textContent = "$0.00";
-  }
+      finalSaleElement.textContent =
+        String(finalSale).trim();
 
-  /*
-   * ---------------------------------------------------------
-   * FREE GIFT CONTROLS
-   *
-   * Match Refresh layout exactly:
-   *
-   * Qty : 1
-   *
-   * Do NOT show:
-   * - + button
-   * - - button
-   * - qty-stepper
-   * - Free Gift label
-   * ---------------------------------------------------------
-   */
-  const controls = row.querySelector(
-    ".order-item-controls",
-  );
+      if (skuElement) {
+        skuElement.insertAdjacentElement(
+          "afterend",
+          finalSaleElement,
+        );
+      }
+    }
 
-  if (controls) {
-    controls.innerHTML = "";
+    /*
+     * ---------------------------------------------------------
+     * Product image
+     * ---------------------------------------------------------
+     */
+    const imageElement = row.querySelector("img");
 
-    const qtyText =
-      document.createElement("span");
+    if (imageElement) {
+      imageElement.src =
+        getFreeGiftImageUrl(cartItem);
 
-    qtyText.textContent =
-      "Qty: " + quantity;
+      imageElement.removeAttribute("srcset");
+    }
 
-    controls.appendChild(
-      qtyText,
+    /*
+     * ---------------------------------------------------------
+     * Free Gift price
+     * ---------------------------------------------------------
+     */
+    const priceElement = row.querySelector(
+      ".order-item-price-current",
     );
 
-    /*
-     * -------------------------------------------------------
-     * Coupon Free Gift
-     *
-     * Coupon generated Free Gift cannot be removed.
-     * -------------------------------------------------------
-     */
-    const freeGiftCoupon =
-      String(
-        cartItem.FreeGiftCoupon ||
-          cartItem.free_gift_coupon ||
-          "No",
-      ).toLowerCase();
+    if (priceElement) {
+      priceElement.textContent = "$0.00";
+    }
 
     /*
-     * -------------------------------------------------------
-     * REMOVE BUTTON RULE
+     * ---------------------------------------------------------
+     * FREE GIFT CONTROLS
      *
-     * 1 configured SKU:
-     *     => No Remove
+     * Match Refresh layout exactly:
      *
-     * Multiple configured SKUs:
-     *     => Remove allowed
+     * Qty : 1
      *
-     * FreeGiftCoupon = Yes:
-     *     => No Remove
-     * -------------------------------------------------------
+     * Do NOT show:
+     * - + button
+     * - - button
+     * - qty-stepper
+     * - Free Gift label
+     * ---------------------------------------------------------
      */
-    if (
-      freeGiftRuleSkuCount > 1 &&
-      freeGiftCoupon !== "yes"
-    ) {
-      const removeButton =
-        document.createElement("button");
+    const controls = row.querySelector(
+      ".order-item-controls",
+    );
 
-      removeButton.className =
-        "item-remove";
+    if (controls) {
+      controls.innerHTML = "";
 
-      removeButton.type = "button";
+      const qtyText =
+        document.createElement("span");
 
-      removeButton.setAttribute(
-        "aria-label",
-        "Remove " +
-          productName +
-          " from cart",
-      );
-
-      removeButton.textContent =
-        "Remove";
-
-      removeButton.setAttribute(
-        "onclick",
-        "removeItem(this)",
-      );
+      qtyText.textContent =
+        "Qty: " + quantity;
 
       controls.appendChild(
-        removeButton,
+        qtyText,
+      );
+
+      /*
+       * -------------------------------------------------------
+       * Coupon Free Gift
+       *
+       * Coupon generated Free Gift cannot be removed.
+       * -------------------------------------------------------
+       */
+      const freeGiftCoupon =
+        String(
+          cartItem.FreeGiftCoupon ||
+          cartItem.free_gift_coupon ||
+          "No",
+        ).toLowerCase();
+
+      /*
+       * -------------------------------------------------------
+       * REMOVE BUTTON RULE
+       *
+       * 1 configured SKU:
+       *     => No Remove
+       *
+       * Multiple configured SKUs:
+       *     => Remove allowed
+       *
+       * FreeGiftCoupon = Yes:
+       *     => No Remove
+       * -------------------------------------------------------
+       */
+      if (
+        freeGiftRuleSkuCount > 1 &&
+        freeGiftCoupon !== "yes"
+      ) {
+        const removeButton =
+          document.createElement("button");
+
+        removeButton.className =
+          "item-remove";
+
+        removeButton.type = "button";
+
+        removeButton.setAttribute(
+          "aria-label",
+          "Remove " +
+          productName +
+          " from cart",
+        );
+
+        removeButton.textContent =
+          "Remove";
+
+        removeButton.setAttribute(
+          "onclick",
+          "removeItem(this)",
+        );
+
+        controls.appendChild(
+          removeButton,
+        );
+      }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * MAIN CHECKOUT LIST
+     * ---------------------------------------------------------
+     */
+    const mainList =
+      document.getElementById(
+        "checkout-cart-items",
+      );
+
+    if (mainList) {
+      const moreButton =
+        mainList.querySelector(
+          ".view-all-items",
+        );
+
+      if (moreButton) {
+        mainList.insertBefore(
+          row,
+          moreButton,
+        );
+      } else {
+        mainList.appendChild(
+          row,
+        );
+      }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * CART DRAWER
+     * ---------------------------------------------------------
+     */
+    const drawerBody =
+      document.querySelector(
+        ".cart-drawer-body",
+      );
+
+    if (drawerBody) {
+      const drawerRow =
+        row.cloneNode(true);
+
+      drawerBody.appendChild(
+        drawerRow,
       );
     }
   }
 
-  /*
-   * ---------------------------------------------------------
-   * MAIN CHECKOUT LIST
-   * ---------------------------------------------------------
-   */
-  const mainList =
-    document.getElementById(
-      "checkout-cart-items",
-    );
-
-  if (mainList) {
-    const moreButton =
-      mainList.querySelector(
-        ".view-all-items",
-      );
-
-    if (moreButton) {
-      mainList.insertBefore(
-        row,
-        moreButton,
-      );
-    } else {
-      mainList.appendChild(
-        row,
-      );
-    }
-  }
-
-  /*
-   * ---------------------------------------------------------
-   * CART DRAWER
-   * ---------------------------------------------------------
-   */
-  const drawerBody =
-    document.querySelector(
-      ".cart-drawer-body",
-    );
-
-  if (drawerBody) {
-    const drawerRow =
-      row.cloneNode(true);
-
-    drawerBody.appendChild(
-      drawerRow,
-    );
-  }
-}
-
-function loadDropshipperDetails()
-  {
+  function loadDropshipperDetails() {
     $.ajax({
       type: "POST",
       url: urls.setDropshipper,
@@ -9052,8 +9180,9 @@ function loadDropshipperDetails()
     })
       .done(function (res) {
         var dropshipperBox = "";
-        if(res.status === true)
-        {
+        if (res.status === true) {
+          $("#place-order-btn").hide();
+          $("#place-order-mobile").hide();
           dropshipperBox =
             '<div class="col-md-12 text-center"><h2>Dropshipper Information</h2><hr></div>';
           if (res.fund_msg && $.trim(res.fund_msg) != "") {
@@ -9080,6 +9209,8 @@ function loadDropshipperDetails()
           }
 
           if (res.fund_available == "Yes") {
+            $("#place-order-btn").show();
+            $("#place-order-mobile").show();
             dropshipperBox += "<div>" + res.remaining_fund_formated + "</div>";
           } else {
             dropshipperBox += "<div>" + res.required_fund_formated + "</div>";
@@ -9087,138 +9218,145 @@ function loadDropshipperDetails()
           dropshipperBox += "</div>";
           if (res.fund_available == "No") {
             dropshipperBox += '<div class="col-md-12 text-center">';
-            dropshipperBox +='<hr><button type="button" class="btn btn-cta btn-dropship add-fund" aria-label="Add Fund">Add Fund</button>';
+            dropshipperBox += '<hr><button type="button" class="btn btn-cta btn-dropship add-fund" aria-label="Add Fund">Add Fund</button>';
             dropshipperBox += "</div>";
           }
           dropshipperBox += '<div class="col-md-12"><hr></div>';
         }
         $("#dropshipper_details").html(dropshipperBox);
       }).fail(function (xhr, status, error) {
-          if (status === "abort") {
-            return;
-          }
+        if (status === "abort") {
+          return;
+        }
 
-          let message = "Unable to load dropshipper details. Please try again.";
+        let message = "Unable to load dropshipper details. Please try again.";
 
-          if (xhr.responseJSON && xhr.responseJSON.message) {
-            message = xhr.responseJSON.message;
-          }
+        if (xhr.responseJSON && xhr.responseJSON.message) {
+          message = xhr.responseJSON.message;
+        }
 
-          // showMessage(
-          //     '#shipping-method-messages',
-          //     message,
-          //     'error'
-          // );
-        })
-        .always(function () {
-          //showLoader(false);
-        });
+        // showMessage(
+        //     '#shipping-method-messages',
+        //     message,
+        //     'error'
+        // );
+      })
+      .always(function () {
+        //showLoader(false);
+      });
   }
 
-  function loadCreditDetails()
-  {
+  function loadCreditDetails() {
     var flag = 0;
-    if($("#chkcreditlimit").prop('checked'))
-    {
+    if ($("#chkcreditlimit").prop('checked')) {
       flag = 1;
     }
     $.ajax({
       type: "POST",
-      url: site_url+'apply-credit-discount',
+      url: site_url + 'apply-credit-discount',
       headers: {
         "X-CSRF-TOKEN": csrfToken,
       },
       dataType: "json",
-      data : {
+      data: {
         creditLimitFlag: flag
       }
     })
       .done(function (res) {
 
-        if(res.status === true)
-        {
+        if (res.status === true) {
           window.location.reload();
         }
       }).fail(function (xhr, status, error) {
-          if (status === "abort") {
-            return;
-          }
-        })
-        .always(function () {
-          //showLoader(false);
-        });
+        if (status === "abort") {
+          return;
+        }
+      })
+      .always(function () {
+        //showLoader(false);
+      });
   }
 
-  function ShowOffer(offerId)
-  {
-    if(window.badges.length > 0)
-    {
-      $.each(window.badges,function(index,badge){
-        if(badge.id == offerId)
-        {
+  function ShowOffer(offerId) {
+    if (window.badges.length > 0) {
+      $.each(window.badges, function (index, badge) {
+        if (badge.id == offerId) {
           $("#checkout-offers #promo-heading").html(badge.title_html);
-          $("#checkout-offers .free-gift-fill").css('width',badge.percentage+'%');
+          $("#checkout-offers .free-gift-fill").css('width', badge.percentage + '%');
           $("#checkout-offers .free-gift-remaining").html(badge.remaining_text);
         }
       })
     }
   }
-  function GetCheckoutOffers()
-  {
+  function GetCheckoutOffers() {
     // $(".free_shipping").hide();
     // $(".promo-demo-switcher").hide();
     // $(".purchase-threshold-promo").hide();
     if (checkoutOffersRequest) {
-        checkoutOffersRequest.abort();
+      checkoutOffersRequest.abort();
     }
     $.ajax({
       type: "POST",
-      url: site_url+'checkout-offers',
+      url: site_url + 'checkout-offers',
       headers: {
         "X-CSRF-TOKEN": csrfToken,
       },
       dataType: "json"
     }).done(function (res) {
 
-        if(res.status === true)
-        {
-          var badges = res.badges;
-          var freeShipping = res.free_shipping || {};
+      if (res.status === true) {
+        var badges = res.badges;
+        var freeShipping = res.free_shipping || {};
 
-          if(freeShipping.percentage !== undefined)
-          {
-              $(".free-shipping").css('width',freeShipping.percentage+'%');
-              $(".free-shipping-amount").text("$"+freeShipping.remain_amount+' away');
-              $(".free_shipping").css('display','flex');
-          } else {
-            $(".free_shipping").css('display','none');
-          }
-          $("#checkout-offers").hide();
-          if(badges.length > 0)
-          {
-            window.badges = badges;
-            $(".promo-demo-switcher .promo-demo-btn").remove();
-            $.each(badges,function(index,badge){
-                var badgeClass = "";
-                if(index == 0)
-                  badgeClass = "active";
-
-                var addBadge = '<button type="button" class="promo-demo-btn '+badgeClass+'" data-preset="'+badge.id+'" aria-pressed="true">'+badge.label+'</button>';
-                $(".promo-demo-switcher").append(addBadge);
-
-                if(index == 0)
-                {
-                  ShowOffer(badge.id);
-                }
-            });
-            $("#checkout-offers").show();
-          }
+        if (freeShipping.percentage !== undefined) {
+          $(".free-shipping").css('width', freeShipping.percentage + '%');
+          $(".free-shipping-amount").text("$" + freeShipping.remain_amount + ' away');
+          $(".free_shipping").css('display', 'flex');
         } else {
-          $(".free_shipping").css('display','none');
-          $("#checkout-offers").hide();
-          // $(".promo-demo-switcher").hide();
-          // $(".purchase-threshold-promo").hide();
+          $(".free_shipping").css('display', 'none');
         }
+
+        $("#checkout-offers").hide();
+        if (badges.length > 0) {
+          window.badges = badges;
+          $(".promo-demo-switcher .promo-demo-btn").remove();
+          $.each(badges, function (index, badge) {
+            var badgeClass = "";
+            if (index == 0)
+              badgeClass = "active";
+
+            $(".promo-info-btn").attr('hidden', true);
+            $(".promo-tooltip").text('');
+
+            if(badge.id == 'free_gift')
+            {
+              if(badge.flag_range != '' && badge.flag_range != undefined)
+              {
+                $(".promo-info-btn").removeAttr('hidden');
+                var tooltipText = '';
+                if(badge.category_name != '')
+                  tooltipText+='<div>Categories: '+badge.category_name+"</div>";
+                if(badge.brand_name != '')
+                  tooltipText+='<div>Brands: '+badge.brand_name+"</div>";
+
+                $(".promo-tooltip").html(tooltipText);
+              }
+            }
+            var addBadge = '<button type="button" class="promo-demo-btn ' + badgeClass + '" data-preset="' + badge.id + '" aria-pressed="true">' + badge.label + '</button>';
+            $(".promo-demo-switcher").append(addBadge);
+
+            if (index == 0) {
+              ShowOffer(badge.id);
+            }
+          });
+          $("#checkout-offers").show();
+        }
+      } else {
+        $(".free_shipping").css('display', 'none');
+        $("#checkout-offers").hide();
+        // $(".promo-demo-switcher").hide();
+        // $(".purchase-threshold-promo").hide();
+      }
     }).fail(function (xhr, status, error) {
 
     }).always(function () {
@@ -9226,31 +9364,276 @@ function loadDropshipperDetails()
     });
   }
 
-  function updateViewAll()
-  {
+  function updateViewAll() {
     var totalItems = $(".cart-drawer-body .order-item-row").length;
 
-    if(totalItems <= 2)
-    {
+    if (totalItems <= 2) {
       $(".view-all-items").hide();
     } else {
       $(".view-all-items").show();
     }
     var remainItems = (totalItems - 2);
-    console.log(remainItems);
-    $("#more-items-count").text("+ "+ remainItems + " More Items");
+
+    $("#more-items-count").text("+ " + remainItems + " More Items");
 
     $(".order-items-list .order-item-row").each(function (index) {
       $(this).prop("hidden", index > 1);
     });
 
     var TotalCartItems = 0;
-    $(".cart-drawer-body .order-item-row .qty-value").each(function(index,row){
-      TotalCartItems += parseInt($(this).text());
+    $(".cart-drawer-body .order-item-row").each(function (index, row) {
+      if ($(this).find(".qty-value").length > 0) {
+        TotalCartItems += parseInt($(this).find(".qty-value").text());
+      }
+      if ($(this).attr('data-free-gift') == '1' || $(this).attr('data-free-sample') == '1') {
+        TotalCartItems += 1;
+      }
     });
+    /*
+    $(".cart-drawer-body .order-item-row .qty-value").each(function(index,row){
+      if($(this).attr('data-free-gift') == '1' || $(this).attr('data-free-sample') == '1')
+      {
+        TotalCartItems += 1;
+      } else {
+        TotalCartItems += parseInt($(this).text());
+      }
+    });
+    */
+    var postfix = 'items';
+    if(TotalCartItems == 1)
+      postfix = 'item';
+    $("#summary-total-items").text('Subtotal (' + TotalCartItems + ' '+postfix+')');
     $(".summary-cart-count").text(TotalCartItems);
-    $(".cart-drawer-count").text('('+TotalCartItems+' items)');
+    $(".cart-drawer-count").text('(' + TotalCartItems + ' items)');
   }
+  async function processStripeWalletPayment(ev) {
+      let PayType = "";
+      let PayMethod = "";
+      let order_id = null;
+
+      try {
+          // Step 1: Identify wallet
+          if (ev.expressPaymentType === "apple_pay") {
+              PayType = "STRIPE_APPLEPAY";
+              PayMethod = "Apple Pay";
+          } else if (ev.expressPaymentType === "google_pay") {
+              PayType = "STRIPE_GOOGLEPAY";
+              PayMethod = "Google Pay";
+          } else {
+              throw new Error("Unsupported wallet payment method.");
+          }
+
+          showFullPageLoader(true);
+
+          // Step 2: Extract Express Checkout details.
+          // Do not stringify the complete event object because it contains
+          // methods and may contain non-serializable properties.
+          const walletDetails = {
+              billingDetails: ev.billingDetails || {},
+              shippingAddress: ev.shippingAddress || {},
+              shippingRate: ev.shippingRate || {},
+              expressPaymentType: ev.expressPaymentType || ""
+          };
+
+          let payload = {
+              payment_type: PayType,
+              payment_method: PayMethod,
+              allDetailsVal: JSON.stringify(ev)
+          };
+          console.log(payload);
+          // Step 3: Create order
+          const response = await PlaceOrder(payload);
+          const result = await response.json();
+
+          if (!response.ok || result.status !== true) {
+              throw new Error(result.message || "Unable to create order.");
+          }
+
+          order_id = result.order_id;
+
+          // Step 4: Create PaymentIntent for this order
+          const intentResponse = await fetch(
+              window.checkoutUrls.stripeWalletIntent,
+              {
+                  method: "POST",
+                  credentials: "same-origin",
+                  headers: {
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                      "X-CSRF-TOKEN": csrfToken
+                  },
+                  body: JSON.stringify({
+                      order_id: order_id,
+                      payMethod: PayType
+                  })
+              }
+          );
+
+          const intentResult = await intentResponse.json();
+
+          if (
+              !intentResponse.ok ||
+              intentResult.success !== true ||
+              !intentResult.client_secret
+          ) {
+              throw new Error(
+                  intentResult.message ||
+                  "Unable to initialize wallet payment."
+              );
+          }
+
+          // Step 5: Confirm PaymentIntent using Express Checkout Element
+          const confirmation = await window.stripe.confirmPayment({
+              elements: stripeElements,
+              clientSecret: intentResult.client_secret,
+              confirmParams: {
+                  return_url: site_url+'secure-checkout'
+              },
+              redirect: "if_required"
+          });
+
+          if (confirmation.error) {
+              throw new Error(confirmation.error.message);
+          }
+
+          const paymentIntent = confirmation.paymentIntent;
+
+          if (!paymentIntent) {
+              throw new Error("Unable to retrieve payment confirmation.");
+          }
+
+          // Step 6: Update order after successful payment
+          if (paymentIntent.status === "succeeded") {
+              await setOrderStatus(
+                  paymentIntent.id,
+                  order_id,
+                  PayType,
+                  ''
+              );
+
+              return;
+          }
+
+          if (paymentIntent.status === "processing") {
+              // Payment is processing. Let your webhook handle final status.
+              console.log("Stripe payment is processing:", paymentIntent.id);
+              return;
+          }
+
+          throw new Error(
+              "Payment was not completed. Status: " + paymentIntent.status
+          );
+
+      } catch (error) {
+          console.error("Stripe wallet payment error:", error);
+
+          // Notify Stripe Express Checkout that payment failed.
+          if (typeof ev.paymentFailed === "function") {
+              ev.paymentFailed();
+          }
+          $(".express-header").append("<div class='alert alert-danger stripe-error'>"+(error.message || "Unable to process wallet payment.")+"</div>");
+          $(".stripe-error").stop(true, true).show().delay(3000).queue(function () {
+              $(this).remove();
+          });
+          //alert(error.message || "Unable to process wallet payment.");
+
+      } finally {
+          showFullPageLoader(false);
+      }
+  }
+  /**
+  async function processStripeWalletPayment(ev, walletName) {
+    try {
+      var PayType = "";
+      var PayMethod = "";
+      let payload = {};
+      if (walletName === "A" || walletName === "G") {
+        if (walletName === "A") {
+          PayType = "STRIPE_APPLEPAY";
+          PayMethod = "Apple Pay";
+        } else if (walletName === "G") {
+          PayType = "STRIPE_GOOGLEPAY";
+          PayMethod = "Google Pay";
+        }
+        payload['payment_type'] = PayType;
+        payload['payment_method'] = PayMethod;
+        payload['allDetailsVal'] = ev;
+        let evDetails = JSON.parse(ev);
+        showFullPageLoader(true);
+        const response = await PlaceOrder(payload);
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.message || "Unable to create order.");
+        }
+        if (result.status === true) {
+          var order_id = result.order_id;
+          //alert(order_id);
+          //processCardPayment(paymentMethod.id, order_id, PayMethod);
+          // Step 2: request a PaymentIntent for this order.
+          const intentResponse = await fetch(
+            window.checkoutUrls.stripeWalletIntent,
+            {
+              method: "POST",
+              credentials: "same-origin",
+              headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-CSRF-TOKEN": csrfToken
+              },
+              body: JSON.stringify({
+                order_id: order_id,
+                payment_method_id: evDetails.paymentMethod.id
+              })
+            }
+          );
+
+          const intentResult = await intentResponse.json();
+
+          if (
+            !intentResponse.ok ||
+            intentResult.success !== true ||
+            !intentResult.client_secret
+          ) {
+            throw new Error(
+              intentResult.message ||
+              "Unable to initialize wallet payment."
+            );
+          }
+          //alert(intentResult.client_secret);
+          // Tell the wallet UI that Stripe confirmation succeeded.
+          //ev.complete("success");
+
+          // Step 3: confirm the PaymentIntent using Stripe.js.
+          let confirmation = await window.stripe.confirmCardPayment(
+            intentResult.client_secret,
+            {
+              payment_method: evDetails.paymentMethod.id
+            },
+            {
+              handleActions: false
+            }
+          );
+
+          if (confirmation.error) {
+            throw new Error(confirmation.error.message);
+          }
+
+          let paymentIntent = confirmation.paymentIntent;
+
+          await setOrderStatus(paymentIntent.id, order_id, PayType, '');
+          //alert(intentResult.client_secret);
+        }
+
+      }
+    } catch (error) {
+      showFullPageLoader(false);
+      showMessage(
+        "#checkout-messages",
+        error.message || "An error occurred while creating the order."
+      );
+    }
+  }
+  */
 })(jQuery);
 /* =========================================================
    CHECKOUT LOGIN

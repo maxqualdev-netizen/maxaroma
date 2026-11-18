@@ -82,7 +82,8 @@
             </div>
         </div>
     </div>
-    <script src="https://www.paypal.com/sdk/js?client-id=AQymJLkSRgzhHf0AjiYOGL_OHQZ60bCggeySkd8F31n_2ery6HK7HXYQGeeBCfszGgAin8XfJbvZuByn&components=messages,buttons,funding-eligibility&commit=false&disable-funding=card"></script>
+    {{--<script src="https://www.paypal.com/sdk/js?client-id=AQymJLkSRgzhHf0AjiYOGL_OHQZ60bCggeySkd8F31n_2ery6HK7HXYQGeeBCfszGgAin8XfJbvZuByn&components=messages,buttons,funding-eligibility&commit=false&disable-funding=card"></script>--}}
+    <script src="https://www.paypal.com/sdk/js?client-id={{ $paypal_client_id }}&components=messages,buttons,funding-eligibility&commit=false&disable-funding=card"></script>
     <script type="text/javascript">
     let paypalApprovalHandled = false;
     var Site_URL = "{{config('global.SITE_URL')}}";

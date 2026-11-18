@@ -708,10 +708,10 @@ Route::get('/sitecart',[ShoppingcartController::class,'SetOmnisendCart']);
 Route::post('/GetSlideCartData',[ShoppingcartController::class,'GetSlideCartDataPage']);
 
 //New Checkout Page
-Route::get('/secure-checkout',[ShoppingcartController::class,'CheckoutPageNew'])->name('secure-checkout');
+Route::get('/secure-checkout1',[ShoppingcartController::class,'CheckoutPageNew'])->name('secure-checkout');
 
-Route::post('/secure-checkout1/{method?}', [CheckoutController::class, 'index'])->name('checkout-new');
-Route::get('/secure-checkout1/{method?}', [CheckoutController::class, 'index'])->name('checkout-new');
+Route::post('/secure-checkout/{method?}', [CheckoutController::class, 'index'])->name('checkout-new');
+Route::get('/secure-checkout/{method?}', [CheckoutController::class, 'index'])->name('checkout-new');
 
 Route::post(
     '/checkoutnew/shipping-insurance',
@@ -1104,6 +1104,8 @@ Route::post(
 
 //New Stripe Integration
 Route::post('/create-stripe-payment-intent',[CheckoutStripeController::class,'CreatePaymentIntent'])->name('create-stripe-intent');
+Route::post('/payment/stripe/wallet/intent',[CheckoutStripeController::class, 'CreatePaymentIntent'])->name('checkoutnew.payment.stripe.wallet.intent');
+Route::post('/payment/stripe/wallet/create-update-intent',[CheckoutStripeController::class, 'createOrUpdatePaymentIntent'])->name('checkoutnew.payment.stripe.wallet.create_update_intent');
 
 Route::get('/checkout/payment/stripe/config',[CheckoutController::class,'stripeConfig'])->name('checkout.payment.stripe.config');
 Route::post('/checkout/payment/stripe/pay',[CheckoutController::class,'stripePay'])->name('checkout.payment.stripe.pay');
@@ -1129,6 +1131,7 @@ Route::get('/setup-amazon/{page_from?}',[CheckoutAmazonpayController::class,'Set
 Route::post('amazon-order-details',[CheckoutAmazonpayController::class,'GetOrderInfo']);
 
 Route::post('apply-credit-discount',[CheckoutController::class,'ApplyCreditDiscount']);
+Route::post('check-wholesale-member',[CheckoutController::class, 'CheckWholesaleMember']);
 //New Stripe Integration
 
 // Search Change
@@ -1145,3 +1148,7 @@ Route::post('/max_analytics/click', [CustomProductSearchController::class, 'prox
 // Always register — gate inside controller (APP_DEBUG or ?token=).
 // Do NOT wrap in if (config('app.debug')): route:cache / config:cache would omit it forever.
 Route::get('/__search/meili-debug', [CustomProductSearchController::class, 'meilisearchDebug']);
+
+Route::post('/max_analytics/cart', [CustomProductSearchController::class, 'proxyAnalyticsCart']);
+Route::post('/max_analytics/purchase', [CustomProductSearchController::class, 'proxyAnalyticsPurchase']);
+

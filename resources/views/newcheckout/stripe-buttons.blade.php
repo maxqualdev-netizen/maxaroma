@@ -1,989 +1,345 @@
-{{--
 <script>
-let stripe = null;
-let paymentRequest = null;
-let prButton = null;
 
-let stripeInitialized = false;
-let AppleGPay = '';
-let stripeCartRefreshInProgress = false;
+(function ($) {
+    "use strict";
 
-const csrfToken = $('meta[name="csrf-token"]').attr('content');
+    let stripe = null;
+    let stripeElements = null;
+    let expressCheckoutElement = null;
 
-const stripeConfig = {
-    publishableKey: '{{ env("STRIPE_KEY") }}',
-    country: 'US',
-    currency: 'usd'
-};
+    let initialAmount = 0;
+    let walletInitialized = false;
 
-/**
- * ---------------------------------------------------------
- * Common AJAX helper
- * ---------------------------------------------------------
- */
-async function checkoutPost(url, data = {}, options = {}) {
-
-    const response = await $.ajax({
-        type: 'POST',
-        url: url,
-        headers: {
-            'X-CSRF-TOKEN': csrfToken
-        },
-        dataType: 'json',
-        data: data,
-        ...options
-    });
-
-    return response;
-}
-
-/**
- * ---------------------------------------------------------
- * Convert amount to Stripe smallest currency unit
- * ---------------------------------------------------------
- */
-function toStripeAmount(amount) {
-    return Math.round(Number(amount || 0));
-}
-
-/**
- * ---------------------------------------------------------
- * Get shipping options
- * ---------------------------------------------------------
- */
-async function GetShippingOptions(
-    state = '',
-    zip = '',
-    country = '',
-    city = ''
-) {
-    const data = await checkoutPost(
-        //site_url + 'shipping',
-        site_url + 'get-shipping-methods',
-        {
-            OnlyHead: '0',
-            action: 'shippinginfo',
-            subaction: 'stripecart',
-
-            state: state,
-            zip: zip,
-            country: country,
-            city: city,
-
-            Gpay: 'Yes',
-            FirstStepGpay: 'FirstStep'
-        }
-    );
-
-    if (!Array.isArray(data) || !data.length) {
-        return [];
+    function getCheckoutAmount() {
+        const amount = parseFloat({{ round($NetTotal * 100) }});
+        //const amount = parseFloat($("#shoptotal").text()) * 100;
+        return Math.round(amount * 100);
     }
 
-    // Set first shipping method as default.
-    /*
-    await SetStripeShippingMethod(
-        data[0].id,
-        state,
-        zip,
-        country,
-        city
-    );
-    */
-    return data;
-}
-
-async function RefreshStripePaymentRequest() {
-
-    if (!paymentRequest || stripeCartRefreshInProgress) {
-        return;
+    function showWalletError(message) {
+        $("#stripe-wallet-error")
+            .text(message || "Unable to process payment.")
+            .show();
     }
 
-    stripeCartRefreshInProgress = true;
+    function hideWalletError() {
+        $("#stripe-wallet-error").hide().empty();
+    }
 
-    try {
+    function initializeExpressCheckout() {
 
-        const cart = await GetStripeCart();
-
-        if (!cart) {
+        if (walletInitialized) {
             return;
         }
 
-        paymentRequest.update({
-            total: {
-                label: 'Order Total',
-                amount: cart.NetTotal
-            },
-            displayItems: cart.items || []
+        const publishableKey = window.stripeinfo?.stripekey;
+
+        if (!publishableKey) {
+            console.error("Stripe publishable key is missing.");
+            return;
+        }
+
+        initialAmount = getCheckoutAmount();
+
+        if (initialAmount <= 0) {
+            console.error("Invalid Stripe checkout amount.");
+            return;
+        }
+
+        stripe = Stripe(publishableKey);
+
+        window.stripe = stripe;
+
+        stripeElements = stripe.elements({
+            mode: "payment",
+            amount: initialAmount,
+            currency: "usd",
         });
 
-    } catch (error) {
+        window.stripeElements = stripeElements;
 
-        console.error(
-            'Stripe cart update failed:',
-            error
-        );
-
-    } finally {
-
-        stripeCartRefreshInProgress = false;
-    }
-}
-
-/**
- * ---------------------------------------------------------
- * Get Stripe Cart
- * ---------------------------------------------------------
- */
-async function GetStripeCart() {
-
-    $('#page-spinner').show();
-    $('#ShippingSignInsu').modal('hide');
-
-    try {
-
-        const data = await checkoutPost(
-            site_url + 'get-stipe-cart',
+        expressCheckoutElement = stripeElements.create(
+            "expressCheckout",
             {
-                action: 'getcart'
+                emailRequired: true,
+                phoneNumberRequired: true,
+                shippingAddressRequired: true,
+
+                buttonHeight: 45,
+
+                layout: {
+                    maxColumns: 2,
+                    maxRows: 2,
+                    overflow: "auto",
+                },
+                paymentMethods: {
+                    applePay: "always",
+                    googlePay: "always",
+                    link: "auto"
+                },
+                buttonType: {
+                    applePay: "buy",
+                    googlePay: "buy",
+                },
+
+                buttonTheme: {
+                    applePay: "black",
+                    googlePay: "black",
+                },
             }
         );
 
-        if (data === 'OutOfStock') {
-            window.location.href =
-                site_url + 'shoppingcart/view';
+        expressCheckoutElement.on(
+            "availablepaymentmethodschange",
+            function (event) {
 
-            return null;
-        }
-
-        if (data === 'Zero') {
-            window.location.href =
-                site_url + 'shoppingcart/view';
-
-            return null;
-        }
-
-        return {
-            items: data.items || [],
-            NetTotal: Number(data.NetTotal || 0)
-        };
-
-    } finally {
-        $('#page-spinner').hide();
-    }
-}
-
-/**
- * ---------------------------------------------------------
- * Set Stripe shipping method
- * ---------------------------------------------------------
- */
-async function SetStripeShippingMethod(
-    ShipMethodID,
-    state = '',
-    zip = '',
-    country = '',
-    city = ''
-) {
-    //alert(ShipMethodID);
-    const setShipping =  checkoutPost(
-        //site_url + 'setshipmethod',
-        site_url + 'set-shipping-method',
-        {
-            action: 'stripecart',
-
-            ShipMethodID: ShipMethodID,
-
-            // state: state,
-            // zip: zip,
-            // country: country,
-            // city: city
-        }
-    );
-
-    //alert(setShipping);
-    return setShipping;
-}
-
-/**
- * ---------------------------------------------------------
- * Get Stripe PaymentIntent client secret
- * ---------------------------------------------------------
- */
-async function GetClientSecret(appleGPay, allDetails) {
-
-    const data = await checkoutPost(
-        site_url + 'getclientsecret',
-        //site + 'get-client-secret',
-        {
-            action: 'clientsecret',
-
-            AppleGPay: appleGPay,
-            allDetailsVal: allDetails,
-
-            stepfrom: 'firststep'
-        }
-    );
-
-    if (
-        data === 'OutOfStock' ||
-        data === 'Close' ||
-        data === 'Guest' ||
-        data === 'SHMethod' ||
-        data === 'Zero'
-    ) {
-        return null;
-    }
-
-    return data.clientSecret || null;
-}
-
-/**
- * ---------------------------------------------------------
- * Handle payment failure
- * ---------------------------------------------------------
- */
-function StripePaymentFailed(event = null) {
-
-    try {
-        if (event) {
-            event.complete('fail');
-        }
-    } catch (e) {
-        console.error(
-            'Unable to complete Stripe payment event:',
-            e
-        );
-    }
-
-    alert(
-        'Your payment has failed. Please try again or use different payment option.'
-    );
-
-    window.location.href =
-        site_url + 'shoppingcart/view';
-}
-
-/**
- * ---------------------------------------------------------
- * Save successful Stripe wallet payment
- * ---------------------------------------------------------
- */
-async function SaveStripeWalletPayment(
-    ev,
-    paymentMethodId
-) {
-
-    const data = await checkoutPost(
-        site_url + 'stripebtnres',
-        {
-            methodName:
-                ev.paymentMethod.payment_method_types,
-
-            payerEmail:
-                ev.payerEmail || '',
-
-            payerName:
-                ev.payerName || '',
-
-            paymentMethod:
-                paymentMethodId,
-
-            shippingOption:
-                ev.shippingOption || null,
-
-            shippingAddress:
-                ev.shippingAddress || null,
-
-            stepfrom:
-                'firststep',
-
-            payerPhone:
-                ev.payerPhone || ''
-        }
-    );
-
-    if (!data || data.status !== 'success') {
-
-        addApplePayLog(
-            'confirm_result_payment_failed',
-            data,
-            '',
-            '<?= $CurrentRoute ?>'
+                console.log(
+                    "Stripe available payment methods:",
+                    event.paymentMethods
+                );
+                $(".express-btn-apple, .express-btn-google, .express-btn-link").hide();
+                if (event.paymentMethods) {
+                    if (event.paymentMethods.applePay.available) {
+                        $("#GpayBtn").show();
+                        $("#GpayBtn").html("Apple Pay");
+                        AppleGPay = 'A';
+                        $(".express-btn-apple").show();
+                        // $("#payment-request-button-checkout").addClass("express-btn-apple");
+                        // $("#payment-request-button-checkout").html('<img src="/images/checkout-new/apple-pay.svg" alt="">');
+                    }
+                    if(event.paymentMethods.googlePay.available){
+                        $("#GpayBtn").show();
+                        $("#GpayBtn").html("Google Pay");
+                        AppleGPay = 'G';
+                        $(".express-btn-google").show();
+                        // $("#payment-request-button-checkout").addClass("express-btn-google");
+                        // $("#payment-request-button-checkout").html('<img src="/images/checkout-new/google-pay.svg" alt="">');
+                    }
+                    if(event.paymentMethods.link.available){
+                        $(".express-btn-link").show();
+                        // $("#payment-request-button-checkout").addClass("express-btn-link");
+                        // $("#payment-request-button-checkout").text("Link");
+                    }
+                    $("#payment-request-button").show();
+                } else {
+                    $("#payment-request-button").hide();
+                }
+            }
         );
 
-        StripePaymentFailed(ev);
-
-        return false;
-    }
-
-    /**
-     * Shipping signature
-     */
-    $('#shipsignatureflag').val(
-        $('#shipping_signature').prop('checked')
-            ? 'Yes'
-            : 'No'
-    );
-
-    /**
-     * Keep existing flags for backward compatibility.
-     */
-    $('#is_stripe_wallet').val('google_pay');
-    $('#is_stripe_applepay').val('apple_pay');
-
-    window.location.href =
-        site_url + 'order-receipt';
-
-    return true;
-}
-
-/**
- * ---------------------------------------------------------
- * Initialize Stripe
- * ---------------------------------------------------------
- */
-async function InitializeStripePaymentRequest() {
-
-    if (stripeInitialized) {
-        return;
-    }
-
-    stripeInitialized = true;
-
-    stripe = Stripe(
-        stripeConfig.publishableKey
-    );
-
-    paymentRequest = stripe.paymentRequest({
-
-        country:
-            stripeConfig.country,
-
-        currency:
-            stripeConfig.currency,
-
-        total: {
-            label: 'Order Total',
-            amount: toStripeAmount(
-                {{ $NetTotal }}
-            )
-        },
-
-        requestShipping: true,
-        requestPayerName: true,
-        requestPayerEmail: true,
-        requestPayerPhone: true
-    });
-
-    /**
-     * Stripe Elements
-     */
-    const elements = stripe.elements();
-
-    prButton = elements.create(
-        'paymentRequestButton',
-        {
-            paymentRequest: paymentRequest,
-
-            style: {
-                paymentRequestButton: {
-                    type: 'default',
-                    theme: 'dark',
-                    height: '45px'
-                }
-            }
-        }
-    );
-
-    /**
-     * -----------------------------------------------------
-     * Check Apple Pay / Google Pay availability
-     * -----------------------------------------------------
-     */
-    const result =
-        await paymentRequest.canMakePayment();
-
-    if (!result) {
-
-        $('#payment-request-button-checkout')
-            .closest('li')
-            .hide();
-
-        $('#payment-request-button-checkout')
-            .hide();
-
-        $('#payment-request-button')
-            .hide();
-
-        return;
-    }
-
-    /**
-     * Detect wallet
-     */
-    if (result.applePay) {
-        AppleGPay = 'A';
-
-        $('#GpayBtn')
-            .show()
-            .html('Apple Pay');
-    }
-
-    if (result.googlePay) {
-        AppleGPay = 'G';
-
-        $('#GpayBtn')
-            .show()
-            .html('Google Pay');
-    }
-
-    /**
-     * Mount wallet button.
-     *
-     * Use whichever container is required
-     * by your existing checkout.
-     */
-    if ($('#payment-request-button-checkout').length) {
-
-        prButton.mount(
-            '#payment-request-button-checkout'
-        );
-    }
-
-    /**
-     * -----------------------------------------------------
-     * Button click
-     * -----------------------------------------------------
-     */
-
-    prButton.on(
-        'click',
-        async function () {
-
-            try {
-
-                const cart =
-                    await GetStripeCart();
-
-                if (!cart) {
-                    return;
-                }
-
-                paymentRequest.update({
-
-                    total: {
-                        label: 'Order Total',
-
-                        amount:
-                            toStripeAmount(
-                                cart.NetTotal
-                            )
-                    },
-
-                    displayItems:
-                        cart.items
-                });
-
-            } catch (error) {
-
-                console.error(
-                    'Stripe cart update failed:',
-                    error
-                );
-
-                window.location.href =
-                    site_url +
-                    'shoppingcart/view';
-            }
-        }
-    );
-
-    /**
-     * -----------------------------------------------------
-     * Shipping address change
-     * -----------------------------------------------------
-     */
-    paymentRequest.on(
-        'shippingaddresschange',
-        async function (ev) {
-
-            try {
-
-                if (
-                    ev.shippingAddress.country !== 'US'
-                ) {
-
-                    ev.updateWith({
-                        status:
-                            'invalid_shipping_address'
-                    });
-
-                    return;
-                }
-
-                const address =
-                    ev.shippingAddress;
-
-                const shippingOptions =
-                    await GetShippingOptions(
-                        address.region || '',
-                        address.postalCode || '',
-                        address.country || '',
-                        address.city || ''
-                    );
-
-                ev.updateWith({
-                    status: 'success',
-                    shippingOptions:shippingOptions
-                });
-
-            } catch (error) {
-
-                console.error(
-                    'Shipping address error:',
-                    error
-                );
-
-                ev.updateWith({
-                    status: 'fail'
-                });
-            }
-        }
-    );
-
-    /**
-     * -----------------------------------------------------
-     * Shipping method change
-     * -----------------------------------------------------
-     */
-    paymentRequest.on(
-        'shippingoptionchange',
-        async function (ev) {
-
-            try {
-
-                const shippingMethodId =
-                    ev.shippingOption.id;
-
-                await SetStripeShippingMethod(
-                    shippingMethodId
-                );
-
-                const cart =
-                    await GetStripeCart();
-
-                if (!cart) {
-
-                    ev.updateWith({
-                        status: 'fail'
-                    });
-
-                    return;
-                }
-
-                ev.updateWith({
-
-                    status: 'success',
-
-                    total: {
-                        label: 'Order Total',
-
-                        amount:
-                            toStripeAmount(
-                                cart.NetTotal
-                            )
-                    },
-
-                    displayItems:
-                        cart.items
-                });
-
-            } catch (error) {
-
-                console.error(
-                    'Shipping method update failed:',
-                    error
-                );
-
-                ev.updateWith({
-                    status: 'fail'
-                });
-            }
-        }
-    );
-
-    /**
-     * -----------------------------------------------------
-     * Payment Method
-     * -----------------------------------------------------
-     */
-    paymentRequest.on(
-        'paymentmethod',
-        async function (ev) {
-
-            let paymentCompleted = false;
-
-            try {
-
-                /**
-                 * Get fresh PaymentIntent client secret.
-                 */
-                const clientSecret =
-                    await GetClientSecret(
-                        AppleGPay,
-                        JSON.stringify(ev)
-                    );
-
-                if (!clientSecret) {
-
-                    StripePaymentFailed(ev);
-
-                    return;
-                }
-
-                /**
-                 * Confirm wallet payment.
-                 *
-                 * handleActions=false means we handle
-                 * next_action separately.
-                 */
-                const result =
-                    await stripe.confirmCardPayment(
-                        clientSecret,
-                        {
-                            payment_method:
-                                ev.paymentMethod.id
-                        },
-                        {
-                            handleActions: false
-                        }
-                    );
-
-                if (result.error) {
+        expressCheckoutElement.on(
+            "confirm",
+            async function (event) {
+
+                hideWalletError();
+                console.log(event);
+
+                try {
+
+                    if (
+                        !window.MaxaromaOnePageCheckout ||
+                        typeof window.MaxaromaOnePageCheckout
+                            .processStripeWalletPayment !== "function"
+                    ) {
+                        throw new Error(
+                            "Stripe checkout handler is unavailable."
+                        );
+                    }
+
+                    var clientSecret = await window.MaxaromaOnePageCheckout.processStripeWalletPayment(event);
+
+                } catch (error) {
 
                     console.error(
-                        'Stripe confirmation error:',
-                        result.error
+                        "Stripe Express Checkout error:",
+                        error
                     );
 
-                    StripePaymentFailed(ev);
+                    showWalletError(
+                        error.message ||
+                        "Payment failed. Please try again."
+                    );
+                }
+            }
+        );
 
+        expressCheckoutElement.on('click', async (event) => {
+            // Must be called within 1 second of the click event.
+            var IntentUpdate = await CreateUpdatePaymentIntent();
+            await stripeElements.update({
+                amount: Number(IntentUpdate.amount),
+            });
+            var CartData = await GetStripeCart();
+            var items = CartData.items;
+            const total = items.reduce((sum, item) => sum + item.amount, 0);
+            console.log(total);
+            var LineItems = new Array();
+
+            //LineItems.push({name: 'Order Total', amount:  CartData.NetTotal});
+            if(items.length > 0)
+            {
+                for(var i=0;i<items.length;i++)
+                {
+                    LineItems.push({name: items[i].label, amount: items[i].amount});
+                }
+            }
+            console.log(LineItems);
+            const linetotal = LineItems.reduce((sum, item) => sum + item.amount, 0);
+            console.log(linetotal);
+            event.resolve({
+                lineItems: LineItems
+            });
+        });
+
+        expressCheckoutElement.on("shippingaddresschange", async function (event) {
+            var state = event.address.state;
+            var zip = event.address.postal_code;
+            var country = event.address.country;
+            var city = event.address.city;
+            var datas = GetShippingOptions(state, zip, country, city);
+            var shippingRates = new Array();
+            console.log(datas);
+            $.each(datas, function(index,data){
+                shippingRates.push({id: data.id, displayName: data.label, amount: data.amount});
+            })
+            console.log(shippingRates);
+            event.resolve({
+                shippingRates: shippingRates,
+                //lineItems: LineItems
+            });
+            /*
+            try {
+                const response = await fetch(window.checkoutUrls.getShippingMethods, {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "X-CSRF-TOKEN": csrfToken
+                    },
+                    body: JSON.stringify({
+                        state: event.address.state,
+                        zip: event.address.postal_code,
+                        country: event.address.country,
+                        city: event.address.city
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || result.status === "Error") {
+                    event.reject();
                     return;
                 }
 
-                const paymentIntent =
-                    result.paymentIntent;
-
-                /**
-                 * Customer authentication required.
-                 */
-                if (
-                    paymentIntent.status ===
-                    'requires_action'
-                ) {
-
-                    const actionResult =
-                        await stripe.confirmCardPayment(
-                            clientSecret
-                        );
-
-                    if (actionResult.error) {
-
-                        console.error(
-                            'Stripe authentication failed:',
-                            actionResult.error
-                        );
-
-                        StripePaymentFailed(ev);
-
-                        return;
-                    }
-                }
-
-                /**
-                 * Tell Apple Pay / Google Pay that
-                 * Stripe payment succeeded.
-                 */
-                ev.complete('success');
-
-                paymentCompleted = true;
-
-                /**
-                 * Save payment / create final order.
-                 */
-                await SaveStripeWalletPayment(
-                    ev,
-                    ev.paymentMethod.id
-                );
+                event.resolve({
+                    shippingRates: result.shippingRates,
+                    lineItems: result.lineItems
+                });
 
             } catch (error) {
-
-                console.error(
-                    'Stripe wallet payment error:',
-                    error
-                );
-
-                if (!paymentCompleted) {
-                    StripePaymentFailed(ev);
-                }
+                console.error("Shipping address error:", error);
+                event.reject();
             }
-        }
-    );
-}
-
-/**
- * ---------------------------------------------------------
- * Initialize once
- * ---------------------------------------------------------
- */
-$(document).ready(function () {
-
-    InitializeStripePaymentRequest()
-        .then(function () {
-            RefreshStripePaymentRequest();
-        })
-        .catch(function (error) {
-
-            console.error(
-                'Stripe initialization failed:',
-                error
-            );
-
-            $('#payment-request-button-checkout')
-                .hide();
-
-            $('#payment-request-button')
-                .hide();
+            */
         });
 
-});
+        expressCheckoutElement.on("shippingratechange", async function (event) {
+            try {
+                // 1. Update selected shipping method in Laravel
+                await SetStripeShippingMethod(event.shippingRate.id);
+
+                // 2. Fetch the recalculated cart
+                const CartData = await GetStripeCart();
+
+                const LineItems = [];
+
+                if (CartData.items?.length) {
+                    CartData.items.forEach(item => {
+                        LineItems.push({
+                            name: item.label,
+                            amount: Number(item.amount)
+                        });
+                    });
+                }
+
+                var IntentUpdate = await CreateUpdatePaymentIntent();
+                console.log(IntentUpdate.amount);
+                await stripeElements.update({
+                    amount: IntentUpdate.amount,
+                });
+                // 3. Update the Elements amount (minor currency units)
+                /*
+                const totalAmount = Math.round(Number(CartData.NetTotal) * 100);
+
+                await stripeElements.update({
+                    amount: totalAmount
+                });
+                */
+                // 4. Update the wallet's displayed breakdown
+                event.resolve({
+                    lineItems: LineItems
+                });
+
+            } catch (error) {
+                console.error("Shipping rate update failed:", error);
+                event.reject();
+            }
+        });
+
+        expressCheckoutElement.mount(
+            "#payment-request-button"
+        );
+
+        walletInitialized = true;
+    }
+
+    /*
+     * Called whenever Maxaroma recalculates checkout totals.
+     */
+    window.updateStripeExpressAmount = function (amount) {
+
+        if (!stripeElements) {
+            return;
+        }
+
+        const amountInCents = Math.round(
+            Number(amount || 0) * 100
+        );
+
+        if (amountInCents <= 0) {
+            return;
+        }
+
+        stripeElements.update({
+            amount: amountInCents,
+        });
+    };
+
+    $(document).ready(function () {
+        initializeExpressCheckout();
+
+        $(document).on('click', '.express-btn-link, .express-btn-google, .express-btn-apple', function() {
+            $("#ShippingSignInsu").modal('show');
+            $("#gpay_applepay_paypal").text("GooglePay/ApplePay");
+            $("#paypal-button-container-checkout").hide();
+            $("#payment-request-button").show();
+        });
+    });
+
+})(jQuery);
+
 </script>
---}}
+{{--
 <script>
     var AppleGPay = '';
-    function GetShippingOptions(state = '', zip = '', country = '', city = '') {
-        //alert(state);
-        //alert(zip);
-        //alert(country);
-        var shippingmodes = [];
-        $.ajax({
-            type: 'POST',
-            url: site_url + 'get-shipping-methods',
-            headers: {
-                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-            },
-            //async: false,
-            data: {
-                'OnlyHead': '0',
-                'action': 'shippinginfo',
-                'subaction': 'stripecart',
-                'state': state,
-                'zip': zip,
-                'country': country,
-                'city': city,
-                'Gpay': 'Yes',
-                'FirstStepGpay': 'FirstStep'
-            },
-            datatype: 'JSON',
-            success: function(data) {
-                //alert(data);
-                shippingmodes = data;
-                SetStripeShippingMethod(data[0].id, state, zip, country, city);
-            }
-        });
-
-        return shippingmodes;
-    }
-
-    function GetStripeCart() {
-        $("#page-spinner").show();
-        var items = [];
-        var NetTotal = 0;
-        $("#ShippingSignInsu").modal('hide');
-        $.ajax({
-            type: 'POST',
-            url: site_url + 'get-stipe-cart',
-            headers: {
-                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-            },
-            //async: false,
-            data: {
-                'action': 'getcart',
-            },
-            datatype: 'JSON',
-            success: function(data) {
-
-                if (data == "OutOfStock") {
-                    window.location = site_url + 'shoppingcart/view';
-                    return false;
-                }
-
-                if (data == "Zero") {
-                    window.location = site_url + 'shoppingcart/view';
-                    return false;
-                }
-
-                items = data.items;
-                NetTotal = data.NetTotal;
-                $("#page-spinner").hide();
-            }
-        });
-        var CartData = {
-            'items': items,
-            'NetTotal': NetTotal
-        };
-        return CartData;
-    }
-
-    function SetStripeShippingMethod(ShipMethodID, state = '', zip = '', country = '', city = '') {
-        $.ajax({
-            type: 'POST',
-            url: site_url + 'set-shipping-method',
-            headers: {
-                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-            },
-            //async: false,
-            datatype: 'JSON',
-            data: {
-                action: 'stripecart',
-                ShipMethodID: ShipMethodID,
-                state: state,
-                zip: zip,
-                country: country,
-                city: city
-            },
-            success: function(data) {},
-        });
-    }
-
-    function GetClientSecret(AppleGPay, allDetails) {
-        var clientSecret = "";
-        $.ajax({
-            type: 'POST',
-            url: site_url + 'getclientsecret',
-            headers: {
-                'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
-            },
-            //async: false,
-            datatype: 'JSON',
-            data: {
-                action: 'clientsecret',
-                AppleGPay: AppleGPay,
-                allDetailsVal: allDetails,
-                stepfrom: 'firststep',
-            },
-            success: function(data) {
-                if (data == "OutOfStock") {
-                    //alert("Sorry some of your cart items are out of stock. Please update your cart and then proceed for payment");
-                    return false;
-                } else if (data == "Close") {
-                    //alert("Sorry please try again");
-                    return false;
-                } else if (data == "Guest") {
-                    //alert("Error while processing your order, Please try again");
-                    return false;
-                } else if (data == "SHMethod") {
-                    //alert("PlaceOrderError: Shipping Method Not Selected");
-                    return false;
-                } else if (data == "Zero") {
-                    //alert("Please change payment type");
-                    return false;
-                } else {
-                    clientSecret = data.clientSecret;
-                }
-            },
-        });
-        return clientSecret;
-    }
-    //pk_test_xWTUgWDaaFSIfHkKClwzQrhS00eb9PQSLX
-    /*
     $(document).ready(function() {
-        var stripe = Stripe('{{env("STRIPE_KEY")}}', {
-            apiVersion: "2019-05-16",
-        });
-        var paymentRequest = stripe.paymentRequest({
-            country: 'US',
-            currency: 'usd',
-            total: {
-                label: 'Order Total',
-                amount: {{ round($NetTotal * 100)}},
-            },
-            requestShipping: true,
-            requestPayerName: true,
-            requestPayerEmail: true,
-            requestPayerPhone: true,
-        });
-        var elements = stripe.elements();
-
-        var prButton = elements.create('paymentRequestButton', {
-            paymentRequest: paymentRequest,
-            buttonType: {
-                applePay: 'buy',
-                googlePay: 'buy'
-            },
-            paymentMethodOrder: [
-                'applePay',
-                'googlePay',
-                'link'
-            ],
-            style: {
-                paymentRequestButton: {
-                    type: 'default', // One of 'default', 'book', 'buy', or 'donate'
-                    theme: 'dark', // One of 'dark', 'light', or 'light-outline'
-                    height: '45px', // Defaults to '40px'. The width is always '100%'.
-                    //width: '155px'
-                },
-            },
-        });
-
-        // prButton.on('click',function(ev){
-        // 	var CartData = GetStripeCart();
-
-        // 	paymentRequest.update({
-        // 		total: {
-        // 			label: 'Order Total',
-        // 			amount: CartData.NetTotal,
-        // 		},
-        // 		displayItems : CartData.items,
-        // 		// shippingOptions: GetShippingOptions(),
-        // 	});
-        // })
-
-        // Check the availability of the Payment Request API first.
-        paymentRequest.canMakePayment().then(function(result) {
-            if (result) {
-                // $("#GpayBtn").show();
-                if (result.applePay) {
-                    //$("#GpayBtn").show();
-                    $("#GpayBtn").html("Apple Pay");
-                    //AppleGPay = 'A';
-                }
-                if (result.googlePay) {
-                    //$("#GpayBtn").show();
-                    $("#GpayBtn").html("Google Pay");
-                    //AppleGPay = 'G';
-                }
-                prButton.mount('#payment-request-button-checkout');
-
-                prButton.addEventListener('click', (event) => {
-                    event.preventDefault();
-                    $("#GpayBtnn").click();
-                });
-            } else {
-                $('#payment-request-button-checkout').closest('li').hide();
-                document.getElementById('payment-request-button-checkout').style.display = 'none';
-            }
-        });
-
-    });
-    */
-    $(document).ready(function() {
-        var stripe = Stripe('{{env("STRIPE_KEY")}}', {
-            //var stripe = Stripe('pk_test_Ht4UumNApNKNPlO0eZVA4rhM00j4ohrYZO', {
+        var publishable_key = window.stripeinfo.stripekey;
+        window.stripe = Stripe(publishable_key, {
             apiVersion: "2019-05-16",
         });
 
-        var paymentRequest = stripe.paymentRequest({
+        var paymentRequest = window.stripe.paymentRequest({
             country: 'US',
             currency: 'usd',
             total: {
@@ -1021,7 +377,6 @@ $(document).ready(function () {
 
         prButton.on('click', function(ev) {
             var CartData = GetStripeCart();
-
             paymentRequest.update({
                 total: {
                     label: 'Order Total',
@@ -1089,6 +444,7 @@ $(document).ready(function () {
                 var country = ev.shippingAddress.country;
                 var city = ev.shippingAddress.city;
                 var datas = GetShippingOptions(state, zip, country, city);
+                //alert("shippingaddresschange=="+JSON.stringify(datas));
                 //alert(datas);
                 ev.updateWith({
                     status: 'success',
@@ -1102,8 +458,11 @@ $(document).ready(function () {
 
             paymentController = new AbortController();
             const signal = paymentController.signal;
-
+            var clientSecret = window.MaxaromaOnePageCheckout.processStripeWalletPayment(JSON.stringify(ev), AppleGPay);
+            //alert("paymentmethod==", AppleGPay);
+            /*
             var clientSecret = GetClientSecret(AppleGPay, JSON.stringify(ev));
+
             if (!clientSecret) {
                 window.location = site_url + 'shoppingcart/view';
                 return false;
@@ -1283,7 +642,7 @@ $(document).ready(function () {
                         window.location = site_url + 'shoppingcart/view';
                     }
                 });
-            }
+            }*/
         });
 
         $(document).on('click', '.express-btn-link, .express-btn-google, .express-btn-apple', function() {
@@ -1294,3 +653,6 @@ $(document).ready(function () {
         });
     });
 </script>
+--}}
+@php $StripeServiceVer = filemtime(config('global.SITE_JS_CORE_PATH').'stripe-service.js'); @endphp
+<script src="{{config('global.SITE_JS_CORE')}}stripe-service.js?ver={{$StripeServiceVer}}"></script>

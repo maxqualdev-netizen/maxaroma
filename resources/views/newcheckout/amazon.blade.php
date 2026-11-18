@@ -1,23 +1,23 @@
 @if($CartAttr["Amazon_pay_Checkout"] == 'Yes' && $onlyGCPurchased != '1')
     @php $JSSAmazonValVer = filemtime(config('global.SITE_JS_CORE_PATH').'amazon.js'); @endphp
     <script type="text/javascript" src="{{config('global.SITE_JS_CORE')}}amazon.js?ver={{$JSSAmazonValVer}}"></script>
-    <script type="text/javascript" src="{{ config('JS_SERVER_URL') }}" async></script>
+    <script type="text/javascript" src="{{ $JS_SERVER_URL }}" async></script>
 
     <script type="text/javascript">
         var address_veriffication = "{{config('global.address_verification')}}";
-        window.onAmazonLoginReady = function() {
-            amazon.Login.setClientId("{{config('CLIENT_ID')}}");
+        /*window.onAmazonLoginReady = function() {
+            amazon.Login.setClientId("{{$amazon_client_id}}");
             amazon.Login.setUseCookie(true);
         };
         //var call_url= "{{config('CALLBACK_CHECKOUT_URL')}}";
         var call_url = "{{ route('checkout.setup-amazon') }}";
-
+        */
         $(document).ready(function(){
             if($("#addressBookWidgetDiv").length > 0)
             {
                 setTimeout(() => {
                     new OffAmazonPayments.Widgets.AddressBook({
-                        sellerId: "{{config('MERCHANT_ID')}}",
+                        sellerId: "{{$amazon_merchant_id}}",
                         onOrderReferenceCreate: function (orderReference) {
                             orderReferenceId = orderReference.getAmazonOrderReferenceId();
                         },
@@ -39,7 +39,7 @@
             {
                 setTimeout(() => {
                     new OffAmazonPayments.Widgets.Wallet({
-                        sellerId: "{{config('MERCHANT_ID')}}",
+                        sellerId: "{{$amazon_merchant_id}}",
                         onPaymentSelect: function () {
                             $("#btnAmazonOrder").show();
                             //console.log(orderReference);
@@ -72,7 +72,7 @@
                     amazon_order_id: AmazonOrderID
                 },
                 success:function(data) {
-                    console.log(data);
+                    //console.log(data);
                     if(data.success === true){
                         window.amazon.address = data.address;
                         window.MaxaromaOnePageCheckout.loadShippingMethods();
@@ -90,9 +90,11 @@
                         address+=", "+data.address.city;
                         address+=", "+data.address.state;
                         address+=", "+data.address.zip;
-                        console.log(address,$("#review-ship-to-value").length);
+                        //console.log(address,$("#review-ship-to-value").length);
 
                         setTimeout(() => {
+                            $("#review-contact-value").text(data.address.email);
+                            $("#review-contact-value").parent().css('visibility','visible');
                             $("#review-ship-to-value").html(address);
                             //window.MaxaromaOnePageCheckout.updateCheckoutReviewAddress(data.address);
                         }, 1000);

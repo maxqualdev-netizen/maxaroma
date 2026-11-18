@@ -400,7 +400,7 @@ class BogoDiscountService
             $log
         );
 
-        return null;
+        return;
     }
 
     /**

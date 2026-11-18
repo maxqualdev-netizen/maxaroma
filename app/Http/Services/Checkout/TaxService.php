@@ -6,11 +6,17 @@ use App\Models\Customer;
 use App\Models\TaxAreas;
 use App\Models\TaxAreaState;
 use App\Models\TaxRates;
+use App\Services\Discount\DiscountService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
 
 class TaxService
 {
+    public function __construct(
+        protected DiscountService $discountService
+    ) {
+    }
+
     /**
      * Calculate checkout tax.
      *
@@ -34,6 +40,10 @@ class TaxService
          * Reset taxable flags
          * ---------------------------------------------------------
          */
+         
+        
+         
+         
         Session::put(
             'ShoppingCart.TaxableShipping',
             'No'
@@ -48,7 +58,6 @@ class TaxService
             'ShoppingCart.TaxableShippingSignature',
             'No'
         );
-Log::info('GiftCertificateTaxCalculate_STARTED');
 
         /*
          * ---------------------------------------------------------
@@ -137,6 +146,17 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
             (float) (
                 $allDiscount['TotalDiscount'] ?? 0
             );
+            
+        
+       Log::info(
+            'Discount',
+            [
+                'Shipping Infor for Tax' =>
+                    $allDiscount['TotalDiscount'],
+            ]
+        );    
+
+            
 
         $giftCertiTotal =
             Session::has(
@@ -196,6 +216,15 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                     $allDiscount['TotalDiscount']
                 )
             );
+        
+        
+         Log::info(
+            'Subtotal',
+            [
+                'Shipping Infor for Tax' =>
+                   $subTotal,
+            ]
+        );    
 
         /*
          * ---------------------------------------------------------
@@ -252,6 +281,7 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                 $isFromPayPalProductPage,
                 $shippingChargePayPalProductPage
             ) {
+				
                 Log::info(
                     'CalculateTaxArea: '
                     . json_encode(
@@ -262,7 +292,17 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                 $taxableSubTotal =
                     (float)
                     $subTotal;
-
+				
+				
+				 Log::info(
+					'TaXNEW1',
+					[
+						
+						"subTotal" => $subTotal	 
+							
+					]
+				); 
+				
                 /*
                  * Shipping charge
                  */
@@ -282,7 +322,15 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                         )
                         : 0;
 
-                /*
+				Log::info(
+					'TaXNEW1',
+					[
+						"shippingChargeTotal" => $shippingChargeTotal	 
+							
+					]
+				); 
+               
+               /*
                  * PayPal Product Page shipping override
                  */
                 if (
@@ -341,6 +389,16 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                         $this->getCharge(
                             'ShippingInsurance'
                         );
+                    Log::info(
+					'TaXNEW2',
+					[
+						"ShippingInsurance" => (float)
+                        $this->getCharge(
+                            'ShippingInsurance'
+                        )	 
+							
+					]
+				);     
                 }
 
                 /*
@@ -363,6 +421,18 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                         $this->getCharge(
                             'ShippingSignature'
                         );
+                      Log::info(
+					'ShippingSignature',
+					[
+						"ShippingInsurance" => (float)
+                        $this->getCharge(
+                            'ShippingSignature'
+                        )	 
+							
+					]
+				);      
+                        
+                        
                 }
 
                 $taxableSubTotal =
@@ -388,7 +458,7 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                         $taxableSubTotal
                     )
                     ->orderBy(
-                        'amount_from',
+                        'charge_amount',
                         'desc'
                     )
                     ->first();
@@ -398,11 +468,11 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                 ) {
                     return null;
                 }
-
+				
                 Log::info(
                     'CalculateTaxRate: '
                     . json_encode(
-                        $rate
+                        $taxableSubTotal
                     )
                 );
 
@@ -446,6 +516,72 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
 
                 return null;
             };
+
+        /*
+         * Select the highest applicable tax rate among all areas
+         * matching the current priority. Keep the existing priority
+         * order; only resolve overlaps within that priority.
+         */
+        $getHighestTaxArea = function ($areas) use (
+            $subTotal,
+            $isFromPayPalProductPage,
+            $shippingChargePayPalProductPage
+        ) {
+            $highestArea = null;
+            $highestRate = null;
+
+            foreach ($areas as $candidateArea) {
+                $areaSubTotal = (float) $subTotal;
+
+                $shippingChargeTotal = (
+                    Session::has('ShoppingCart.Shipping.ShippingCharge')
+                    && Session::get('ShoppingCart.Shipping.ShippingCharge') > 0
+                ) ? (float) Session::get('ShoppingCart.Shipping.ShippingCharge') : 0;
+
+                if (
+                    $isFromPayPalProductPage === 'Yes'
+                    && isset($shippingChargePayPalProductPage)
+                    && $shippingChargePayPalProductPage != 0
+                    && $shippingChargePayPalProductPage != '0.00'
+                ) {
+                    $shippingChargeTotal = (float) $shippingChargePayPalProductPage;
+                }
+
+                if (($candidateArea->ShippingTaxable ?? 'No') === 'Yes') {
+                    $areaSubTotal += $shippingChargeTotal;
+                }
+                if (($candidateArea->insurance ?? 'No') === 'Yes') {
+                    $areaSubTotal += (float) $this->getCharge('ShippingInsurance');
+                }
+                if (($candidateArea->signature ?? 'No') === 'Yes') {
+                    $areaSubTotal += (float) $this->getCharge('ShippingSignature');
+                }
+
+                $areaSubTotal = max(0, (float) NumberFormat($areaSubTotal));
+
+                $rate = TaxRates::where('tax_areas_id', $candidateArea->tax_areas_id)
+                    ->where('amount_from', '<=', $areaSubTotal)
+                    ->orderBy('charge_amount', 'desc')
+                    ->first();
+
+                if (!$rate) {
+                    continue;
+                }
+
+                if ($highestRate === null || (float) $rate->charge_amount > $highestRate) {
+                    $highestRate = (float) $rate->charge_amount;
+                    $highestArea = $candidateArea;
+                }
+            }
+
+            Log::info('Highest applicable tax area selected', [
+                'area_id' => $highestArea->tax_areas_id ?? null,
+                'charge_amount' => $highestRate,
+                'matching_area_count' => is_countable($areas) ? count($areas) : null,
+            ]);
+
+            return $highestArea;
+        };
 
         /*
          * ---------------------------------------------------------
@@ -495,7 +631,9 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                 ->orderByRaw(
                     '(zip_to - zip_from) ASC'
                 )
-                ->first();
+                ->get();
+
+            $area = $getHighestTaxArea($area);
 
             if (
                 $area
@@ -541,7 +679,9 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
             ->orderByRaw(
                 '(zip_to - zip_from) ASC'
             )
-            ->first();
+            ->get();
+
+        $area = $getHighestTaxArea($area);
 
         if (
             $area
@@ -586,7 +726,9 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
             ->orderByRaw(
                 '(zip_to - zip_from) ASC'
             )
-            ->first();
+            ->get();
+
+        $area = $getHighestTaxArea($area);
 
         if (
             $area
@@ -627,7 +769,9 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
             ->orderByRaw(
                 '(zip_to - zip_from) ASC'
             )
-            ->first();
+            ->get();
+
+        $area = $getHighestTaxArea($area);
 
         if (
             $area
@@ -673,7 +817,9 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
                 ->orderByRaw(
                     '(zip_to - zip_from) ASC'
                 )
-                ->first();
+                ->get();
+
+            $area = $getHighestTaxArea($area);
 
             if (
                 $area
@@ -710,7 +856,9 @@ Log::info('GiftCertificateTaxCalculate_STARTED');
             ->orderByRaw(
                 '(zip_to - zip_from) ASC'
             )
-            ->first();
+            ->get();
+
+        $area = $getHighestTaxArea($area);
 
         if (
             $area

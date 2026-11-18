@@ -3,7 +3,7 @@
 namespace App\Services\Checkout;
 
 use Illuminate\Support\Facades\Session;
-
+use App\Models\Products;
 class GiftWrappingService
 {
     /**
@@ -17,6 +17,58 @@ class GiftWrappingService
      *   gift_wrap = Yes are charged.
      * - Charge is Qty x configured gift wrapping charge.
      */
+
+    public function getCartGiftWrapDetails(): array
+    {
+        $shopcart =
+            Session::get(
+                'ShoppingCart.Cart',
+                []
+            );
+
+        if (
+            !is_array($shopcart)
+            ||
+            count($shopcart) === 0
+        ) {
+            Session::forget(
+                'ShoppingCart.GiftWrapping'
+            );
+
+            return ['displayGiftWrapCharge' => 0.0, 'CntGiftWrapCheckedItems' => 0];
+        }
+
+        /*
+         * Use the existing configured Global Setting.
+         * Do NOT hard-code $5.
+         */
+        $giftWrappingCharge =
+            (float)
+            config(
+                'Settings.GIFT_WRAPPING_CHARGE',
+                0
+            );
+
+        $totalGiftCharge = 0.0;
+        $totalGiftWrapItems = 0;
+        $totalGiftWrapCheckedItems = 0;
+
+        foreach ($shopcart as $item)
+        {
+            $isGiftWrapItem =(isset($item['gift_wrap']) && $item['gift_wrap'] === 'Yes');
+            if(isset($item['IsGiftWrapProduct']) && $item['IsGiftWrapProduct'] == 'Yes')
+            {
+                $quantity = (float)($item['Qty'] ?? 0);
+                $totalGiftCharge+= ($quantity * $giftWrappingCharge);
+                $totalGiftWrapItems+= $quantity;
+                if($isGiftWrapItem)
+                {
+                    $totalGiftWrapCheckedItems++;
+                }
+            }
+        }
+        return ['displayGiftWrapCharge' => (float)$totalGiftCharge, 'totalGiftWrapItems' => $totalGiftWrapItems, 'totalGiftWrapCheckedItems' => $totalGiftWrapCheckedItems];
+    }
     public function calculate(
         string $action = 'add',
         string $productId = ''
@@ -24,9 +76,18 @@ class GiftWrappingService
         $action = strtolower(trim($action));
 
         if ($action === 'remove') {
-            Session::forget(
-                'ShoppingCart.GiftWrapping'
-            );
+            $shopcart = Session::get('ShoppingCart.Cart',[]);
+            $NewShopCart = [];
+            foreach ($shopcart as $item)
+            {
+                if(isset($item['IsGiftWrapProduct']) && $item['IsGiftWrapProduct'] == 'Yes')
+                {
+                    $item['gift_wrap'] = 'No';
+                }
+                $NewShopCart[]=$item;
+            }
+            Session::put('ShoppingCart.Cart',$NewShopCart);
+            Session::forget('ShoppingCart.GiftWrapping');
 
             addLog(
                 'RemoveGiftWrapping',
@@ -74,16 +135,11 @@ class GiftWrappingService
             );
 
         $totalGiftCharge = 0.0;
-
-        foreach ($shopcart as $item) {
-
-            $isGiftWrapItem =
-                (
-                    isset($item['gift_wrap'])
-                    &&
-                    $item['gift_wrap'] === 'Yes'
-                );
-
+        $NewShopCart = [];
+        foreach ($shopcart as $item)
+        {
+            /*
+            $isGiftWrapItem =(isset($item['gift_wrap']) && $item['gift_wrap'] === 'Yes');
             $isRequestedProduct =
                 (
                     $productId !== ''
@@ -92,13 +148,11 @@ class GiftWrappingService
                     ($item['ProductID'] ?? '')
                     ===
                     (string) $productId
-                );
-
-            if (
-                $isGiftWrapItem
-                ||
-                $isRequestedProduct
-            ) {
+              );
+            */
+            //if ($isGiftWrapItem || $isRequestedProduct)
+            if(isset($item['IsGiftWrapProduct']) && $item['IsGiftWrapProduct'] == 'Yes')
+            {
                 $quantity =
                     (float)
                     ($item['Qty'] ?? 0);
@@ -107,8 +161,13 @@ class GiftWrappingService
                     $quantity
                     *
                     $giftWrappingCharge;
+
+                $item['gift_wrap'] = "Yes";
             }
+            $NewShopCart[] = $item;
         }
+
+        Session::put('ShoppingCart.Cart',$NewShopCart);
 
         $giftWrapping = [
             'Charge' =>

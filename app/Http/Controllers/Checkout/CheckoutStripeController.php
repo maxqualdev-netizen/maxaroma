@@ -40,11 +40,55 @@ class CheckoutStripeController extends Controller
 		$this->CheckoutTotalsService = $CheckoutTotalsService;
     }
 
-    public function CreatePaymentIntent()
+    public function CreatePaymentIntent(Request $request)
     {
-        return $this->StripePaymentService->createPaymentIntent();
+        //return $this->StripePaymentService->createPaymentIntent();
+		if($request->has('payMethod') && !empty($request->payMethod))
+		{
+			$validated = $request->validate([
+				'order_id' => 'required|integer',
+				//'payment_method_id' => 'required'
+			]);
+		} else {
+			$validated = $request->validate([
+				'order_id' => 'required|integer',
+				'payment_method_id' => 'required'
+			]);
+		}
+
+		// The order must already exist.
+		$order = Order::where(
+			'orders_id',
+			$validated['order_id']
+		)->firstOrFail();
+		Log::info("OrderInfo = ".$order);
+		$PaymentIntentResponse = $this->StripePaymentService->createPaymentIntent($order->orders_id,$request->payment_method_id);
+		Log::info("IntentInfo = ".json_encode($PaymentIntentResponse));
+		return response()->json($PaymentIntentResponse);
     }
 
+	public function createOrUpdatePaymentIntent(Request $request): array
+	{
+		$paymentIntentId = Session::get(
+			'ShoppingCart.Stripe.PaymentIntentID'
+		);
+
+		if (!empty($paymentIntentId)) {
+			$NetTotal = $this->CheckoutTotalsService->getNetTotal();
+			return $this->StripePaymentService->updatePaymentIntent($paymentIntentId,$NetTotal);
+		}
+
+		return $this->StripePaymentService->createPaymentIntent();
+	}
+
+	public function updateWalletPaymentIntent(Request $request)
+	{
+		return $this->StripePaymentService->updatePaymentIntent($request->paymentIntentId,$request->amount);
+		// $stripe = new StripeClient($this->StripePaymentService->secret_key);
+		// return $stripe->paymentIntents->update($paymentIntentId, [
+		// 	'amount' => $amount,
+		// ]);
+	}
     public function GetCartForStripe(Request $request)
 	{
         $result = $this->checkoutService->prepareCheckout($request);
@@ -55,6 +99,7 @@ class CheckoutStripeController extends Controller
 		$NetTotal = (float)$result['data']['checkout']['totals']['NetTotal']??0;
 		$CartItems = [];
 		$i=0;
+
 		if(Session::has('ShoppingCart'))
 		{
 			$ShoppingCart = Session::get('ShoppingCart');
@@ -62,7 +107,7 @@ class CheckoutStripeController extends Controller
 			{
 				foreach($ShoppingCart['Cart'] as $key => $Cart)
 				{
-					$CartItems[$i]['amount'] = round($Cart['Price']*100);
+					$CartItems[$i]['amount'] = round($Cart['TotPrice']*100);
 					$CartItems[$i]['label'] = $Cart['ProductName'];
 					$i++;
 				}
@@ -77,7 +122,7 @@ class CheckoutStripeController extends Controller
 				$AllDiscount = $result['data']['checkout']['totals']['Discounts'] ?? [];
 				foreach($AllDiscount as $discount)
 				{
-					$CartItems[$i]['amount'] = round($discount['discount']*100);
+					$CartItems[$i]['amount'] = -round($discount['discount']*100);
 					$CartItems[$i]['label'] = $discount['label'];
 					$i++;
 				}
@@ -205,8 +250,8 @@ class CheckoutStripeController extends Controller
 		{
 			$this->ShippingService->setShippingMethod($shippingMethods[0]['id'],$currentAddress);
 		}
-		//Log::channel('newcheckout')->info($shippingMethods);
-        return $shippingMethods;
+
+        return response()->json($shippingMethods);
     }
 	public function SetStripeShippingMethod(Request $request)
 	{
@@ -218,14 +263,15 @@ class CheckoutStripeController extends Controller
 			$ShippingStatus = $this->ShippingService->setShippingMethod($request->ShipMethodID,$currentAddress);
 			if($ShippingStatus['status'] == 'success')
 			{
-				$this->checkoutService->refresh();
+				//$this->checkoutService->refresh();
 			}
 		}
-		return $ShippingStatus;
+		Log::info("SetStripeShippingMethod:".json_encode($ShippingStatus));
+		return response()->json(['status' => (array)$ShippingStatus]);
 	}
 	public function GetStripeClientSecret(Request $request)
 	{
-		Log::channel('newcheckout')->info("GPay Request:".json_encode($request->all()));
+		//Log::channel('newcheckout')->info("GPay Request:".json_encode($request->all()));
 		$log['ajax_request'] = json_encode($request->all());
 		addLog('GetClientSecretStart', $log);
 		//if(isset($request->emailAddress) && $request->emailAddress!='')
@@ -252,13 +298,13 @@ class CheckoutStripeController extends Controller
 				}
 			}
 		}
-		Log::channel('newcheckout')->info("stepfrom:".$request->stepfrom);
+		//Log::channel('newcheckout')->info("stepfrom:".$request->stepfrom);
 		if (isset($request->stepfrom) && $request->stepfrom == "firststep")
 		{
 			if (isset($request->allDetailsVal) && $request->allDetailsVal != '')
 			{
 				$Billing = json_decode($request->allDetailsVal, true);
-				Log::channel('newcheckout')->info("Billing:".$request->allDetailsVal);
+				//Log::channel('newcheckout')->info("Billing:".$request->allDetailsVal);
 				$log['billing_details'] = json_encode($Billing);
 				addLog('GetClientSecretFirstStepGetBilling', $log);
 
@@ -347,10 +393,10 @@ class CheckoutStripeController extends Controller
 		$clientSecret = "";
 		$payment_intent_id = "";
 		$NetTotal = $this->CheckoutTotalsService->getNetTotal();
-		Log::channel('newcheckout')->info("NetTotal:".$NetTotal);
+		//Log::channel('newcheckout')->info("NetTotal:".$NetTotal);
 		if ($NetTotal > 0)
 		{
-			Stripe::setApiKey(env('STRIPE_SECRET'));
+			Stripe::setApiKey($this->StripePaymentService->secret_key);
 			$intent = \Stripe\PaymentIntent::create([
 				'amount' => round($NetTotal * 100),
 				'currency' => 'usd',

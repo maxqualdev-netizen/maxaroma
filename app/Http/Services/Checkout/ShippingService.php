@@ -2,7 +2,6 @@
 
 namespace App\Services\Checkout;
 
-use App\Services\Discount\DiscountService;
 use Illuminate\Support\Facades\Session;
 use App\Models\ShippingMode;
 use App\Models\ShippingRule;
@@ -12,7 +11,6 @@ use App\Models\ShippingHoliday;
 class ShippingService
 {
     public function __construct(
-        protected DiscountService $discountService,
         protected CheckoutTotalsService $checkoutTotalsService
     ) {
     }
@@ -27,837 +25,663 @@ class ShippingService
      *
      * No view is rendered here.
      */
-    public function getAvailableMethods(
-        array $address = [],
-        array $flags = []
-    ): array {
-        $shippingAddress =
-            $this->resolveAddress($address);
+  
+public function getAvailableMethods(
+    array $address = [],
+    array $flags = []
+): array {
+    $shippingAddress = $this->resolveAddress($address);
 
-        $shipCountry =
-            $shippingAddress['country'];
+    $shipCountry = $shippingAddress['country'];
+    $shipState = $shippingAddress['state'];
+    $shipZip = $shippingAddress['zip'];
+    $shipCity = $shippingAddress['city'];
+    $shipAddress1 = $shippingAddress['address1'];
+    $shipAddress2 = $shippingAddress['address2'];
 
-        $shipState =
-            $shippingAddress['state'];
+    $shippingFlags = $this->resolveShippingFlags($flags);
 
-        $shipZip =
-            $shippingAddress['zip'];
+    $isMaxaromaTwoDelivery = $shippingFlags['IsMaxaromaTwoDelivery'];
+    $isMaxTwoItem = $shippingFlags['ISMaxTwoItem'];
+    $isVendorItem = $shippingFlags['IsVenderItem'];
+    $isCosmo = $shippingFlags['IsCosmo'];
+    $isNandansons = $shippingFlags['IsNandansons'];
+    $isPerfumePW = $shippingFlags['IsPerfumePW'];
+    $isPCA = $shippingFlags['IsPCA'];
+    $isND = $shippingFlags['IsND'];
+    $isMax2DayVal = $shippingFlags['ISMax2dayVal'];
+    $onlyGCPurchased = $shippingFlags['onlyGCPurchased'];
 
-        $shipCity =
-            $shippingAddress['city'];
+    /*
+     * ---------------------------------------------------------
+     * Max2Day eligibility
+     * ---------------------------------------------------------
+     */
+    $shippingModeIdMain = $this->checkAvailableShippingMethod(
+        29,
+        $shipCountry,
+        $shipState,
+        $shipZip
+    );
 
-        $shipAddress1 =
-            $shippingAddress['address1'];
+    $mainParts = $this->parseAvailableShippingMethod(
+        $shippingModeIdMain
+    );
 
-        $shipAddress2 =
-            $shippingAddress['address2'];
+    $isTwoDay = $mainParts['shipping_mode_id'] > 0
+        ? 'Yes'
+        : 'No';
 
-        $shippingFlags =
-            $this->resolveShippingFlags(
-                $flags
-            );
+    /*
+     * ---------------------------------------------------------
+     * PO BOX check
+     * ---------------------------------------------------------
+     */
+    $addressCheck = $this->isPoBoxAddress(
+        $shipAddress1,
+        $shipAddress2
+    ) ? 'Yes' : 'No';
 
-        $isMaxaromaTwoDelivery =
-            $shippingFlags['IsMaxaromaTwoDelivery'];
+    if ($addressCheck === 'Yes') {
+        $isTwoDay = 'No';
+    }
 
-        $isMaxTwoItem =
-            $shippingFlags['ISMaxTwoItem'];
+    /*
+     * ---------------------------------------------------------
+     * APO / FPO check
+     * ---------------------------------------------------------
+     */
+    $apoFpo = $this->isApoFpoAddress(
+        $shipAddress1,
+        $shipAddress2,
+        $shipCity
+    ) ? 'Yes' : 'No';
 
-        $isVendorItem =
-            $shippingFlags['IsVenderItem'];
+    /*
+     * ---------------------------------------------------------
+     * Shipping modes
+     * ---------------------------------------------------------
+     */
+    $shippingModes = ShippingMode::where('status', '=', '1')
+        ->orderBy('display_position', 'asc')
+        ->get();
 
-        $isCosmo =
-            $shippingFlags['IsCosmo'];
+    $chargeInfo = [];
+    $messages = [];
 
-        $isNandansons =
-            $shippingFlags['IsNandansons'];
+    $max2Days = 0;
+    $messageSuccess = 0;
+    $isPickup = 'No';
 
-        $isPerfumePW =
-            $shippingFlags['IsPerfumePW'];
+    $selectedShippingMethodId = (int) Session::get(
+        'ShoppingCart.Shipping.ShippingMethodID',
+        0
+    );
 
-        $isPCA =
-            $shippingFlags['IsPCA'];
+    /*
+     * ---------------------------------------------------------
+     * Loop through shipping methods
+     * ---------------------------------------------------------
+     */
+    foreach ($shippingModes as $shippingMode) {
 
-        $isND =
-            $shippingFlags['IsND'];
-
-        $isMax2DayVal =
-            $shippingFlags['ISMax2dayVal'];
-
-        $onlyGCPurchased =
-            $shippingFlags['onlyGCPurchased'];
+        $shippingModeId = (int) $shippingMode->shipping_mode_id;
 
         /*
-         * ---------------------------------------------------------
-         * Max2Day eligibility
-         * ---------------------------------------------------------
+         * PO BOX:
+         * Existing logic allows only methods 9 and 22.
          */
-        $shippingModeIdMain =
-            $this->checkAvailableShippingMethod(
-                29,
+        if (
+            $addressCheck === 'Yes'
+            &&
+            $shippingModeId !== 9
+            &&
+            $shippingModeId !== 22
+        ) {
+            continue;
+        }
+
+        if (
+            $addressCheck === 'Yes'
+            &&
+            $shippingModeId === 29
+        ) {
+            continue;
+        }
+
+        /*
+         * Vendor items cannot use pickup.
+         */
+        if (
+            $isVendorItem === 'Yes'
+            &&
+            $shippingModeId === 46
+        ) {
+            $isPickup = 'No';
+            continue;
+        }
+
+        if ($shippingModeId === 46) {
+            $isPickup = 'Yes';
+        }
+
+        /*
+         * -----------------------------------------------------
+         * Check method availability.
+         * Preserve the old Max2Day logic exactly.
+         * -----------------------------------------------------
+         */
+        $availableMethod = '';
+
+        if (
+            $isTwoDay === 'Yes'
+            &&
+            $isMaxaromaTwoDelivery === 'Yes'
+            &&
+            in_array(
+                $shippingModeId,
+                [22, 34, 29, 46],
+                true
+            )
+        ) {
+            $availableMethod = $this->checkAvailableShippingMethod(
+                $shippingModeId,
                 $shipCountry,
                 $shipState,
                 $shipZip
             );
-
-        $mainParts =
-            $this->parseAvailableShippingMethod(
-                $shippingModeIdMain
-            );
-
-        $isTwoDay =
-            $mainParts['shipping_mode_id'] > 0
-                ? 'Yes'
-                : 'No';
-
-        /*
-         * ---------------------------------------------------------
-         * PO BOX check
-         * ---------------------------------------------------------
-         */
-        $addressCheck =
-            $this->isPoBoxAddress(
-                $shipAddress1,
-                $shipAddress2
-            )
-                ? 'Yes'
-                : 'No';
-
-        if (
-            $addressCheck === 'Yes'
+        }
+        elseif (
+            $isTwoDay === 'No'
+            &&
+            $isMaxaromaTwoDelivery === 'Yes'
         ) {
-            $isTwoDay = 'No';
+            $availableMethod = $this->checkAvailableShippingMethod(
+                $shippingModeId,
+                $shipCountry,
+                $shipState,
+                $shipZip
+            );
+        }
+        elseif (
+            $isTwoDay === 'Yes'
+            &&
+            $isMaxaromaTwoDelivery === 'No'
+            &&
+            $shippingModeId !== 29
+        ) {
+            $availableMethod = $this->checkAvailableShippingMethod(
+                $shippingModeId,
+                $shipCountry,
+                $shipState,
+                $shipZip
+            );
+        }
+        elseif (
+            $isTwoDay === 'No'
+            &&
+            $isMaxaromaTwoDelivery === 'No'
+        ) {
+            $availableMethod = $this->checkAvailableShippingMethod(
+                $shippingModeId,
+                $shipCountry,
+                $shipState,
+                $shipZip
+            );
         }
 
         /*
-         * ---------------------------------------------------------
-         * APO / FPO check
-         * ---------------------------------------------------------
+         * Existing wholesaler override.
          */
-        $apoFpo =
-            $this->isApoFpoAddress(
-                $shipAddress1,
-                $shipAddress2,
-                $shipCity
-            )
-                ? 'Yes'
-                : 'No';
-
-        /*
-         * ---------------------------------------------------------
-         * Shipping modes
-         * ---------------------------------------------------------
-         */
-        $shippingModes =
-            ShippingMode::where(
-                'status',
-                '=',
-                '1'
-            )
-            ->orderBy(
-                'display_position',
-                'asc'
-            )
-            ->get();
-
-        $chargeInfo = [];
-
-        $messages = [];
-
-        $max2Days = 0;
-
-        $messageSuccess = 0;
-
-        $isPickup = 'No';
-
-        $selectedShippingMethodId =
-            (int) Session::get(
-                'ShoppingCart.Shipping.ShippingMethodID',
-                0
-            );
-
-        /*
-         * ---------------------------------------------------------
-         * Loop through shipping methods
-         * ---------------------------------------------------------
-         */
-        foreach (
-            $shippingModes as $shippingMode
+        if (
+            strtolower(Session::get('eusertype', '')) === 'wholesaler'
         ) {
-            $shippingModeId =
-                (int)
-                $shippingMode->shipping_mode_id;
+            $availableMethod = $this->checkAvailableShippingMethod(
+                $shippingModeId,
+                $shipCountry,
+                $shipState,
+                $shipZip
+            );
+        }
 
-            /*
-             * PO BOX:
-             *
-             * Existing logic allows only methods 9 and 22.
-             */
-            if (
-                $addressCheck === 'Yes'
-                &&
-                $shippingModeId !== 9
-                &&
-                $shippingModeId !== 22
-            ) {
-                continue;
-            }
+        $availableParts = $this->parseAvailableShippingMethod(
+            $availableMethod
+        );
 
-            if (
-                $addressCheck === 'Yes'
-                &&
-                $shippingModeId === 29
-            ) {
-                continue;
-            }
+        $resolvedShippingModeId = $availableParts['shipping_mode_id'];
 
-            /*
-             * Vendor items cannot use pickup.
-             */
-            if (
-                $isVendorItem === 'Yes'
-                &&
-                $shippingModeId === 46
-            ) {
-                $isPickup = 'No';
+        if ($resolvedShippingModeId <= 0) {
+            continue;
+        }
 
-                continue;
-            }
+        $normalWeight = $availableParts['normal_weight'];
+        $lightWeight = $availableParts['light_weight'];
+        $heavyWeight = $availableParts['heavy_weight'];
 
-            if (
-                $shippingModeId === 46
-            ) {
-                $isPickup = 'Yes';
-            }
+        /*
+         * -----------------------------------------------------
+         * Max2Day messages
+         * -----------------------------------------------------
+         */
+        if (
+            $addressCheck === 'No'
+            &&
+            $isMaxaromaTwoDelivery === 'No'
+            &&
+            $isTwoDay === 'No'
+            &&
+            strtolower(Session::get('eusertype', '')) !== 'wholesaler'
+        ) {
+            $messages[] = 'Your order is not eligible for Max2days shipping as one of the item is not eligible.<br/>Since you are shipping to a different address this order is not eligible for Max2days shipping option.';
+        }
+        elseif (
+            $addressCheck === 'No'
+            &&
+            $isTwoDay === 'No'
+            &&
+            strtolower(Session::get('eusertype', '')) !== 'wholesaler'
+        ) {
+            $messages[] = 'Since you are shipping to a different address this order is not eligible for Max2days shipping option.';
+        }
+        elseif (
+            $addressCheck === 'No'
+            &&
+            $isMaxaromaTwoDelivery === 'Yes'
+            &&
+            $isMaxTwoItem === 'Yes'
+            &&
+            $isMax2DayVal === 'No'
+            &&
+            strtolower(Session::get('eusertype', '')) !== 'wholesaler'
+            &&
+            $isVendorItem === 'No'
+        ) {
+            $messages[] = 'Great News, Your order was Upgraded to Free Second Day Shipping Service.';
+            $messageSuccess = 1;
+        }
+        elseif (
+            $addressCheck === 'No'
+            &&
+            $isMaxaromaTwoDelivery === 'Yes'
+            &&
+            $isMaxTwoItem === 'Yes'
+            &&
+            $isMax2DayVal === 'No'
+            &&
+            strtolower(Session::get('eusertype', '')) !== 'wholesaler'
+            &&
+            $isVendorItem === 'Yes'
+        ) {
+            $messages[] = 'Great News, Your order was Upgraded to Free Second Day Shipping Service.Order was Upgraded to Free 2DAY Shipping Service, Please add 2 Extra Business days because of some items in your cart.';
+            $messageSuccess = 1;
+        }
 
-            /*
-             * -----------------------------------------------------
-             * Check method availability.
-             * Preserve the old Max2Day logic exactly.
-             * -----------------------------------------------------
-             */
-            $availableMethod = '';
+        /*
+         * PO BOX + Max2Day.
+         */
+        if (
+            $addressCheck === 'Yes'
+            &&
+            $resolvedShippingModeId === 22
+        ) {
+            $messages[] = 'Your order is not eligible for Max2days shipping because our carrier does not ship using this service to PO BOX Addresses';
+        }
 
-            if (
-                $isTwoDay === 'Yes'
-                &&
-                $isMaxaromaTwoDelivery === 'Yes'
-                &&
-                in_array(
-                    $shippingModeId,
-                    [
-                        22,
-                        34,
-                        29,
-                        46,
-                    ],
-                    true
-                )
-            ) {
-                $availableMethod =
-                    $this->checkAvailableShippingMethod(
-                        $shippingModeId,
-                        $shipCountry,
-                        $shipState,
-                        $shipZip
-                    );
-            }
-            elseif (
-                $isTwoDay === 'No'
-                &&
-                $isMaxaromaTwoDelivery === 'Yes'
-            ) {
-                $availableMethod =
-                    $this->checkAvailableShippingMethod(
-                        $shippingModeId,
-                        $shipCountry,
-                        $shipState,
-                        $shipZip
-                    );
-            }
-            elseif (
-                $isTwoDay === 'Yes'
-                &&
-                $isMaxaromaTwoDelivery === 'No'
-                &&
-                $shippingModeId !== 29
-            ) {
-                $availableMethod =
-                    $this->checkAvailableShippingMethod(
-                        $shippingModeId,
-                        $shipCountry,
-                        $shipState,
-                        $shipZip
-                    );
-            }
-            elseif (
-                $isTwoDay === 'No'
-                &&
-                $isMaxaromaTwoDelivery === 'No'
-            ) {
-                $availableMethod =
-                    $this->checkAvailableShippingMethod(
-                        $shippingModeId,
-                        $shipCountry,
-                        $shipState,
-                        $shipZip
-                    );
-            }
+        /*
+         * -----------------------------------------------------
+         * Calculate charge
+         * -----------------------------------------------------
+         */
+        $chargeResult = $this->calculateAvailableShippingCharge(
+            $shipZip,
+            $shipState,
+            $shipCountry,
+            $resolvedShippingModeId
+        );
 
-            /*
-             * Existing wholesaler override.
-             */
-            if (
-                strtolower(
-                    Session::get(
-                        'eusertype',
-                        ''
-                    )
-                ) === 'wholesaler'
-            ) {
-                $availableMethod =
-                    $this->checkAvailableShippingMethod(
-                        $shippingModeId,
-                        $shipCountry,
-                        $shipState,
-                        $shipZip
-                    );
-            }
+        $chargeParts = explode('###', $chargeResult);
 
-            $availableParts =
-                $this->parseAvailableShippingMethod(
-                    $availableMethod
-                );
+        $tempCharge = isset($chargeParts[0])
+            ? (float) $chargeParts[0]
+            : 0;
 
-            $resolvedShippingModeId =
-                $availableParts[
-                    'shipping_mode_id'
-                ];
+        $days = isset($chargeParts[1])
+            ? (int) $chargeParts[1]
+            : 0;
 
-            if (
-                $resolvedShippingModeId <= 0
-            ) {
-                continue;
-            }
+        /*
+         * -----------------------------------------------------
+         * Vendor +3 days
+         * -----------------------------------------------------
+         */
+        $vendorDays = 0;
 
-            $normalWeight =
-                $availableParts[
-                    'normal_weight'
-                ];
-
-            $lightWeight =
-                $availableParts[
-                    'light_weight'
-                ];
-
-            $heavyWeight =
-                $availableParts[
-                    'heavy_weight'
-                ];
-
-            /*
-             * -----------------------------------------------------
-             * Max2Day messages
-             * -----------------------------------------------------
-             */
-            if (
-                $addressCheck === 'No'
-                &&
-                $isMaxaromaTwoDelivery === 'No'
-                &&
-                $isTwoDay === 'No'
-                &&
-                strtolower(
-                    Session::get(
-                        'eusertype',
-                        ''
-                    )
-                ) !== 'wholesaler'
-            ) {
-                $messages[] =
-                    'Your order is not eligible for Max2days shipping as one of the item is not eligible.<br/>Since you are shipping to a different address this order is not eligible for Max2days shipping option.';
-            }
-            elseif (
-                $addressCheck === 'No'
-                &&
-                $isTwoDay === 'No'
-                &&
-                strtolower(
-                    Session::get(
-                        'eusertype',
-                        ''
-                    )
-                ) !== 'wholesaler'
-            ) {
-                $messages[] =
-                    'Since you are shipping to a different address this order is not eligible for Max2days shipping option.';
-            }
-            elseif (
-                $addressCheck === 'No'
-                &&
-                $isMaxaromaTwoDelivery === 'Yes'
-                &&
-                $isMaxTwoItem === 'Yes'
-                &&
-                $isMax2DayVal === 'No'
-                &&
-                strtolower(
-                    Session::get(
-                        'eusertype',
-                        ''
-                    )
-                ) !== 'wholesaler'
-                &&
-                $isVendorItem === 'No'
-            ) {
-                $messages[] =
-                    'Great News, Your order was Upgraded to Free Second Day Shipping Service.';
-
-                $messageSuccess = 1;
-            }
-            elseif (
-                $addressCheck === 'No'
-                &&
-                $isMaxaromaTwoDelivery === 'Yes'
-                &&
-                $isMaxTwoItem === 'Yes'
-                &&
-                $isMax2DayVal === 'No'
-                &&
-                strtolower(
-                    Session::get(
-                        'eusertype',
-                        ''
-                    )
-                ) !== 'wholesaler'
-                &&
-                $isVendorItem === 'Yes'
-            ) {
-                $messages[] =
-                    'Great News, Your order was Upgraded to Free Second Day Shipping Service.Order was Upgraded to Free 2DAY Shipping Service, Please add 2 Extra Business days because of some items in your cart.';
-
-                $messageSuccess = 1;
-            }
-
-            /*
-             * PO BOX + Max2Day.
-             */
-            if (
-                $addressCheck === 'Yes'
-                &&
-                $resolvedShippingModeId === 22
-            ) {
-                $messages[] =
-                    'Your order is not eligible for Max2days shipping because our carrier does not ship using this service to PO BOX Addresses';
-            }
-
-            /*
-             * -----------------------------------------------------
-             * Calculate charge
-             * -----------------------------------------------------
-             */
-            $chargeResult =
-                $this->calculateAvailableShippingCharge(
-                    $shipZip,
-                    $shipState,
-                    $shipCountry,
-                    $resolvedShippingModeId
-                );
-
-            $chargeParts =
-                explode(
-                    '###',
-                    $chargeResult
-                );
-
-            $tempCharge =
-                isset(
-                    $chargeParts[0]
-                )
-                    ? (float) $chargeParts[0]
-                    : 0;
-
-            $days =
-                isset(
-                    $chargeParts[1]
-                )
-                    ? (int) $chargeParts[1]
-                    : 0;
-
-            /*
-             * -----------------------------------------------------
-             * Vendor +3 days
-             * -----------------------------------------------------
-             */
-            $vendorDays = 0;
-
-            if (
-                $isVendorItem === 'Yes'
-                &&
+        if (
+            $isVendorItem === 'Yes'
+            &&
+            $isPerfumePW === 'Yes'
+        ) {
+            $days += 3;
+            $vendorDays = 3;
+        }
+        elseif (
+            $isVendorItem === 'Yes'
+            &&
+            (
+                $isCosmo === 'Yes'
+                ||
+                $isPCA === 'Yes'
+                ||
+                $isNandansons === 'Yes'
+                ||
                 $isPerfumePW === 'Yes'
-            ) {
-                $days += 3;
-                $vendorDays = 3;
-            }
-            elseif (
-                $isVendorItem === 'Yes'
-                &&
-                (
-                    $isCosmo === 'Yes'
-                    ||
-                    $isPCA === 'Yes'
-                    ||
-                    $isNandansons === 'Yes'
-                    ||
-                    $isPerfumePW === 'Yes'
-                    ||
-                    $isND === 'Yes'
-                )
-            ) {
-                $days += 3;
-                $vendorDays = 3;
-            }
+                ||
+                $isND === 'Yes'
+            )
+        ) {
+            $days += 3;
+            $vendorDays = 3;
+        }
 
-            /*
-             * -----------------------------------------------------
-             * Shipping weight charges
-             * -----------------------------------------------------
-             */
-            $weightCharges =
-                $this->calculateWeightCharges(
-                    $normalWeight,
-                    $lightWeight,
-                    $heavyWeight
-                );
+        /*
+         * -----------------------------------------------------
+         * Shipping weight charges
+         * -----------------------------------------------------
+         */
+        $weightCharges = $this->calculateWeightCharges(
+            $normalWeight,
+            $lightWeight,
+            $heavyWeight
+        );
 
-            $tempCharge +=
-                $weightCharges;
+        $tempCharge += $weightCharges;
 
-            /*
-             * -----------------------------------------------------
-             * Current time cutoff.
-             *
-             * Existing logic:
-             * after 2 PM on weekdays → +1 day.
-             * -----------------------------------------------------
-             */
-            $days =
-                $this->applyTimeCutoff(
-                    $days
-                );
+        /*
+         * -----------------------------------------------------
+         * Current time cutoff.
+         * Existing logic:
+         * after 2 PM on weekdays → +1 day.
+         * -----------------------------------------------------
+         */
+        $days = $this->applyTimeCutoff($days);
 
-            /*
-             * Weekend adjustment for methods
-             * 33 / 34 / 29.
-             */
-            $days =
-                $this->applyWeekendAdjustment(
-                    $days,
-                    $resolvedShippingModeId
-                );
+        /*
+         * Weekend adjustment for methods 33 / 34 / 29.
+         */
+        $days = $this->applyWeekendAdjustment(
+            $days,
+            $resolvedShippingModeId
+        );
 
-            /*
-             * -----------------------------------------------------
-             * Estimated delivery date
-             * -----------------------------------------------------
-             */
-            $delivery =
-                $this->calculateDeliveryDate(
-                    $days
-                );
+        /*
+         * -----------------------------------------------------
+         * Estimated delivery date
+         * -----------------------------------------------------
+         */
+        $delivery = $this->calculateDeliveryDate($days);
+		if ($shippingModeId === 46) {
+    $delivery['date'] = $this->getPickupDeliveryDate();
+}
+        /*
+         * -----------------------------------------------------
+         * Selected method
+         * -----------------------------------------------------
+         */
+        $checked = '';
+        $active = '';
 
-            /*
-             * -----------------------------------------------------
-             * Selected method
-             * -----------------------------------------------------
-             */
-            $checked = '';
+        if ($selectedShippingMethodId <= 0) {
 
-            $active = '';
-
-            if (
-                $selectedShippingMethodId <= 0
-            ) {
-                if (
-                    $resolvedShippingModeId === 29
-                ) {
-                    $checked = 'checked';
-                    $active = 'active';
-                }
-                elseif (
-                    count($chargeInfo) === 0
-                ) {
-                    $checked = 'checked';
-                    $active = 'active';
-                }
-            }
-            elseif (
-                $selectedShippingMethodId ===
-                $resolvedShippingModeId
-            ) {
+            if ($resolvedShippingModeId === 29) {
                 $checked = 'checked';
                 $active = 'active';
             }
-
-            /*
-             * Existing Max2Day tracking.
-             */
-            if (
-                $resolvedShippingModeId === 29
-                &&
-                $tempCharge <= 0
-            ) {
-                $max2Days = 1;
-            }
-
-            /*
-             * -----------------------------------------------------
-             * Free shipping coupon.
-             * -----------------------------------------------------
-             */
-            $tempCharge =
-                $this->applyFreeShippingCoupon(
-                    $tempCharge,
-                    $resolvedShippingModeId
-                );
-
-            /*
-             * -----------------------------------------------------
-             * Final shipping method.
-             * -----------------------------------------------------
-             */
-            $chargeInfo[] = [
-                'active' =>
-                    $active,
-
-                'days' =>
-                    $days,
-
-                'charge' =>
-                    $this->formatPrice(
-                        $tempCharge
-                    ),
-
-                'chargewithoutformat' =>
-                    $tempCharge,
-
-                'checked' =>
-                    $checked,
-
-                'shipping_mode_id' =>
-                    $resolvedShippingModeId,
-
-                'display_date' =>
-                    date(
-                        'D, F d',
-                        strtotime(
-                            $delivery['date']
-                        )
-                    ),
-
-                'estdate' =>
-                    date(
-                        'm/d/Y',
-                        strtotime(
-                            $delivery['date']
-                        )
-                    ),
-
-                'method_name' =>
-                    $shippingMode->type,
-
-                'charge_str' =>
-                    $tempCharge > 0
-                        ? $this->formatPrice(
-                            $tempCharge,
-                            true
-                        )
-                        : '<span class="clsfree">Free</span>',
-
-                'estimateShipDate' =>
-                    $delivery['message'],
-
-                'dateSort' =>
-                    $delivery['date'],
-            ];
-
-            /*
-             * Vendor popup session values.
-             */
-            if (
-                $active === 'active'
-                &&
-                $isVendorItem === 'Yes'
-            ) {
-                Session::put(
-                    'ShoppingCart.VendorShippingDateVal.setVendorshipDay',
-                    $vendorDays
-                );
+            elseif (count($chargeInfo) === 0) {
+                $checked = 'checked';
+                $active = 'active';
             }
         }
-
-        /*
-         * ---------------------------------------------------------
-         * Remove Max2Day method when free Max2Day exists.
-         * ---------------------------------------------------------
-         */
-        if (
-            count($chargeInfo) > 0
+        elseif (
+            $selectedShippingMethodId === $resolvedShippingModeId
         ) {
-            $newMethods = [];
-
-            foreach (
-                $chargeInfo as $method
-            ) {
-                if (
-                    $max2Days === 1
-                    &&
-                    (int)
-                    $method[
-                        'shipping_mode_id'
-                    ] === 22
-                ) {
-                    continue;
-                }
-
-                if (
-                    (int)
-                    $method[
-                        'shipping_mode_id'
-                    ] === 22
-                    &&
-                    $isPickup === 'Yes'
-                ) {
-                    $method['dateSort'] = -1;
-                }
-
-                $newMethods[] = $method;
-            }
-
-            $chargeInfo = $newMethods;
+            $checked = 'checked';
+            $active = 'active';
         }
 
         /*
-         * ---------------------------------------------------------
-         * APO/FPO:
-         * only shipping method 47.
-         * ---------------------------------------------------------
+         * Existing Max2Day tracking.
          */
         if (
-            $apoFpo === 'Yes'
+            $resolvedShippingModeId === 29
             &&
-            count($chargeInfo) > 0
+            $tempCharge <= 0
         ) {
-            $apoMethods = [];
-
-            foreach (
-                $chargeInfo as $method
-            ) {
-                if (
-                    (int)
-                    $method[
-                        'shipping_mode_id'
-                    ] === 47
-                ) {
-                    $apoMethods[] = $method;
-                }
-            }
-
-            if (
-                count($apoMethods) > 0
-            ) {
-                $chargeInfo =
-                    $apoMethods;
-
-                Session::put(
-                    'ShoppingCart.Shipping.ShippingMethodID',
-                    47
-                );
-            }
+            $max2Days = 1;
         }
 
         /*
-         * ---------------------------------------------------------
-         * Sort by estimated delivery.
-         * ---------------------------------------------------------
+         * -----------------------------------------------------
+         * Free shipping coupon.
+         * -----------------------------------------------------
          */
-        if (
-            count($chargeInfo) > 0
-        ) {
-            $sortDates =
-                array_column(
-                    $chargeInfo,
-                    'dateSort'
-                );
-
-            array_multisort(
-                $sortDates,
-                SORT_ASC,
-                $chargeInfo
-            );
-        }
-
-        /*
-         * ---------------------------------------------------------
-         * Select first shipping method if none selected.
-         * ---------------------------------------------------------
-         */
-        if (
-            count($chargeInfo) > 0
-        ) {
-            $this->setDefaultShippingMethod(
-                $chargeInfo,
-                $shipCountry,
-                $shipState,
-                $shipZip,
-                $shipCity,
-                $onlyGCPurchased
-            );
-        }
-
-        addLog(
-            'ShippingService',
-            [
-                'shipping_address' =>
-                    $shippingAddress,
-
-                'shipping_methods' =>
-                    json_encode(
-                        $chargeInfo
-                    ),
-
-                'messages' =>
-                    json_encode(
-                        array_unique(
-                            $messages
-                        )
-                    ),
-            ]
+        $tempCharge = $this->applyFreeShippingCoupon(
+            $tempCharge,
+            $resolvedShippingModeId
         );
 
-        return [
-            'shipping_methods' =>
-                $chargeInfo,
+        /*
+         * -----------------------------------------------------
+         * Final shipping method.
+         * -----------------------------------------------------
+         */
+        $chargeInfo[] = [
+            'active' => $active,
+            'days' => $days,
+            'charge' => $this->formatPrice($tempCharge),
+            'chargewithoutformat' => $tempCharge,
+            'checked' => $checked,
+            'shipping_mode_id' => $resolvedShippingModeId,
 
-            'messages' =>
-                array_values(
-                    array_unique(
-                        $messages
-                    )
-                ),
+            'display_date' => date(
+                'D, F d',
+                strtotime($delivery['date'])
+            ),
 
-            'message_success' =>
-                $messageSuccess,
+            'estdate' => date(
+                'm/d/Y',
+                strtotime($delivery['date'])
+            ),
 
-            'is_pickup' =>
-                $isPickup,
+            'method_name' => $shippingMode->type,
 
-            'apo_fpo' =>
-                $apoFpo,
+            'charge_str' => $tempCharge > 0
+                ? $this->formatPrice($tempCharge, true)
+                : '<span class="clsfree">Free</span>',
 
-            'address_check' =>
-                $addressCheck,
+            'estimateShipDate' => $delivery['message'],
+
+            /*
+             * Numeric timestamp for reliable sorting.
+             */
+            'dateSort' => strtotime($delivery['date']),
         ];
+
+        /*
+         * Vendor popup session values.
+         */
+        if (
+            $active === 'active'
+            &&
+            $isVendorItem === 'Yes'
+        ) {
+            Session::put(
+                'ShoppingCart.VendorShippingDateVal.setVendorshipDay',
+                $vendorDays
+            );
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Remove Max2Day method when free Max2Day exists.
+     * ---------------------------------------------------------
+     */
+    if (count($chargeInfo) > 0) {
+
+        $newMethods = [];
+
+        foreach ($chargeInfo as $method) {
+
+            if (
+                $max2Days === 1
+                &&
+                (int) $method['shipping_mode_id'] === 22
+            ) {
+                continue;
+            }
+
+            $newMethods[] = $method;
+        }
+
+        $chargeInfo = $newMethods;
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * APO/FPO:
+     * only shipping method 47.
+     * ---------------------------------------------------------
+     */
+    if (
+        $apoFpo === 'Yes'
+        &&
+        count($chargeInfo) > 0
+    ) {
+        $apoMethods = [];
+
+        foreach ($chargeInfo as $method) {
+
+            if (
+                (int) $method['shipping_mode_id'] === 47
+            ) {
+                $apoMethods[] = $method;
+            }
+        }
+
+        if (count($apoMethods) > 0) {
+
+            $chargeInfo = $apoMethods;
+
+            Session::put(
+                'ShoppingCart.Shipping.ShippingMethodID',
+                47
+            );
+        }
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Sort shipping methods by estimated delivery date.
+     * Earliest delivery date will appear first.
+     * ---------------------------------------------------------
+     */
+    if (count($chargeInfo) > 1) {
+
+        usort($chargeInfo, function ($a, $b) {
+
+            $dateA = (int) ($a['dateSort'] ?? 0);
+            $dateB = (int) ($b['dateSort'] ?? 0);
+
+            return $dateA <=> $dateB;
+        });
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * Select first shipping method if none selected.
+     * Preserve existing selected method.
+     * ---------------------------------------------------------
+     */
+    if (count($chargeInfo) > 0) {
+
+        $this->setDefaultShippingMethod(
+            $chargeInfo,
+            $shipCountry,
+            $shipState,
+            $shipZip,
+            $shipCity,
+            $onlyGCPurchased
+        );
+    }
+
+    addLog(
+        'ShippingService',
+        [
+            'shipping_address' => $shippingAddress,
+
+            'shipping_methods' => json_encode(
+                $chargeInfo
+            ),
+
+            'messages' => json_encode(
+                array_unique($messages)
+            ),
+        ]
+    );
+
+    return [
+        'shipping_methods' => $chargeInfo,
+
+        'messages' => array_values(
+            array_unique($messages)
+        ),
+
+        'datediff' => $this->getShippingCutoffDifference(),
+
+        'message_success' => $messageSuccess,
+
+        'is_pickup' => $isPickup,
+
+        'apo_fpo' => $apoFpo,
+
+        'address_check' => $addressCheck,
+    ];
+}
+
+    /**
+     * Get the remaining time until the existing 2 PM
+     * shipping cutoff.
+     */
+    protected function getShippingCutoffDifference(): string
+    {
+        $now = date_create(
+            date('Y-m-d H:i:s')
+        );
+
+        $cutoff = date_create(
+            date('Y-m-d 14:00:00')
+        );
+
+        if ($now >= $cutoff) {
+            $cutoff = date_create(
+                date(
+                    'Y-m-d 14:00:00',
+                    strtotime('+1 day')
+                )
+            );
+        }
+
+        while (
+            $cutoff->format('N') >= 6
+        ) {
+            $cutoff->modify('+1 day');
+        }
+
+        $diff = $now->diff($cutoff);
+
+        return $diff->format(
+            '%h hours %i minutes'
+        );
     }
 
     /**
@@ -871,6 +695,7 @@ class ShippingService
         array $address = [],
         array $flags = []
     ): array {
+		
         $shippingAddress =
             $this->resolveAddress(
                 $address
@@ -902,7 +727,6 @@ class ShippingService
             $shippingAddress['country'],
             $shippingMethodId
         );
-
         /*
          * Keep the existing session values.
          */
@@ -1105,113 +929,86 @@ class ShippingService
             }
         }
 
-        if (
-            $days > 0
-        ) {
-            $startDate =
-                date('Y-m-d');
+        /*
+         * ---------------------------------------------------------
+         * FINAL DELIVERY DATE
+         * ---------------------------------------------------------
+         *
+         * Keep the same delivery-date calculation used by
+         * getAvailableMethods().
+         *
+         * This prevents the shipping-method load flow and the
+         * shipping-method selection flow from returning different
+         * estimated delivery dates.
+         */
+        if ($days > 0) {
 
-            $endDate =
-                date(
-                    'Y-m-d',
-                    strtotime(
-                        '+' . $days . 'days'
-                    )
-                );
-
-            $weekendDays =
-                $this->countWeekendDays(
-                    $startDate,
-                    $endDate
-                );
-
-            $holidayDays =
-                ShippingHoliday::whereBetween(
-                    'holiday_date',
-                    [
-                        $startDate,
-                        $endDate,
-                    ]
-                )
-                ->where(
-                    'holiday_status',
-                    '=',
-                    '1'
-                )
-                ->where(
-                    'holiday_date',
-                    '!=',
-                    date('Y-m-d')
-                )
-                ->count();
-
-            $exactShipDay =
-                $days
-                +
-                $weekendDays
-                +
-                $holidayDays;
-
-            $approxShipDate =
-                date(
-                    'Y-m-d',
-                    strtotime(
-                        '+' .
-                        $exactShipDay .
-                        'days'
-                    )
-                );
-
-            $extraDays = 0;
-
-            $day =
-                $this->checkDay(
-                    $approxShipDate
-                );
-
-            if (
-                $day === 'saturday'
-            ) {
-                $extraDays = 2;
-            }
-            elseif (
-                $day === 'sunday'
-            ) {
-                $extraDays = 1;
-            }
-
+            /*
+             * Existing 2 PM cutoff.
+             */
             $days =
-                $exactShipDay
-                +
-                $extraDays;
+                $this->applyTimeCutoff(
+                    $days
+                );
 
+            /*
+             * Existing weekend adjustment for methods
+             * 33 / 34 / 29.
+             */
+            $days =
+                $this->applyWeekendAdjustment(
+                    $days,
+                    $shippingModeId
+                );
+
+            /*
+             * Existing holiday-aware delivery calculation.
+             */
+            $delivery =
+                $this->calculateDeliveryDate(
+                    $days
+                );
+
+            /*
+             * Keep existing session values.
+             */
             Session::put(
                 'ShoppingCart.VendorShippingDateVal.setVendorshipDay',
                 $days
             );
 
-            $date =
-                date(
-                    'M d',
-                    strtotime(
-                        '+' . $days . 'days'
-                    )
-                );
-
             Session::put(
                 'ShoppingCart.Shipping.ShippingDays',
-                'Estimated Delivery on or before <b>' .
-                $date .
-                '</b>'
+                $delivery['message']
+            );
+
+            Session::put(
+                'ShoppingCart.EstimatedDeliveryDate',
+                date(
+                    'm/d/Y',
+                    strtotime(
+                        $delivery['date']
+                    )
+                )
             );
         }
+		
+		
+	  if ($shippingModeId === 46) {
+			$pickupDate = $this->getPickupDeliveryDate();
 
+			Session::put(
+				'ShoppingCart.EstimatedDeliveryDate',
+				date('m/d/Y', strtotime($pickupDate))
+			);
+		}
+		
         return [
             'status' =>
                 'success',
 
             'ShipMethodID' =>
-                $shippingMethodId,
+                $shippingModeId,
 
             'ShippingMethodName' =>
                 $shippingMethod->type,
@@ -1220,6 +1017,20 @@ class ShippingService
                 $days,
         ];
     }
+    protected function getPickupDeliveryDate(): string
+{
+    $timezone = new \DateTimeZone('America/New_York');
+
+    $now = new \DateTimeImmutable('now', $timezone);
+
+    // Before 3 PM: same-day pickup.
+    // At or after 3 PM: next-day pickup.
+    if ($now->format('H:i:s') >= '15:00:00') {
+        $now = $now->modify('+1 day');
+    }
+
+    return $now->format('Y-m-d');
+}
 
     /**
      * Exact migration of CalculateShippingCharge().

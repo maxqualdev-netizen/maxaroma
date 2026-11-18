@@ -9,7 +9,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
 
-
 class CheckoutShippingController extends Controller
 {
     public function __construct(
@@ -236,7 +235,6 @@ class CheckoutShippingController extends Controller
                         $address,
                         $paymentContext
                     );
-
 
             /*
              * -----------------------------------------------------
@@ -687,6 +685,10 @@ class CheckoutShippingController extends Controller
     protected function resolveShippingAddress(
         Request $request
     ): array {
+        if($request->has('custEmail') && $request->input('custEmail') != '')
+        {
+            Session::put("sess_useremail",$request->input('custEmail'));
+        }
         $sessionAddress =
             Session::get(
                 'ShoppingCart.ShippingAddress',
@@ -713,6 +715,9 @@ class CheckoutShippingController extends Controller
                 'city'
             );
 
+        $first_name = $request->input('first_name');
+        $last_name = $request->input('last_name');
+        $phone = $request->input('phone');
         /*
          * Request values override session values.
          */
@@ -766,6 +771,27 @@ class CheckoutShippingController extends Controller
                     'address2',
                     $sessionAddress[
                         'address2'
+                    ] ?? ''
+                ),
+            'first_name' =>
+                $request->input(
+                    'first_name',
+                    $sessionAddress[
+                        'first_name'
+                    ] ?? ''
+                ),
+            'last_name' =>
+                $request->input(
+                    'last_name',
+                    $sessionAddress[
+                        'last_name'
+                    ] ?? ''
+                ),
+            'phone' =>
+                $request->input(
+                    'phone',
+                    $sessionAddress[
+                        'phone'
                     ] ?? ''
                 ),
         ];
@@ -888,7 +914,6 @@ class CheckoutShippingController extends Controller
      * ShippingService owns the actual shipping-method business logic.
      * Controller only prepares address/flags and returns JSON.
      */
-
 
     public function getAvailableShippingMethods(
         Request $request
